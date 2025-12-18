@@ -79,17 +79,26 @@ export function TerminalPanel({ terminalId, isActive = true }: TerminalPanelProp
   // Handle terminal resize and focus when becoming active
   useEffect(() => {
     if (isActive && fitAddonRef.current && terminalRef.current) {
-      // Small delay to ensure DOM is updated
-      const timeoutId = setTimeout(() => {
-        if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit()
-          const { cols, rows } = terminalRef.current
-          window.electronAPI.pty.resize(terminalId, cols, rows)
-          terminalRef.current.focus()
-        }
-      }, 100)
+      const terminal = terminalRef.current
+      const fitAddon = fitAddonRef.current
 
-      return () => clearTimeout(timeoutId)
+      // Use requestAnimationFrame to ensure DOM is fully rendered
+      const rafId = requestAnimationFrame(() => {
+        if (!fitAddon || !terminal) return
+
+        fitAddon.fit()
+        const { cols, rows } = terminal
+        window.electronAPI.pty.resize(terminalId, cols, rows)
+
+        // Force refresh terminal content to fix black screen after visibility change
+        // Call refresh after another frame to ensure layout is complete
+        requestAnimationFrame(() => {
+          terminal.refresh(0, terminal.rows - 1)
+          terminal.focus()
+        })
+      })
+
+      return () => cancelAnimationFrame(rafId)
     }
   }, [isActive, terminalId])
 
