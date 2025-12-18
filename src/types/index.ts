@@ -57,9 +57,24 @@ export interface PtyExit {
 
 export type ShellType = 'auto' | 'pwsh' | 'powershell' | 'cmd' | 'custom';
 
+export type FontType = 'system' | 'sf-mono' | 'menlo' | 'consolas' | 'monaco' | 'fira-code' | 'jetbrains-mono' | 'custom';
+
+export const FONT_OPTIONS: { id: FontType; name: string; fontFamily: string }[] = [
+  { id: 'system', name: 'System Default', fontFamily: 'monospace' },
+  { id: 'sf-mono', name: 'SF Mono', fontFamily: '"SF Mono", monospace' },
+  { id: 'menlo', name: 'Menlo', fontFamily: 'Menlo, monospace' },
+  { id: 'consolas', name: 'Consolas', fontFamily: 'Consolas, monospace' },
+  { id: 'monaco', name: 'Monaco', fontFamily: 'Monaco, monospace' },
+  { id: 'fira-code', name: 'Fira Code', fontFamily: '"Fira Code", monospace' },
+  { id: 'jetbrains-mono', name: 'JetBrains Mono', fontFamily: '"JetBrains Mono", monospace' },
+  { id: 'custom', name: 'Custom', fontFamily: 'monospace' },
+];
+
 export interface AppSettings {
   shell: ShellType;
   customShellPath: string;
   fontSize: number;
+  fontFamily: FontType;
+  customFontFamily: string;
   theme: 'dark' | 'light';
 }

@@ -1,4 +1,5 @@
-import type { AppSettings, ShellType } from '../types'
+import type { AppSettings, ShellType, FontType } from '../types'
+import { FONT_OPTIONS } from '../types'
 
 type Listener = () => void
 
@@ -6,6 +7,8 @@ const defaultSettings: AppSettings = {
   shell: 'auto',
   customShellPath: '',
   fontSize: 14,
+  fontFamily: 'sf-mono',
+  customFontFamily: '',
   theme: 'dark'
 }
 
@@ -48,6 +51,27 @@ class SettingsStore {
     this.settings = { ...this.settings, theme }
     this.notify()
     this.save()
+  }
+
+  setFontFamily(fontFamily: FontType): void {
+    this.settings = { ...this.settings, fontFamily }
+    this.notify()
+    this.save()
+  }
+
+  setCustomFontFamily(customFontFamily: string): void {
+    this.settings = { ...this.settings, customFontFamily }
+    this.notify()
+    this.save()
+  }
+
+  // Get the actual CSS font-family string based on settings
+  getFontFamilyString(): string {
+    if (this.settings.fontFamily === 'custom' && this.settings.customFontFamily) {
+      return `"${this.settings.customFontFamily}", monospace`
+    }
+    const fontOption = FONT_OPTIONS.find(f => f.id === this.settings.fontFamily)
+    return fontOption?.fontFamily || 'monospace'
   }
 
   async save(): Promise<void> {

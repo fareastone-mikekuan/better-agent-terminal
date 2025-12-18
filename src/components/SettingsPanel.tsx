@@ -1,18 +1,50 @@
 import { useState, useEffect } from 'react'
-import type { AppSettings, ShellType } from '../types'
+import type { AppSettings, ShellType, FontType } from '../types'
+import { FONT_OPTIONS } from '../types'
 import { settingsStore } from '../stores/settings-store'
 
 interface SettingsPanelProps {
   onClose: () => void
 }
 
+// Check if a font is available using CSS Font Loading API
+const checkFontAvailable = (fontFamily: string): boolean => {
+  // Extract the primary font name (first in the list)
+  const fontName = fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+  if (fontName === 'monospace') return true
+
+  try {
+    return document.fonts.check(`12px "${fontName}"`)
+  } catch {
+    return false
+  }
+}
+
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(settingsStore.getSettings())
+  const [availableFonts, setAvailableFonts] = useState<Set<FontType>>(new Set())
 
   useEffect(() => {
     return settingsStore.subscribe(() => {
       setSettings(settingsStore.getSettings())
     })
+  }, [])
+
+  // Check font availability on mount
+  useEffect(() => {
+    const checkFonts = async () => {
+      // Wait for fonts to be loaded
+      await document.fonts.ready
+
+      const available = new Set<FontType>()
+      for (const font of FONT_OPTIONS) {
+        if (font.id === 'system' || font.id === 'custom' || checkFontAvailable(font.fontFamily)) {
+          available.add(font.id)
+        }
+      }
+      setAvailableFonts(available)
+    }
+    checkFonts()
   }, [])
 
   const handleShellChange = (shell: ShellType) => {
@@ -25,6 +57,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const handleFontSizeChange = (size: number) => {
     settingsStore.setFontSize(size)
+  }
+
+  const handleFontFamilyChange = (fontFamily: FontType) => {
+    settingsStore.setFontFamily(fontFamily)
+  }
+
+  const handleCustomFontFamilyChange = (customFontFamily: string) => {
+    settingsStore.setCustomFontFamily(customFontFamily)
   }
 
   return (
@@ -77,11 +117,47 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 onChange={e => handleFontSizeChange(Number(e.target.value))}
               />
             </div>
+
+            <div className="settings-group">
+              <label>Font Family</label>
+              <select
+                value={settings.fontFamily}
+                onChange={e => handleFontFamilyChange(e.target.value as FontType)}
+              >
+                {FONT_OPTIONS.map(font => (
+                  <option key={font.id} value={font.id} disabled={!availableFonts.has(font.id) && font.id !== 'custom'}>
+                    {font.name} {availableFonts.has(font.id) ? '✓' : '(not installed)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {settings.fontFamily === 'custom' && (
+              <div className="settings-group">
+                <label>Custom Font Name</label>
+                <input
+                  type="text"
+                  value={settings.customFontFamily}
+                  onChange={e => handleCustomFontFamilyChange(e.target.value)}
+                  placeholder="e.g., Fira Code, JetBrains Mono"
+                />
+              </div>
+            )}
+
+            <div className="settings-group font-preview">
+              <label>Preview</label>
+              <div
+                className="font-preview-box"
+                style={{ fontFamily: settingsStore.getFontFamilyString(), fontSize: settings.fontSize }}
+              >
+                $ echo "Hello World" 你好世界 0123456789
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="settings-footer">
-          <p className="settings-note">Changes are saved automatically. Restart terminals to apply shell changes.</p>
+          <p className="settings-note">Changes are saved automatically. Font changes apply immediately to all terminals.</p>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { workspaceStore } from '../stores/workspace-store'
+import { settingsStore } from '../stores/settings-store'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -79,17 +80,26 @@ export function TerminalPanel({ terminalId, isActive = true }: TerminalPanelProp
   // Handle terminal resize and focus when becoming active
   useEffect(() => {
     if (isActive && fitAddonRef.current && terminalRef.current) {
-      // Small delay to ensure DOM is updated
-      const timeoutId = setTimeout(() => {
-        if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit()
-          const { cols, rows } = terminalRef.current
-          window.electronAPI.pty.resize(terminalId, cols, rows)
-          terminalRef.current.focus()
-        }
-      }, 100)
+      const terminal = terminalRef.current
+      const fitAddon = fitAddonRef.current
 
-      return () => clearTimeout(timeoutId)
+      // Use requestAnimationFrame to ensure DOM is fully rendered
+      const rafId = requestAnimationFrame(() => {
+        if (!fitAddon || !terminal) return
+
+        fitAddon.fit()
+        const { cols, rows } = terminal
+        window.electronAPI.pty.resize(terminalId, cols, rows)
+
+        // Force refresh terminal content to fix black screen after visibility change
+        // Call refresh after another frame to ensure layout is complete
+        requestAnimationFrame(() => {
+          terminal.refresh(0, terminal.rows - 1)
+          terminal.focus()
+        })
+      })
+
+      return () => cancelAnimationFrame(rafId)
     }
   }, [isActive, terminalId])
 
@@ -123,6 +133,8 @@ export function TerminalPanel({ terminalId, isActive = true }: TerminalPanelProp
   useEffect(() => {
     if (!containerRef.current) return
 
+    const settings = settingsStore.getSettings()
+
     // Create terminal instance
     // Novel theme (macOS Terminal.app inspired)
     const terminal = new Terminal({
@@ -149,8 +161,8 @@ export function TerminalPanel({ terminalId, isActive = true }: TerminalPanelProp
         brightCyan: '#7bbda4',
         brightWhite: '#f5f1e6'
       },
-      fontSize: 14,
-      fontFamily: '"SF Mono", Menlo, Monaco, "Courier New", monospace',
+      fontSize: settings.fontSize,
+      fontFamily: settingsStore.getFontFamilyString(),
       cursorBlink: true,
       scrollback: 10000,
       convertEol: true,
@@ -290,9 +302,20 @@ export function TerminalPanel({ terminalId, isActive = true }: TerminalPanelProp
       window.electronAPI.pty.resize(terminalId, cols, rows)
     }, 100)
 
+    // Subscribe to settings changes for font updates
+    const unsubscribeSettings = settingsStore.subscribe(() => {
+      const newSettings = settingsStore.getSettings()
+      terminal.options.fontSize = newSettings.fontSize
+      terminal.options.fontFamily = settingsStore.getFontFamilyString()
+      fitAddon.fit()
+      const { cols, rows } = terminal
+      window.electronAPI.pty.resize(terminalId, cols, rows)
+    })
+
     return () => {
       unsubscribeOutput()
       unsubscribeExit()
+      unsubscribeSettings()
       resizeObserver.disconnect()
       observer.disconnect()
       terminal.dispose()
