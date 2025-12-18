@@ -109,6 +109,8 @@ npm run build
 |----------|--------|
 | `Ctrl+Shift+C` | Copy selected text |
 | `Ctrl+Shift+V` | Paste from clipboard |
+| `Ctrl+V` | Paste (sends Alt+V if clipboard has image on Windows) |
+| `Shift+Enter` | Insert newline (multiline input) |
 | `Right-click` | Copy (if selected) or Paste |
 
 ---
@@ -188,6 +190,7 @@ Built with assistance from Claude Code 🤖
 ## 🤝 Contributors
 
 - **lmanchu** - [@lmanchu](https://github.com/lmanchu) - macOS/Linux support, workspace roles
+- **bluewings1211** - [@bluewings1211](https://github.com/bluewings1211) - Shift+Enter newline, preserve workspace state, font settings
 
 ---
 
