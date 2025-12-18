@@ -297,6 +297,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .empty-state {
@@ -332,6 +333,26 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Workspace container - keep all workspaces rendered but hidden to preserve terminal state */
+.workspace-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-container.hidden {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.workspace-container.active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
 }
 
 .terminal-wrapper.hidden {
@@ -735,6 +756,17 @@ body {
 .settings-group input[type="range"] {
   width: 100%;
   accent-color: var(--accent-color);
+}
+
+.font-preview-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-footer {

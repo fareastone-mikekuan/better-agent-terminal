@@ -66,12 +66,21 @@ export default function App() {
         onOpenAbout={() => setShowAbout(true)}
       />
       <main className="main-content">
-        {activeWorkspace ? (
-          <WorkspaceView
-            workspace={activeWorkspace}
-            terminals={workspaceStore.getWorkspaceTerminals(activeWorkspace.id)}
-            focusedTerminalId={state.focusedTerminalId}
-          />
+        {state.workspaces.length > 0 ? (
+          // Render ALL workspaces, hide inactive ones with CSS to preserve terminal state
+          state.workspaces.map(workspace => (
+            <div
+              key={workspace.id}
+              className={`workspace-container ${workspace.id === state.activeWorkspaceId ? 'active' : 'hidden'}`}
+            >
+              <WorkspaceView
+                workspace={workspace}
+                terminals={workspaceStore.getWorkspaceTerminals(workspace.id)}
+                focusedTerminalId={workspace.id === state.activeWorkspaceId ? state.focusedTerminalId : null}
+                isActive={workspace.id === state.activeWorkspaceId}
+              />
+            </div>
+          ))
         ) : (
           <div className="empty-state">
             <h2>Welcome to Better Agent Terminal</h2>
