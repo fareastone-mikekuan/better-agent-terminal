@@ -5,11 +5,11 @@
 <img src="assets/icon.svg" width="128" height="128" alt="Better Agent Terminal">
 
 ![Version](https://img.shields.io/badge/version-1.25-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey.svg)
 ![Electron](https://img.shields.io/badge/electron-28.3.3-47848F.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**A Windows terminal aggregator with multi-workspace support and Claude Code integration**
+**A cross-platform terminal aggregator with multi-workspace support and Claude Code integration**
 
 [Download Latest Release](https://github.com/tony1223/better-agent-terminal/releases/latest)
 
@@ -166,6 +166,46 @@ npm start
 # Build distributable
 npm run build
 ```
+
+---
+
+## 📦 Release
+
+### Version Format
+
+Version follows the format: `1.YY.MMDDHHmmss`
+- `1` - Major version
+- `YY` - Year (2 digits)
+- `MMDDHHmmss` - Month, Day, Hour, Minute, Second
+
+Example: `v1.25.1219091538` = 2025-12-19 09:15:38
+
+### Automated Release (GitHub Actions)
+
+When a tag is pushed, GitHub Actions automatically builds for all platforms:
+
+| Platform | Output |
+|----------|--------|
+| Windows | `.zip` |
+| macOS | `.dmg` |
+| Linux | `.AppImage` |
+
+**To create a release:**
+```bash
+# Create and push a tag
+git tag v1.25.1219091538
+git push origin v1.25.1219091538
+```
+
+Or use the build script (local build only):
+```bash
+npm run build:release
+```
+
+The release workflow will:
+1. Build on Windows, macOS, and Linux runners in parallel
+2. Extract version from the git tag
+3. Create a GitHub Release with all artifacts attached
 
 ---
 
