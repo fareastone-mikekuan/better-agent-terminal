@@ -41,6 +41,45 @@ body {
   color: var(--text-primary);
 }
 
+/* Custom Scrollbar - Dark Theme */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 5px;
+  border: 2px solid var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-hover);
+}
+
+/* Terminal specific scrollbar */
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .app {
   display: flex;
   height: 100vh;
@@ -435,6 +474,23 @@ body {
 .main-panel-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* Terminal name inline edit input */
+.terminal-name-input {
+  background: transparent;
+  border: 1px solid var(--accent-color);
+  border-radius: 4px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 120px;
+}
+
+.terminal-name-input:focus {
+  background: var(--bg-tertiary);
 }
 
 /* Thumbnail Bar (30%) */
@@ -1450,6 +1506,17 @@ body {
 .snippet-sidebar-item:hover {
   border-color: var(--accent-color);
   background: var(--bg-hover);
+}
+
+.snippet-sidebar-item.search-match {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px #f59e0b40;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.snippet-sidebar-item.search-match:hover {
+  border-color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
 }
 
 .snippet-item-main {

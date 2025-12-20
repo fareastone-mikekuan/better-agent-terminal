@@ -158,8 +158,8 @@ export function SnippetSidebar({ isVisible, onPasteToClipboard, onPasteToTermina
 
     const handlePasteToTerminal = (content: string) => {
         if (onPasteToTerminal) {
-            // Add newline to auto-execute if enabled
-            const finalContent = autoExecute ? content + '\n' : content
+            // Add carriage return to auto-execute if enabled (use \r for terminal)
+            const finalContent = autoExecute ? content + '\r' : content
             onPasteToTerminal(finalContent)
         }
     }
@@ -229,13 +229,13 @@ export function SnippetSidebar({ isVisible, onPasteToClipboard, onPasteToTermina
                         snippets.map(snippet => (
                             <div
                                 key={snippet.id}
-                                className="snippet-sidebar-item"
+                                className={`snippet-sidebar-item ${searchQuery ? 'search-match' : ''}`}
                                 onDoubleClick={() => handleDoubleClick(snippet)}
                             >
                                 <div className="snippet-item-main">
                                     <span className="snippet-item-title">{snippet.title}</span>
                                     <span className={`snippet-item-format ${snippet.format}`}>
-                                        {snippet.format === 'markdown' ? 'MD' : 'TXT'}
+                                        {snippet.format === 'markdown' ? 'MD' : 'Text'}
                                     </span>
                                 </div>
                                 <div className="snippet-item-preview">
@@ -248,7 +248,7 @@ export function SnippetSidebar({ isVisible, onPasteToClipboard, onPasteToTermina
                                         onClick={() => handlePasteToTerminal(snippet.content)}
                                         title="Paste to Terminal"
                                     >
-                                        ⏎
+                                        ▶️
                                     </button>
                                     <button
                                         className="snippet-action-btn"

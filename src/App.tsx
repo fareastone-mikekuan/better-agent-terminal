@@ -47,9 +47,21 @@ export default function App() {
 
   // Paste content to focused terminal
   const handlePasteToTerminal = useCallback((content: string) => {
-    const { focusedTerminalId } = workspaceStore.getState()
-    if (focusedTerminalId) {
-      window.electronAPI.pty.write(focusedTerminalId, content)
+    const currentState = workspaceStore.getState()
+    // Try focused terminal first, then fall back to active terminal or first terminal in active workspace
+    let terminalId = currentState.focusedTerminalId
+
+    if (!terminalId && currentState.activeWorkspaceId) {
+      const workspaceTerminals = workspaceStore.getWorkspaceTerminals(currentState.activeWorkspaceId)
+      if (workspaceTerminals.length > 0) {
+        terminalId = workspaceTerminals[0].id
+      }
+    }
+
+    if (terminalId) {
+      window.electronAPI.pty.write(terminalId, content)
+    } else {
+      console.warn('No terminal available to paste to')
     }
   }, [])
 

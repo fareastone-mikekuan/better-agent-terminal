@@ -139,6 +139,16 @@ export const COLOR_PRESETS = [
 
 export type ColorPresetId = typeof COLOR_PRESETS[number]['id'];
 
+// Agent command type for auto-start
+export type AgentCommandType = 'claude' | 'gemini' | 'codex' | 'custom';
+
+export const AGENT_COMMAND_OPTIONS: { id: AgentCommandType; name: string; command: string }[] = [
+  { id: 'claude', name: 'Claude Code', command: 'claude' },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini' },
+  { id: 'codex', name: 'Codex CLI', command: 'codex' },
+  { id: 'custom', name: 'Custom', command: '' },
+];
+
 export interface AppSettings {
   shell: ShellType;
   customShellPath: string;
@@ -152,4 +162,7 @@ export interface AppSettings {
   customCursorColor: string;
   globalEnvVars?: EnvVariable[];  // 全域環境變數
   defaultAgent?: AgentPresetId;   // 全域預設 Agent
+  agentAutoCommand: boolean;      // 是否自動啟動 Agent
+  agentCommandType: AgentCommandType;  // Agent 命令類型
+  agentCustomCommand: string;     // 自定義 Agent 命令
 }

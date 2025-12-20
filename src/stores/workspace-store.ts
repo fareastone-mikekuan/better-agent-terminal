@@ -111,7 +111,7 @@ class WorkspaceStore {
     const preset = agentPreset ? getAgentPreset(agentPreset) : null
     const title = preset && preset.id !== 'none'
       ? preset.name
-      : `Terminal ${existingTerminals.length + 1}`
+      : 'New Terminal'
 
     const terminal: TerminalInstance = {
       id: uuidv4(),
@@ -146,6 +146,17 @@ class WorkspaceStore {
       focusedTerminalId: this.state.focusedTerminalId === id
         ? (terminals[0]?.id ?? null)
         : this.state.focusedTerminalId
+    }
+
+    this.notify()
+  }
+
+  renameTerminal(id: string, title: string): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id ? { ...t, title } : t
+      )
     }
 
     this.notify()
