@@ -11,7 +11,10 @@
     "build:release": "node scripts/build-version.js",
     "postinstall": "echo 'Run electron-rebuild manually if node-pty is needed'",
     "test:console": "node tests/console-test.js",
-    "test:claude-ctrl-o": "node tests/test-claude-ctrl-o.js"
+    "test:claude-ctrl-o": "node tests/test-claude-ctrl-o.js",
+    "diagnose:ctrl-o": "npx electron tests/diagnose-ctrl-o.js",
+    "diagnose:ctrl-o:quick": "npx electron tests/diagnose-ctrl-o.js --quick",
+    "diagnose:ctrl-o:verbose": "npx electron tests/diagnose-ctrl-o.js --verbose"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
