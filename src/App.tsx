@@ -5,12 +5,15 @@ import { Sidebar } from './components/Sidebar'
 import { WorkspaceView } from './components/WorkspaceView'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AboutPanel } from './components/AboutPanel'
+import { SnippetSidebar } from './components/SnippetPanel'
 import type { AppState } from './types'
 
 export default function App() {
   const [state, setState] = useState<AppState>(workspaceStore.getState())
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  // Snippet sidebar is always visible by default
+  const [showSnippetSidebar] = useState(true)
 
   useEffect(() => {
     const unsubscribe = workspaceStore.subscribe(() => {
@@ -42,7 +45,13 @@ export default function App() {
     }
   }, [])
 
-  const activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId)
+  // Paste content to focused terminal
+  const handlePasteToTerminal = useCallback((content: string) => {
+    const { focusedTerminalId } = workspaceStore.getState()
+    if (focusedTerminalId) {
+      window.electronAPI.pty.write(focusedTerminalId, content)
+    }
+  }, [])
 
   return (
     <div className="app">
@@ -88,6 +97,10 @@ export default function App() {
           </div>
         )}
       </main>
+      <SnippetSidebar
+        isVisible={showSnippetSidebar}
+        onPasteToTerminal={handlePasteToTerminal}
+      />
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
@@ -97,3 +110,4 @@ export default function App() {
     </div>
   )
 }
+

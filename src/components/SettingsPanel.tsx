@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import type { AppSettings, ShellType, FontType, ColorPresetId } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable } from '../types'
 import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 import { settingsStore } from '../stores/settings-store'
+import { EnvVarEditor } from './EnvVarEditor'
 
 interface SettingsPanelProps {
   onClose: () => void
@@ -245,6 +246,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 $ echo "Hello World" 你好世界 0123456789
               </div>
             </div>
+          </div>
+
+          <div className="settings-section">
+            <h3>Environment Variables</h3>
+            <p className="settings-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              這些環境變數會自動加入到所有新建的終端中
+            </p>
+            <EnvVarEditor
+              envVars={settings.globalEnvVars || []}
+              onAdd={(envVar) => settingsStore.addGlobalEnvVar(envVar)}
+              onRemove={(key) => settingsStore.removeGlobalEnvVar(key)}
+              onUpdate={(key, updates) => settingsStore.updateGlobalEnvVar(key, updates)}
+            />
           </div>
         </div>
 

@@ -195,18 +195,18 @@ export function Sidebar({
                   size="small"
                 />
                 <button
-                    className="remove-btn"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRemoveWorkspace(workspace.id)
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
+                  className="remove-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRemoveWorkspace(workspace.id)
+                  }}
+                >
+                  ×
+                </button>
               </div>
             </div>
-          )
+          </div>
+        )
         )}
       </div>
       <div className="sidebar-footer">

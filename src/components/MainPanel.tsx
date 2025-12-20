@@ -1,5 +1,6 @@
 import type { TerminalInstance } from '../types'
 import { TerminalPanel } from './TerminalPanel'
+import { getAgentPreset } from '../types/agent-presets'
 
 interface MainPanelProps {
   terminal: TerminalInstance
@@ -8,13 +9,17 @@ interface MainPanelProps {
 }
 
 export function MainPanel({ terminal, onClose, onRestart }: MainPanelProps) {
-  const isClaudeCode = terminal.type === 'claude-code'
+  const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
+  const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
 
   return (
     <div className="main-panel">
       <div className="main-panel-header">
-        <div className={`main-panel-title ${isClaudeCode ? 'claude-code' : ''}`}>
-          {isClaudeCode && <span>✦</span>}
+        <div
+          className={`main-panel-title ${isAgent ? 'agent-terminal' : ''}`}
+          style={agentConfig ? { '--agent-color': agentConfig.color } as React.CSSProperties : undefined}
+        >
+          {isAgent && <span>{agentConfig?.icon}</span>}
           <span>{terminal.title}</span>
         </div>
         <div className="main-panel-actions">

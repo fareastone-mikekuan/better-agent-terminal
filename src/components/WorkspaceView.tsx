@@ -1,11 +1,12 @@
 import { useEffect, useCallback, useState } from 'react'
-import type { Workspace, TerminalInstance } from '../types'
+import type { Workspace, TerminalInstance, EnvVariable } from '../types'
 import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
 import { TerminalPanel } from './TerminalPanel'
 import { ThumbnailBar } from './ThumbnailBar'
 import { CloseConfirmDialog } from './CloseConfirmDialog'
 import { ActivityIndicator } from './ActivityIndicator'
+import { AgentPresetId, getAgentPreset } from '../types/agent-presets'
 
 interface WorkspaceViewProps {
   workspace: Workspace
@@ -23,70 +24,101 @@ async function getShellFromSettings(): Promise<string | undefined> {
   return window.electronAPI.settings.getShellPath(settings.shell)
 }
 
+// Helper to merge environment variables
+function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = []): Record<string, string> {
+  const result: Record<string, string> = {}
+  // Add global vars first
+  for (const env of global) {
+    if (env.enabled && env.key) {
+      result[env.key] = env.value
+    }
+  }
+  // Workspace vars override global
+  for (const env of workspace) {
+    if (env.enabled && env.key) {
+      result[env.key] = env.value
+    }
+  }
+  return result
+}
+
 export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: WorkspaceViewProps) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
 
-  const claudeCode = terminals.find(t => t.type === 'claude-code')
-  const regularTerminals = terminals.filter(t => t.type === 'terminal')
+  // Find agent terminal (any terminal with an agentPreset that's not 'none')
+  const agentTerminal = terminals.find(t => t.agentPreset && t.agentPreset !== 'none')
+  const regularTerminals = terminals.filter(t => !t.agentPreset || t.agentPreset === 'none')
 
   const focusedTerminal = terminals.find(t => t.id === focusedTerminalId)
-  const isClaudeCodeFocused = focusedTerminal?.type === 'claude-code'
+  const isAgentFocused = focusedTerminal?.agentPreset && focusedTerminal.agentPreset !== 'none'
 
-  // Initialize Claude Code terminal when workspace loads
+  // Initialize agent terminal when workspace loads
   useEffect(() => {
-    if (!claudeCode) {
-      const createClaudeCode = async () => {
-        const terminal = workspaceStore.addTerminal(workspace.id, 'claude-code')
+    if (!agentTerminal) {
+      const createAgent = async () => {
+        const defaultAgent = workspace.defaultAgent || settingsStore.getSettings().defaultAgent || 'claude-code'
+        const terminal = workspaceStore.addTerminal(workspace.id, defaultAgent as AgentPresetId)
         const shell = await getShellFromSettings()
-        window.electronAPI.pty.create({
-          id: terminal.id,
-          cwd: workspace.folderPath,
-          type: 'claude-code',
-          shell
-        })
-      }
-      createClaudeCode()
-    }
-  }, [workspace.id, claudeCode])
-
-  // Auto-create first terminal if none exists
-  useEffect(() => {
-    if (regularTerminals.length === 0 && claudeCode) {
-      const createTerminal = async () => {
-        const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
-        const shell = await getShellFromSettings()
+        const settings = settingsStore.getSettings()
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
         window.electronAPI.pty.create({
           id: terminal.id,
           cwd: workspace.folderPath,
           type: 'terminal',
-          shell
+          agentPreset: defaultAgent as AgentPresetId,
+          shell,
+          customEnv
+        })
+      }
+      createAgent()
+    }
+  }, [workspace.id, agentTerminal, workspace.defaultAgent, workspace.folderPath, workspace.envVars])
+
+  // Auto-create first regular terminal if none exists
+  useEffect(() => {
+    if (regularTerminals.length === 0 && agentTerminal) {
+      const createTerminal = async () => {
+        const terminal = workspaceStore.addTerminal(workspace.id)
+        const shell = await getShellFromSettings()
+        const settings = settingsStore.getSettings()
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
+        window.electronAPI.pty.create({
+          id: terminal.id,
+          cwd: workspace.folderPath,
+          type: 'terminal',
+          shell,
+          customEnv
         })
       }
       createTerminal()
     }
-  }, [workspace.id, regularTerminals.length, claudeCode])
+  }, [workspace.id, regularTerminals.length, agentTerminal, workspace.folderPath, workspace.envVars])
 
   // Set default focus - only for active workspace
   useEffect(() => {
-    if (isActive && !focusedTerminalId && claudeCode) {
-      workspaceStore.setFocusedTerminal(claudeCode.id)
+    if (isActive && !focusedTerminalId && agentTerminal) {
+      workspaceStore.setFocusedTerminal(agentTerminal.id)
     }
-  }, [isActive, focusedTerminalId, claudeCode])
+  }, [isActive, focusedTerminalId, agentTerminal])
 
   const handleAddTerminal = useCallback(async () => {
-    const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
+    const terminal = workspaceStore.addTerminal(workspace.id)
     const shell = await getShellFromSettings()
+    const settings = settingsStore.getSettings()
+    const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
     window.electronAPI.pty.create({
       id: terminal.id,
       cwd: workspace.folderPath,
       type: 'terminal',
-      shell
+      shell,
+      customEnv
     })
-  }, [workspace.id, workspace.folderPath])
+  }, [workspace.id, workspace.folderPath, workspace.envVars])
 
   const handleCloseTerminal = useCallback((id: string) => {
     const terminal = terminals.find(t => t.id === id)
-    if (terminal?.type === 'claude-code') {
+    // Show confirm for agent terminals
+    if (terminal?.agentPreset && terminal.agentPreset !== 'none') {
       setShowCloseConfirm(id)
     } else {
       window.electronAPI.pty.kill(id)
@@ -117,10 +149,10 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
   }, [])
 
   // Determine what to show in thumbnail bar
-  const mainTerminal = focusedTerminal || claudeCode
-  const thumbnailTerminals = isClaudeCodeFocused
+  const mainTerminal = focusedTerminal || agentTerminal
+  const thumbnailTerminals = isAgentFocused
     ? regularTerminals
-    : (claudeCode ? [claudeCode] : [])
+    : (agentTerminal ? [agentTerminal] : [])
 
   return (
     <div className="workspace-view">
@@ -133,8 +165,11 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
           >
             <div className="main-panel">
               <div className="main-panel-header">
-                <div className={`main-panel-title ${terminal.type === 'claude-code' ? 'claude-code' : ''}`}>
-                  {terminal.type === 'claude-code' && <span>✦</span>}
+                <div className={`main-panel-title ${terminal.agentPreset && terminal.agentPreset !== 'none' ? 'agent-terminal' : ''}`}
+                  style={terminal.agentPreset ? { '--agent-color': getAgentPreset(terminal.agentPreset)?.color } as React.CSSProperties : undefined}>
+                  {terminal.agentPreset && terminal.agentPreset !== 'none' && (
+                    <span>{getAgentPreset(terminal.agentPreset)?.icon}</span>
+                  )}
                   <span>{terminal.title}</span>
                 </div>
                 <div className="main-panel-actions">
@@ -173,16 +208,18 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         terminals={thumbnailTerminals}
         focusedTerminalId={focusedTerminalId}
         onFocus={handleFocus}
-        onAddTerminal={isClaudeCodeFocused ? handleAddTerminal : undefined}
-        showAddButton={isClaudeCodeFocused}
+        onAddTerminal={isAgentFocused ? handleAddTerminal : undefined}
+        showAddButton={!!isAgentFocused}
       />
 
-      {showCloseConfirm && (
-        <CloseConfirmDialog
-          onConfirm={handleConfirmClose}
-          onCancel={() => setShowCloseConfirm(null)}
-        />
-      )}
-    </div>
+      {
+        showCloseConfirm && (
+          <CloseConfirmDialog
+            onConfirm={handleConfirmClose}
+            onCancel={() => setShowCloseConfirm(null)}
+          />
+        )
+      }
+    </div >
   )
 }

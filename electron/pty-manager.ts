@@ -3,21 +3,26 @@ import { spawn, ChildProcess } from 'child_process'
 import type { CreatePtyOptions } from '../src/types'
 
 // Try to import node-pty, fall back to child_process if not available
-let pty: typeof import('node-pty') | null = null
+// Using @lydell/node-pty fork which provides prebuilt binaries
+let pty: typeof import('@lydell/node-pty') | null = null
 let ptyAvailable = false
 try {
-  pty = require('node-pty')
+  pty = require('@lydell/node-pty')
   // Test if native module works by checking if spawn function exists and module is properly built
   if (pty && typeof pty.spawn === 'function') {
     ptyAvailable = true
+    console.log('node-pty loaded successfully (using @lydell/node-pty)')
+  } else {
+    console.warn('node-pty loaded but spawn function not available')
   }
-} catch (e) {
-  console.warn('node-pty not available, falling back to child_process:', e)
+} catch (e: any) {
+  console.warn('node-pty not available, falling back to child_process')
+  console.warn('Error details:', e.message)
 }
 
 interface PtyInstance {
   process: any // IPty or ChildProcess
-  type: 'terminal' | 'claude-code'
+  type: 'terminal'  // Unified to 'terminal'
   cwd: string
   usePty: boolean
 }
@@ -61,7 +66,7 @@ export class PtyManager {
   }
 
   create(options: CreatePtyOptions): boolean {
-    const { id, cwd, type, shell: shellOverride } = options
+    const { id, cwd, type, shell: shellOverride, customEnv = {} } = options
 
     const shell = shellOverride || this.getDefaultShell()
     let args: string[] = []
@@ -76,9 +81,10 @@ export class PtyManager {
 
     if (ptyAvailable && pty) {
       try {
-        // Set UTF-8 environment variables
+        // Set UTF-8 environment variables and merge custom env
         const envWithUtf8 = {
           ...process.env,
+          ...customEnv,  // Merge custom environment variables
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',
           PYTHONIOENCODING: 'utf-8',
@@ -128,9 +134,10 @@ export class PtyManager {
           )
         }
 
-        // Set UTF-8 environment variables
+        // Set UTF-8 environment variables and merge custom env
         const envWithUtf8 = {
           ...process.env,
+          ...customEnv,  // Merge custom environment variables
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',
           PYTHONIOENCODING: 'utf-8',

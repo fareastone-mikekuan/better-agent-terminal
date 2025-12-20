@@ -1,4 +1,4 @@
-import type { AppSettings, ShellType, FontType, ColorPresetId } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable } from '../types'
 import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 
 type Listener = () => void
@@ -13,7 +13,8 @@ const defaultSettings: AppSettings = {
   colorPreset: 'novel',
   customBackgroundColor: '#1f1d1a',
   customForegroundColor: '#dfdbc3',
-  customCursorColor: '#dfdbc3'
+  customCursorColor: '#dfdbc3',
+  globalEnvVars: []
 }
 
 class SettingsStore {
@@ -89,6 +90,36 @@ class SettingsStore {
 
   setCustomCursorColor(customCursorColor: string): void {
     this.settings = { ...this.settings, customCursorColor }
+    this.notify()
+    this.save()
+  }
+
+  setGlobalEnvVars(envVars: EnvVariable[]): void {
+    this.settings = { ...this.settings, globalEnvVars: envVars }
+    this.notify()
+    this.save()
+  }
+
+  addGlobalEnvVar(envVar: EnvVariable): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = { ...this.settings, globalEnvVars: [...current, envVar] }
+    this.notify()
+    this.save()
+  }
+
+  removeGlobalEnvVar(key: string): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = { ...this.settings, globalEnvVars: current.filter(e => e.key !== key) }
+    this.notify()
+    this.save()
+  }
+
+  updateGlobalEnvVar(key: string, updates: Partial<EnvVariable>): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = {
+      ...this.settings,
+      globalEnvVars: current.map(e => e.key === key ? { ...e, ...updates } : e)
+    }
     this.notify()
     this.save()
   }
