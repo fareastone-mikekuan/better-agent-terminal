@@ -2,8 +2,7 @@ import { BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import type { CreatePtyOptions } from '../src/types'
 
-// Try to import node-pty, fall back to child_process if not available
-// Using @lydell/node-pty fork which provides prebuilt binaries
+// Try to import @lydell/node-pty, fall back to child_process if not available
 let pty: typeof import('@lydell/node-pty') | null = null
 let ptyAvailable = false
 try {
@@ -15,9 +14,8 @@ try {
   } else {
     console.warn('node-pty loaded but spawn function not available')
   }
-} catch (e: any) {
-  console.warn('node-pty not available, falling back to child_process')
-  console.warn('Error details:', e.message)
+} catch (e) {
+  console.warn('@lydell/node-pty not available, falling back to child_process:', e)
 }
 
 interface PtyInstance {
