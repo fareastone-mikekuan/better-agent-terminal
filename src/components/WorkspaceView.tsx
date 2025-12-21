@@ -25,33 +25,38 @@ async function getShellFromSettings(): Promise<string | undefined> {
 
 export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: WorkspaceViewProps) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
+  const [aiTerminalType, setAiTerminalType] = useState<'claude-code' | 'copilot'>('claude-code')
 
-  const codeAgent = terminals.find(t => t.type === 'code-agent')
+  const aiTerminal = terminals.find(t => t.type === aiTerminalType || (aiTerminalType === 'claude-code' && t.type === 'claude-code') || (aiTerminalType === 'copilot' && t.type === 'copilot'))
   const regularTerminals = terminals.filter(t => t.type === 'terminal')
 
   const focusedTerminal = terminals.find(t => t.id === focusedTerminalId)
-  const isCodeAgentFocused = focusedTerminal?.type === 'code-agent'
+  const isAiTerminalFocused = focusedTerminal?.type === aiTerminalType || (aiTerminalType === 'claude-code' && focusedTerminal?.type === 'claude-code') || (aiTerminalType === 'copilot' && focusedTerminal?.type === 'copilot')
 
-  // Initialize Code Agent terminal when workspace loads
+  // Initialize AI terminal when workspace loads
   useEffect(() => {
-    if (!codeAgent) {
-      const createClaudeCode = async () => {
-        const terminal = workspaceStore.addTerminal(workspace.id, 'code-agent')
+    if (!aiTerminal) {
+      const createAiTerminal = async () => {
+        const isCopilotEnabled = await settingsStore.isCopilotEnabled()
+        const terminalType = isCopilotEnabled ? 'copilot' : 'claude-code'
+        setAiTerminalType(terminalType as 'claude-code' | 'copilot')
+        
+        const terminal = workspaceStore.addTerminal(workspace.id, terminalType)
         const shell = await getShellFromSettings()
         window.electronAPI.pty.create({
           id: terminal.id,
           cwd: workspace.folderPath,
-          type: 'code-agent',
+          type: terminalType,
           shell
         })
       }
-      createClaudeCode()
+      createAiTerminal()
     }
-  }, [workspace.id, codeAgent])
+  }, [workspace.id, aiTerminal])
 
   // Auto-create first terminal if none exists
   useEffect(() => {
-    if (regularTerminals.length === 0 && codeAgent) {
+    if (regularTerminals.length === 0 && aiTerminal) {
       const createTerminal = async () => {
         const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
         const shell = await getShellFromSettings()
@@ -64,14 +69,14 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
       }
       createTerminal()
     }
-  }, [workspace.id, regularTerminals.length, codeAgent])
+  }, [workspace.id, regularTerminals.length, aiTerminal])
 
   // Set default focus - only for active workspace
   useEffect(() => {
-    if (isActive && !focusedTerminalId && codeAgent) {
-      workspaceStore.setFocusedTerminal(codeAgent.id)
+    if (isActive && !focusedTerminalId && aiTerminal) {
+      workspaceStore.setFocusedTerminal(aiTerminal.id)
     }
-  }, [isActive, focusedTerminalId, codeAgent])
+  }, [isActive, focusedTerminalId, aiTerminal])
 
   const handleAddTerminal = useCallback(async () => {
     const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
@@ -86,7 +91,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
 
   const handleCloseTerminal = useCallback((id: string) => {
     const terminal = terminals.find(t => t.id === id)
-    if (terminal?.type === 'code-agent') {
+    if (terminal?.type === 'claude-code' || terminal?.type === 'copilot') {
       setShowCloseConfirm(id)
     } else {
       window.electronAPI.pty.kill(id)
@@ -117,10 +122,10 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
   }, [])
 
   // Determine what to show in thumbnail bar
-  const mainTerminal = focusedTerminal || codeAgent
-  const thumbnailTerminals = isCodeAgentFocused
+  const mainTerminal = focusedTerminal || aiTerminal
+  const thumbnailTerminals = isAiTerminalFocused
     ? regularTerminals
-    : (codeAgent ? [codeAgent] : [])
+    : (aiTerminal ? [aiTerminal] : [])
 
   return (
     <div className="workspace-view">
@@ -133,8 +138,8 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
           >
             <div className="main-panel">
               <div className="main-panel-header">
-                <div className={`main-panel-title ${terminal.type === 'code-agent' ? 'code-agent' : ''}`}>
-                  {terminal.type === 'code-agent' && <span>✦</span>}
+                <div className={`main-panel-title ${terminal.type === 'claude-code' || terminal.type === 'copilot' ? 'ai-terminal' : ''}`}>
+                  {(terminal.type === 'claude-code' || terminal.type === 'copilot') && <span>{terminal.type === 'copilot' ? '⚡' : '✦'}</span>}
                   <span>{terminal.title}</span>
                 </div>
                 <div className="main-panel-actions">
@@ -174,14 +179,15 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         terminals={thumbnailTerminals}
         focusedTerminalId={focusedTerminalId}
         onFocus={handleFocus}
-        onAddTerminal={isCodeAgentFocused ? handleAddTerminal : undefined}
-        showAddButton={isCodeAgentFocused}
+        onAddTerminal={isAiTerminalFocused ? handleAddTerminal : undefined}
+        showAddButton={isAiTerminalFocused}
       />
 
       {showCloseConfirm && (
         <CloseConfirmDialog
           onConfirm={handleConfirmClose}
           onCancel={() => setShowCloseConfirm(null)}
+          terminalType={terminals.find(t => t.id === showCloseConfirm)?.type as 'claude-code' | 'copilot' | undefined}
         />
       )}
     </div>

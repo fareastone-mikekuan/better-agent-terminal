@@ -20,6 +20,13 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('pty:exit', handler)
     }
   },
+  copilot: {
+    setConfig: (config: any) => ipcRenderer.invoke('copilot:set-config', config),
+    getConfig: () => ipcRenderer.invoke('copilot:get-config'),
+    isEnabled: () => ipcRenderer.invoke('copilot:is-enabled'),
+    chat: (chatId: string, options: any) => ipcRenderer.invoke('copilot:chat', chatId, options),
+    cancelChat: (chatId: string) => ipcRenderer.invoke('copilot:cancel-chat', chatId)
+  },
   workspace: {
     save: (data: string) => ipcRenderer.invoke('workspace:save', data),
     load: () => ipcRenderer.invoke('workspace:load')

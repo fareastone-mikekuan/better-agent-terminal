@@ -97,63 +97,8 @@ class WorkspaceStore {
     this.save()
   }
 
-  // Archive actions
-  archiveWorkspace(id: string): void {
-    this.state = {
-      ...this.state,
-      workspaces: this.state.workspaces.map(w =>
-        w.id === id ? { ...w, archived: true } : w
-      ),
-      // If archiving the active workspace, switch to first non-archived one
-      activeWorkspaceId: this.state.activeWorkspaceId === id
-        ? (this.state.workspaces.find(w => w.id !== id && !w.archived)?.id ?? null)
-        : this.state.activeWorkspaceId
-    }
-
-    this.notify()
-    this.save()
-  }
-
-  unarchiveWorkspace(id: string): void {
-    this.state = {
-      ...this.state,
-      workspaces: this.state.workspaces.map(w =>
-        w.id === id ? { ...w, archived: false } : w
-      )
-    }
-
-    this.notify()
-    this.save()
-  }
-
-  getActiveWorkspaces(): Workspace[] {
-    return this.state.workspaces
-      .filter(w => !w.archived)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }
-
-  getArchivedWorkspaces(): Workspace[] {
-    return this.state.workspaces
-      .filter(w => w.archived)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  }
-
-  // Reorder workspaces by providing ordered array of IDs
-  reorderWorkspaces(workspaceIds: string[]): void {
-    this.state = {
-      ...this.state,
-      workspaces: this.state.workspaces.map(w => {
-        const index = workspaceIds.indexOf(w.id)
-        return index >= 0 ? { ...w, order: index } : w
-      })
-    }
-
-    this.notify()
-    this.save()
-  }
-
   // Terminal actions
-  addTerminal(workspaceId: string, type: 'terminal' | 'code-agent'): TerminalInstance {
+  addTerminal(workspaceId: string, type: 'terminal' | 'claude-code'): TerminalInstance {
     const workspace = this.state.workspaces.find(w => w.id === workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -165,14 +110,14 @@ class WorkspaceStore {
       id: uuidv4(),
       workspaceId,
       type,
-      title: type === 'code-agent' ? 'Code Agent' : `Terminal ${existingTerminals.length + 1}`,
+      title: type === 'claude-code' ? 'Code Agent' : `Terminal ${existingTerminals.length + 1}`,
       cwd: workspace.folderPath,
       scrollbackBuffer: [],
       lastActivityTime: Date.now()
     }
 
-    // Only auto-focus Code Agent, keep current focus for regular terminals
-    const shouldFocus = type === 'code-agent' || !this.state.focusedTerminalId
+    // Only auto-focus Claude Code, keep current focus for regular terminals
+    const shouldFocus = type === 'claude-code' || !this.state.focusedTerminalId
 
     this.state = {
       ...this.state,
@@ -241,34 +186,14 @@ class WorkspaceStore {
     this.notify()
   }
 
-  // Mark agent command as sent for a terminal
-  markAgentCommandSent(id: string): void {
-    this.state = {
-      ...this.state,
-      terminals: this.state.terminals.map(t =>
-        t.id === id ? { ...t, agentCommandSent: true } : t
-      )
-    }
-  }
-
-  // Mark terminal as having user input
-  markHasUserInput(id: string): void {
-    this.state = {
-      ...this.state,
-      terminals: this.state.terminals.map(t =>
-        t.id === id ? { ...t, hasUserInput: true } : t
-      )
-    }
-  }
-
   // Get terminals for current workspace
   getWorkspaceTerminals(workspaceId: string): TerminalInstance[] {
     return this.state.terminals.filter(t => t.workspaceId === workspaceId)
   }
 
-  getCodeAgentTerminal(workspaceId: string): TerminalInstance | undefined {
+  getClaudeCodeTerminal(workspaceId: string): TerminalInstance | undefined {
     return this.state.terminals.find(
-      t => t.workspaceId === workspaceId && t.type === 'code-agent'
+      t => t.workspaceId === workspaceId && t.type === 'claude-code'
     )
   }
 

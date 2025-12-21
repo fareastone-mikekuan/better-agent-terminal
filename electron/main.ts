@@ -1,10 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
 import { PtyManager } from './pty-manager'
+import { CopilotManager } from './copilot-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
 
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
+let copilotManager: CopilotManager | null = null
 let updateCheckResult: UpdateCheckResult | null = null
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
@@ -67,7 +69,7 @@ function buildMenu() {
               type: 'info',
               title: 'About Better Agent Terminal',
               message: 'Better Agent Terminal',
-              detail: `Version: ${app.getVersion()}\n\nA terminal aggregator with multi-workspace support and Claude Code integration.\n\nAuthor: TonyQ`
+          detail: `Version: ${app.getVersion()}\n\nA cross-platform terminal aggregator with multi-workspace support, GitHub Copilot integration, and Claude Code support.\n\nAuthor: TonyQ`
             })
           }
         }
@@ -117,6 +119,7 @@ function createWindow() {
   })
 
   ptyManager = new PtyManager(mainWindow)
+  copilotManager = new CopilotManager(mainWindow)
 
   if (VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(VITE_DEV_SERVER_URL)
@@ -293,4 +296,36 @@ ipcMain.handle('update:check', async () => {
 
 ipcMain.handle('update:get-version', () => {
   return app.getVersion()
+})
+
+// GitHub Copilot Integration handlers
+ipcMain.handle('copilot:set-config', async (_event, config: any) => {
+  copilotManager?.setConfig(config)
+  return true
+})
+
+ipcMain.handle('copilot:get-config', async () => {
+  return copilotManager?.getConfig()
+})
+
+ipcMain.handle('copilot:is-enabled', async () => {
+  return copilotManager?.isEnabled() ?? false
+})
+
+ipcMain.handle('copilot:chat', async (_event, chatId: string, options: any) => {
+  try {
+    return await copilotManager?.chat(chatId, options)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return {
+      error: errorMessage,
+      content: '',
+      finishReason: 'error' as const
+    }
+  }
+})
+
+ipcMain.handle('copilot:cancel-chat', async (_event, chatId: string) => {
+  copilotManager?.cancelChat(chatId)
+  return true
 })

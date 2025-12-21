@@ -8,13 +8,13 @@ interface MainPanelProps {
 }
 
 export function MainPanel({ terminal, onClose, onRestart }: MainPanelProps) {
-  const isCodeAgent = terminal.type === 'code-agent'
+  const isClaudeCode = terminal.type === 'claude-code'
 
   return (
     <div className="main-panel">
       <div className="main-panel-header">
-        <div className={`main-panel-title ${isCodeAgent ? 'code-agent' : ''}`}>
-          {isCodeAgent && <span>✦</span>}
+        <div className={`main-panel-title ${isClaudeCode ? 'claude-code' : ''}`}>
+          {isClaudeCode && <span>✦</span>}
           <span>{terminal.title}</span>
         </div>
         <div className="main-panel-actions">

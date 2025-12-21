@@ -9,7 +9,7 @@
 ![Electron](https://img.shields.io/badge/electron-28.3.3-47848F.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**A cross-platform terminal aggregator with multi-workspace support and Claude Code integration**
+**A cross-platform terminal aggregator with multi-workspace support, GitHub Copilot integration, and Claude Code support**
 
 [Download Latest Release](https://github.com/tony1223/better-agent-terminal/releases/latest)
 
@@ -29,6 +29,7 @@
 
 - 🖥️ **Multi-Workspace Support** - Organize terminals by project folders
 - 🎯 **Google Meet-Style UI** - 70% main panel + 30% thumbnail bar
+- ⚡ **GitHub Copilot Integration** - Chat with GitHub Copilot directly in the app
 - ✦ **Claude Code Integration** - Dedicated terminal for AI pair programming
 - 💾 **Persistent Sessions** - Terminals keep running when switching views
 - 📋 **Easy Copy/Paste** - Ctrl+Shift+C/V or right-click
@@ -100,6 +101,28 @@ npm start
 # Build for production
 npm run build
 ```
+
+---
+
+## 🤖 GitHub Copilot Integration
+
+Better Agent Terminal includes **built-in GitHub Copilot Chat support**!
+
+### Quick Start
+
+1. [Get a GitHub Personal Access Token](https://github.com/settings/tokens) with `copilot` scope
+2. Open Settings (⚙️) → GitHub Copilot Configuration
+3. Paste your token and enable Copilot
+4. Chat with Copilot directly in the app!
+
+**For detailed setup instructions, see [COPILOT_INTEGRATION.md](COPILOT_INTEGRATION.md)**
+
+### Features
+
+- 💬 **Chat with Copilot** - Direct conversation in the terminal UI
+- 🔄 **Context Aware** - Maintains conversation history
+- 🎯 **Multi-Workspace** - Run Copilot in multiple workspaces
+- ⚡ **Quick Responses** - Real-time feedback from GitHub's API
 
 ---
 

@@ -5,8 +5,6 @@ export interface Workspace {
   role?: string;
   folderPath: string;
   createdAt: number;
-  archived?: boolean;  // Whether the workspace is archived (hidden)
-  order?: number;      // Custom sort order
 }
 
 // Preset roles for quick selection
@@ -23,16 +21,13 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'code-agent';
+  type: 'terminal' | 'copilot' | 'claude-code';
   title: string;
   alias?: string;
   pid?: number;
   cwd: string;
   scrollbackBuffer: string[];
   lastActivityTime?: number;
-  // Agent auto-command tracking
-  agentCommandSent?: boolean;
-  hasUserInput?: boolean;
 }
 
 export interface AppState {
@@ -46,7 +41,7 @@ export interface AppState {
 export interface CreatePtyOptions {
   id: string;
   cwd: string;
-  type: 'terminal' | 'code-agent';
+  type: 'terminal' | 'copilot' | 'claude-code';
   shell?: string;
 }
 
@@ -61,15 +56,6 @@ export interface PtyExit {
 }
 
 export type ShellType = 'auto' | 'pwsh' | 'powershell' | 'cmd' | 'custom';
-
-export type AgentCommandType = 'claude' | 'codex' | 'gemini' | 'custom';
-
-export const AGENT_COMMAND_OPTIONS: { id: AgentCommandType; name: string; command: string }[] = [
-  { id: 'claude', name: 'Claude Code', command: 'claude' },
-  { id: 'codex', name: 'Codex CLI', command: 'codex' },
-  { id: 'gemini', name: 'Gemini CLI', command: 'gemini' },
-  { id: 'custom', name: 'Custom', command: '' },
-];
 
 export type FontType = 'system' | 'sf-mono' | 'menlo' | 'consolas' | 'monaco' | 'fira-code' | 'jetbrains-mono' | 'custom';
 
@@ -150,8 +136,32 @@ export interface AppSettings {
   customBackgroundColor: string;
   customForegroundColor: string;
   customCursorColor: string;
-  // Agent auto-command settings
-  agentAutoCommand: boolean;
-  agentCommandType: AgentCommandType;
-  agentCustomCommand: string;
 }
+
+// GitHub Copilot Integration
+export interface CopilotConfig {
+  enabled: boolean;
+  apiKey: string; // GitHub PAT with 'copilot' scope
+  organizationSlug?: string; // For organization-based Copilot access
+}
+
+export interface CopilotMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface CopilotChatOptions {
+  messages: CopilotMessage[];
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface CopilotChatResponse {
+  content: string;
+  finishReason: 'stop' | 'length' | 'error';
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+  };
+}
+

@@ -41,7 +41,7 @@ const setupGlobalListener = () => {
   window.electronAPI.pty.onOutput((id, data) => {
     const prev = previewCache.get(id) || ''
     const combined = prev + data
-    // Keep last 8 lines, clean ANSI escape sequences for readability
+    // Keep last 8 lines, clean all ANSI escape sequences for readability
     const cleaned = stripAnsi(combined)
     const lines = cleaned.split('\n').slice(-8)
     previewCache.set(id, lines.join('\n'))
@@ -57,7 +57,8 @@ interface TerminalThumbnailProps {
 export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumbnailProps) {
   const [preview, setPreview] = useState<string>(previewCache.get(terminal.id) || '')
   const [fontFamily, setFontFamily] = useState<string>(settingsStore.getFontFamilyString())
-  const isCodeAgent = terminal.type === 'code-agent'
+  const isAiTerminal = terminal.type === 'claude-code' || terminal.type === 'copilot'
+  const isCopilot = terminal.type === 'copilot'
 
   useEffect(() => {
     setupGlobalListener()
@@ -81,12 +82,12 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
 
   return (
     <div
-      className={`thumbnail ${isActive ? 'active' : ''} ${isCodeAgent ? 'code-agent' : ''}`}
+      className={`thumbnail ${isActive ? 'active' : ''} ${isAiTerminal ? 'ai-terminal' : ''}`}
       onClick={onClick}
     >
       <div className="thumbnail-header">
-        <div className={`thumbnail-title ${isCodeAgent ? 'code-agent' : ''}`}>
-          {isCodeAgent && <span>✦</span>}
+        <div className={`thumbnail-title ${isAiTerminal ? 'ai-terminal' : ''}`}>
+          {isAiTerminal && <span>{isCopilot ? '⚡' : '✦'}</span>}
           <span>{terminal.title}</span>
         </div>
         <ActivityIndicator terminalId={terminal.id} size="small" />

@@ -2,22 +2,22 @@ import { BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import type { CreatePtyOptions } from '../src/types'
 
-// Try to import @lydell/node-pty, fall back to child_process if not available
-let pty: typeof import('@lydell/node-pty') | null = null
+// Try to import node-pty, fall back to child_process if not available
+let pty: typeof import('node-pty') | null = null
 let ptyAvailable = false
 try {
-  pty = require('@lydell/node-pty')
+  pty = require('node-pty')
   // Test if native module works by checking if spawn function exists and module is properly built
   if (pty && typeof pty.spawn === 'function') {
     ptyAvailable = true
   }
 } catch (e) {
-  console.warn('@lydell/node-pty not available, falling back to child_process:', e)
+  console.warn('node-pty not available, falling back to child_process:', e)
 }
 
 interface PtyInstance {
   process: any // IPty or ChildProcess
-  type: 'terminal' | 'code-agent'
+  type: 'terminal' | 'claude-code' | 'copilot'
   cwd: string
   usePty: boolean
 }
@@ -76,23 +76,13 @@ export class PtyManager {
 
     if (ptyAvailable && pty) {
       try {
-        // Set UTF-8 and terminal environment variables
+        // Set UTF-8 environment variables
         const envWithUtf8 = {
           ...process.env,
-          // UTF-8 encoding
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',
           PYTHONIOENCODING: 'utf-8',
-          PYTHONUTF8: '1',
-          // Terminal capabilities - let apps know we are a real PTY
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor',
-          TERM_PROGRAM: 'better-terminal',
-          TERM_PROGRAM_VERSION: '1.0',
-          // Force color output
-          FORCE_COLOR: '3',
-          // Ensure not detected as CI environment
-          CI: ''
+          PYTHONUTF8: '1'
         }
 
         const ptyProcess = pty.spawn(shell, args, {
@@ -138,21 +128,13 @@ export class PtyManager {
           )
         }
 
-        // Set UTF-8 and terminal environment variables (child_process fallback)
+        // Set UTF-8 environment variables
         const envWithUtf8 = {
           ...process.env,
-          // UTF-8 encoding
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',
           PYTHONIOENCODING: 'utf-8',
-          PYTHONUTF8: '1',
-          // Terminal capabilities (limited in child_process mode)
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor',
-          TERM_PROGRAM: 'better-terminal',
-          TERM_PROGRAM_VERSION: '1.0',
-          FORCE_COLOR: '3',
-          CI: ''
+          PYTHONUTF8: '1'
         }
 
         const childProcess = spawn(shell, shellArgs, {

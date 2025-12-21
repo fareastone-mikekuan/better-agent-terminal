@@ -1,5 +1,5 @@
-import type { AppSettings, ShellType, FontType, ColorPresetId, AgentCommandType } from '../types'
-import { FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, CopilotConfig } from '../types'
+import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 
 type Listener = () => void
 
@@ -13,14 +13,12 @@ const defaultSettings: AppSettings = {
   colorPreset: 'novel',
   customBackgroundColor: '#1f1d1a',
   customForegroundColor: '#dfdbc3',
-  customCursorColor: '#dfdbc3',
-  agentAutoCommand: false,
-  agentCommandType: 'claude',
-  agentCustomCommand: ''
+  customCursorColor: '#dfdbc3'
 }
 
 class SettingsStore {
   private settings: AppSettings = { ...defaultSettings }
+  private copilotConfig: CopilotConfig | null = null
   private listeners: Set<Listener> = new Set()
 
   getSettings(): AppSettings {
@@ -96,34 +94,6 @@ class SettingsStore {
     this.save()
   }
 
-  setAgentAutoCommand(agentAutoCommand: boolean): void {
-    this.settings = { ...this.settings, agentAutoCommand }
-    this.notify()
-    this.save()
-  }
-
-  setAgentCommandType(agentCommandType: AgentCommandType): void {
-    this.settings = { ...this.settings, agentCommandType }
-    this.notify()
-    this.save()
-  }
-
-  setAgentCustomCommand(agentCustomCommand: string): void {
-    this.settings = { ...this.settings, agentCustomCommand }
-    this.notify()
-    this.save()
-  }
-
-  // Get the agent command to execute
-  getAgentCommand(): string | null {
-    if (!this.settings.agentAutoCommand) return null
-    if (this.settings.agentCommandType === 'custom') {
-      return this.settings.agentCustomCommand || null
-    }
-    const option = AGENT_COMMAND_OPTIONS.find(o => o.id === this.settings.agentCommandType)
-    return option?.command || null
-  }
-
   // Get terminal colors based on preset or custom settings
   getTerminalColors(): { background: string; foreground: string; cursor: string } {
     if (this.settings.colorPreset === 'custom') {
@@ -162,6 +132,27 @@ class SettingsStore {
         console.error('Failed to parse settings:', e)
       }
     }
+
+    // Load Copilot config from main process
+    try {
+      this.copilotConfig = await window.electronAPI.copilot.getConfig()
+    } catch (e) {
+      console.warn('Failed to load Copilot config:', e)
+    }
+  }
+
+  // GitHub Copilot methods
+  async setCopilotConfig(config: CopilotConfig): Promise<void> {
+    this.copilotConfig = config
+    await window.electronAPI.copilot.setConfig(config)
+  }
+
+  getCopilotConfig(): CopilotConfig | null {
+    return this.copilotConfig
+  }
+
+  async isCopilotEnabled(): Promise<boolean> {
+    return await window.electronAPI.copilot.isEnabled()
   }
 }
 
