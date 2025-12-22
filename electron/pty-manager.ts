@@ -20,6 +20,8 @@ interface PtyInstance {
   type: 'terminal' | 'claude-code' | 'copilot'
   cwd: string
   usePty: boolean
+  outputBuffer: string
+  isCapturing: boolean
 }
 
 export class PtyManager {
@@ -28,6 +30,32 @@ export class PtyManager {
 
   constructor(window: BrowserWindow) {
     this.window = window
+  }
+
+  startCapture(id: string): void {
+    const instance = this.instances.get(id)
+    if (instance) {
+      instance.isCapturing = true
+      instance.outputBuffer = '' // Clear previous buffer
+      console.log('[PtyManager] Started capture for terminal:', id)
+    }
+  }
+
+  stopCapture(id: string): string {
+    const instance = this.instances.get(id)
+    if (instance) {
+      instance.isCapturing = false
+      const output = instance.outputBuffer
+      instance.outputBuffer = ''
+      console.log('[PtyManager] Stopped capture for terminal:', id, 'Output length:', output.length)
+      return output
+    }
+    return ''
+  }
+
+  getCapture(id: string): string {
+    const instance = this.instances.get(id)
+    return instance?.outputBuffer || ''
   }
 
   private getDefaultShell(): string {
@@ -94,6 +122,11 @@ export class PtyManager {
         })
 
         ptyProcess.onData((data: string) => {
+          const instance = this.instances.get(id)
+          if (instance?.isCapturing) {
+            instance.outputBuffer += data
+            console.log('[PtyManager] Captured data (length:', data.length, ')')
+          }
           if (!this.window.isDestroyed()) {
             this.window.webContents.send('pty:output', id, data)
           }
@@ -106,7 +139,7 @@ export class PtyManager {
           this.instances.delete(id)
         })
 
-        this.instances.set(id, { process: ptyProcess, type, cwd, usePty: true })
+        this.instances.set(id, { process: ptyProcess, type, cwd, usePty: true, outputBuffer: '', isCapturing: false })
         usedPty = true
         console.log('Created terminal using node-pty')
       } catch (e) {
@@ -145,14 +178,24 @@ export class PtyManager {
         })
 
         childProcess.stdout?.on('data', (data: Buffer) => {
+          const instance = this.instances.get(id)
+          const output = data.toString()
+          if (instance?.isCapturing) {
+            instance.outputBuffer += output
+          }
           if (!this.window.isDestroyed()) {
-            this.window.webContents.send('pty:output', id, data.toString())
+            this.window.webContents.send('pty:output', id, output)
           }
         })
 
         childProcess.stderr?.on('data', (data: Buffer) => {
+          const instance = this.instances.get(id)
+          const output = data.toString()
+          if (instance?.isCapturing) {
+            instance.outputBuffer += output
+          }
           if (!this.window.isDestroyed()) {
-            this.window.webContents.send('pty:output', id, data.toString())
+            this.window.webContents.send('pty:output', id, output)
           }
         })
 
@@ -175,7 +218,7 @@ export class PtyManager {
           this.window.webContents.send('pty:output', id, `[Terminal - child_process mode]\r\n`)
         }
 
-        this.instances.set(id, { process: childProcess, type, cwd, usePty: false })
+        this.instances.set(id, { process: childProcess, type, cwd, usePty: false, outputBuffer: '', isCapturing: false })
         console.log('Created terminal using child_process fallback')
       } catch (error) {
         console.error('Failed to create terminal:', error)

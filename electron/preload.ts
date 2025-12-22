@@ -9,6 +9,9 @@ const electronAPI = {
     kill: (id: string) => ipcRenderer.invoke('pty:kill', id),
     restart: (id: string, cwd: string, shell?: string) => ipcRenderer.invoke('pty:restart', id, cwd, shell),
     getCwd: (id: string) => ipcRenderer.invoke('pty:get-cwd', id),
+    startCapture: (id: string) => ipcRenderer.invoke('pty:start-capture', id),
+    stopCapture: (id: string) => ipcRenderer.invoke('pty:stop-capture', id) as Promise<string>,
+    getCapture: (id: string) => ipcRenderer.invoke('pty:get-capture', id) as Promise<string>,
     onOutput: (callback: (id: string, data: string) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, id: string, data: string) => callback(id, data)
       ipcRenderer.on('pty:output', handler)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { settingsStore } from '../stores/settings-store'
-import type { CopilotChatOptions, CopilotMessage } from '../types'
+import { workspaceStore } from '../stores/workspace-store'
+import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 
 interface CopilotPanelProps {
   terminalId: string
@@ -13,6 +14,8 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [targetTerminalId, setTargetTerminalId] = useState<string>(terminalId)
+  const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -28,30 +31,134 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     return commands
   }
 
-  // Execute command in terminal
+  // Execute command in terminal and capture output
   const executeCommand = async (command: string) => {
     try {
-      // Write command to terminal
-      await window.electronAPI.pty.write(terminalId, command + '\r')
+      const targetTerminal = availableTerminals.find(t => t.id === targetTerminalId)
+      const terminalName = targetTerminal?.title || 'Unknown'
       
-      // Add execution notice to chat
+      // Build execution message (but don't add yet)
       const executionMessage: CopilotMessage = {
         role: 'user',
-        content: `[Agent 已執行命令] ${command}`
+        content: `[Agent 已執行命令到 "${terminalName}"] ${command}`
       }
-      setMessages(prev => [...prev, executionMessage])
       
-      // Prompt to analyze results
-      const promptMessage: CopilotMessage = {
-        role: 'assistant',
-        content: `✅ 命令已發送到終端。\n\n如果執行後有錯誤或需要分析結果，請：\n1. 複製終端輸出\n2. 貼上並告訴我遇到什麼問題`
+      // Start capturing output BEFORE writing command
+      await window.electronAPI.pty.startCapture(targetTerminalId)
+      
+      // Small delay to ensure capture is ready
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Write command to target terminal
+      await window.electronAPI.pty.write(targetTerminalId, command + '\r')
+      
+      // Wait for command to execute (longer timeout for grep/find commands)
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      
+      // Stop capturing and get output
+      const output = await window.electronAPI.pty.stopCapture(targetTerminalId)
+      
+      console.log('[CopilotPanel] Raw output length:', output.length)
+      console.log('[CopilotPanel] Raw output:', output)
+      
+      // Clean ANSI codes for better readability
+      const cleanOutput = output
+        .replace(/\x1b\[[0-9;]*m/g, '') // Remove color codes
+        .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Remove cursor control
+        .replace(/\x1b\][^\x07]*\x07/g, '') // Remove OSC sequences
+        .replace(/\r\n/g, '\n') // Normalize line endings
+        .replace(/\r/g, '\n') // Convert remaining \r to \n
+        .split('\n')
+        .filter(line => !line.includes(command)) // Remove echo of command itself
+        .join('\n')
+        .trim()
+      
+      console.log('[CopilotPanel] Clean output length:', cleanOutput.length)
+      console.log('[CopilotPanel] Clean output:', cleanOutput)
+      
+      if (cleanOutput && cleanOutput.length > 0) {
+        // Add output to chat automatically
+        const outputMessage: CopilotMessage = {
+          role: 'user',
+          content: `[終端輸出 - ${cleanOutput.split('\n').length} 行]\n\`\`\`\n${cleanOutput}\n\`\`\``
+        }
+        
+        // Build the messages array with the new output
+        const updatedMessages = [...messages, executionMessage, outputMessage]
+        setMessages(updatedMessages)
+        
+        // Auto-trigger analysis with updated messages
+        setTimeout(() => {
+          analyzeOutput(updatedMessages)
+        }, 500)
+      } else {
+        // No output captured
+        const noOutputMessage: CopilotMessage = {
+          role: 'assistant',
+          content: `✅ 命令已發送到終端 "${terminalName}"。\n\n如果有輸出但未捕獲，或需要更多時間執行，請手動複製輸出給我分析。`
+        }
+        setMessages(prev => [...prev, noOutputMessage])
       }
-      setMessages(prev => [...prev, promptMessage])
       
     } catch (error) {
       setError(`執行命令失敗: ${error}`)
     }
   }
+
+  // Analyze captured output - accepts messages array directly to avoid closure issues
+  const analyzeOutput = async (messagesWithOutput: CopilotMessage[]) => {
+    if (isLoading || !isEnabled) return
+
+    // Add analyzing message
+    const analyzingMessage: CopilotMessage = {
+      role: 'assistant',
+      content: '✅ 命令已執行，輸出已捕獲。正在分析結果...'
+    }
+    setMessages(prev => [...prev, analyzingMessage])
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const systemPrompt: CopilotMessage = {
+        role: 'system',
+        content: 'You are an AI coding assistant analyzing command output. The user has executed a command and captured its output. Provide concise insights, identify issues, and suggest next steps. Answer in Traditional Chinese.'
+      }
+      
+      const analysisPrompt: CopilotMessage = {
+        role: 'user',
+        content: '請分析上面的命令輸出結果。這個輸出告訴我們什麼？有沒有問題或需要注意的地方？'
+      }
+      
+      const options: CopilotChatOptions = {
+        messages: [systemPrompt, ...messagesWithOutput, analysisPrompt]
+      }
+
+      console.log('[CopilotPanel] Sending to Copilot, message count:', options.messages.length)
+
+      const response = await window.electronAPI.copilot.chat(terminalId, options)
+
+      if (response.error) {
+        setError(response.error)
+      } else {
+        const assistantMessage: CopilotMessage = {
+          role: 'assistant',
+          content: response.content
+        }
+        setMessages(prev => [...prev, assistantMessage])
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      setError(errorMessage)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Analyze captured output (callback version for manual trigger)
+  const handleAnalyzeOutput = useCallback(async () => {
+    analyzeOutput(messages)
+  }, [messages, isLoading, isEnabled])
 
   // Check if Copilot is enabled
   useEffect(() => {
@@ -66,6 +173,30 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     }
     checkCopilot()
   }, [])
+
+  // Get available terminals and subscribe to changes
+  useEffect(() => {
+    const updateTerminals = () => {
+      const state = workspaceStore.getState()
+      // Get current workspace's terminals (exclude copilot terminal itself)
+      const currentTerminal = state.terminals.find(t => t.id === terminalId)
+      if (currentTerminal) {
+        const workspaceTerminals = state.terminals.filter(
+          t => t.workspaceId === currentTerminal.workspaceId && t.type === 'terminal'
+        )
+        setAvailableTerminals(workspaceTerminals)
+        
+        // If target terminal is not in the list, reset to first available
+        if (workspaceTerminals.length > 0 && !workspaceTerminals.find(t => t.id === targetTerminalId)) {
+          setTargetTerminalId(workspaceTerminals[0].id)
+        }
+      }
+    }
+    
+    updateTerminals()
+    const unsubscribe = workspaceStore.subscribe(updateTerminals)
+    return unsubscribe
+  }, [terminalId, targetTerminalId])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -139,6 +270,28 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     <div className="copilot-panel" ref={containerRef}>
       <div className="copilot-header">
         <h3>⚡ GitHub Copilot Chat</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+          <span style={{ opacity: 0.7 }}>目標終端:</span>
+          <select
+            value={targetTerminalId}
+            onChange={(e) => setTargetTerminalId(e.target.value)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '4px',
+              border: '1px solid #444',
+              backgroundColor: '#2a2a2a',
+              color: '#e0e0e0',
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            {availableTerminals.map(terminal => (
+              <option key={terminal.id} value={terminal.id}>
+                {terminal.title}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="copilot-messages">

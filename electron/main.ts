@@ -190,6 +190,18 @@ ipcMain.handle('pty:get-cwd', async (_event, id: string) => {
   return ptyManager?.getCwd(id)
 })
 
+ipcMain.handle('pty:start-capture', async (_event, id: string) => {
+  ptyManager?.startCapture(id)
+})
+
+ipcMain.handle('pty:stop-capture', async (_event, id: string) => {
+  return ptyManager?.stopCapture(id) || ''
+})
+
+ipcMain.handle('pty:get-capture', async (_event, id: string) => {
+  return ptyManager?.getCapture(id) || ''
+})
+
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory']
