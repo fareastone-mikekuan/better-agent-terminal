@@ -16,6 +16,43 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Extract bash commands from message content
+  const extractCommands = (content: string): string[] => {
+    const codeBlockRegex = /```(?:bash|sh|shell)?\n([\s\S]*?)```/g
+    const commands: string[] = []
+    let match
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      const cmd = match[1].trim()
+      if (cmd) commands.push(cmd)
+    }
+    return commands
+  }
+
+  // Execute command in terminal
+  const executeCommand = async (command: string) => {
+    try {
+      // Write command to terminal
+      await window.electronAPI.pty.write(terminalId, command + '\r')
+      
+      // Add execution notice to chat
+      const executionMessage: CopilotMessage = {
+        role: 'user',
+        content: `[Agent 已執行命令] ${command}`
+      }
+      setMessages(prev => [...prev, executionMessage])
+      
+      // Prompt to analyze results
+      const promptMessage: CopilotMessage = {
+        role: 'assistant',
+        content: `✅ 命令已發送到終端。\n\n如果執行後有錯誤或需要分析結果，請：\n1. 複製終端輸出\n2. 貼上並告訴我遇到什麼問題`
+      }
+      setMessages(prev => [...prev, promptMessage])
+      
+    } catch (error) {
+      setError(`執行命令失敗: ${error}`)
+    }
+  }
+
   // Check if Copilot is enabled
   useEffect(() => {
     const checkCopilot = async () => {
@@ -50,8 +87,14 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     setError(null)
 
     try {
+      // Add system prompt for agent capabilities
+      const systemPrompt: CopilotMessage = {
+        role: 'assistant',
+        content: 'You are an AI coding assistant with command execution capabilities. When users ask for help:\n\n1. Analyze their problem\n2. Suggest shell commands in ```bash blocks\n3. Users can click the execute button to run commands\n4. Users will paste terminal output for you to analyze\n5. Continue helping based on the results\n\nBe concise and helpful. Explain commands clearly and warn about risks. Remember: you CANNOT see terminal output directly - users must paste it to you.'
+      }
+      
       const options: CopilotChatOptions = {
-        messages: [...messages, userMessage]
+        messages: [systemPrompt, ...messages, userMessage]
       }
 
       const response = await window.electronAPI.copilot.chat(terminalId, options)
@@ -101,23 +144,69 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       <div className="copilot-messages">
         {messages.length === 0 && (
           <div className="copilot-message info">
-            <p>👋 Hello! I'm GitHub Copilot. Ask me anything about coding, debugging, or development.</p>
+            <p>👋 你好！我是 GitHub Copilot Agent。</p>
+            <p>💡 使用方式：</p>
+            <ol style={{ marginLeft: '20px', marginTop: '8px' }}>
+              <li>🗣️ 告訴我你的問題或需求</li>
+              <li>⚡ 我會建議解決方案和命令</li>
+              <li>🖱️ 點擊綠色按鈕執行命令</li>
+              <li>📋 複製終端輸出貼給我分析</li>
+              <li>🔄 根據結果繼續改進</li>
+            </ol>
+            <p style={{ marginTop: '12px', fontSize: '13px', opacity: 0.7 }}>
+              ⚠️ 注意：我看不到終端輸出，需要你複製貼上給我
+            </p>
           </div>
         )}
 
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`copilot-message ${msg.role}`}
-          >
-            <div className="message-role">
-              {msg.role === 'user' ? '👤 You' : '⚡ Copilot'}
+        {messages.map((msg, idx) => {
+          const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
+          
+          return (
+            <div
+              key={idx}
+              className={`copilot-message ${msg.role}`}
+            >
+              <div className="message-role">
+                {msg.role === 'user' ? '👤 You' : '⚡ Copilot'}
+              </div>
+              <div className="message-content">
+                <pre style={{ 
+                  whiteSpace: 'pre-wrap', 
+                  wordWrap: 'break-word',
+                  fontFamily: 'inherit',
+                  margin: 0
+                }}>
+                  {msg.content}
+                </pre>
+                {commands.length > 0 && (
+                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {commands.map((cmd, cmdIdx) => (
+                      <button
+                        key={cmdIdx}
+                        onClick={() => executeCommand(cmd)}
+                        style={{
+                          padding: '8px 12px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontFamily: 'monospace',
+                          textAlign: 'left'
+                        }}
+                        title="點擊執行此命令"
+                      >
+                        ▶ {cmd.length > 60 ? cmd.substring(0, 60) + '...' : cmd}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="message-content">
-              {msg.content}
-            </div>
-          </div>
-        ))}
+          )
+        })}
 
         {isLoading && (
           <div className="copilot-message assistant loading">

@@ -25,7 +25,10 @@ const electronAPI = {
     getConfig: () => ipcRenderer.invoke('copilot:get-config'),
     isEnabled: () => ipcRenderer.invoke('copilot:is-enabled'),
     chat: (chatId: string, options: any) => ipcRenderer.invoke('copilot:chat', chatId, options),
-    cancelChat: (chatId: string) => ipcRenderer.invoke('copilot:cancel-chat', chatId)
+    cancelChat: (chatId: string) => ipcRenderer.invoke('copilot:cancel-chat', chatId),
+    openVSCodeTokenHelper: () => ipcRenderer.invoke('copilot:open-vscode-token-helper'),
+    startDeviceFlow: () => ipcRenderer.invoke('copilot:start-device-flow'),
+    completeDeviceFlow: (deviceCode: string) => ipcRenderer.invoke('copilot:complete-device-flow', deviceCode)
   },
   workspace: {
     save: (data: string) => ipcRenderer.invoke('workspace:save', data),

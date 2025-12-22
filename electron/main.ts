@@ -329,3 +329,30 @@ ipcMain.handle('copilot:cancel-chat', async (_event, chatId: string) => {
   copilotManager?.cancelChat(chatId)
   return true
 })
+
+ipcMain.handle('copilot:open-vscode-token-helper', async () => {
+  try {
+    return await copilotManager?.openVSCodeTokenHelper()
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(errorMessage)
+  }
+})
+
+ipcMain.handle('copilot:start-device-flow', async () => {
+  try {
+    return await copilotManager?.startDeviceFlow()
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(errorMessage)
+  }
+})
+
+ipcMain.handle('copilot:complete-device-flow', async (_event, deviceCode: string) => {
+  try {
+    return await copilotManager?.completeDeviceFlow(deviceCode)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(errorMessage)
+  }
+})

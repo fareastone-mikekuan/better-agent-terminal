@@ -23,6 +23,16 @@ interface ElectronAPI {
   dialog: {
     selectFolder: () => Promise<string | null>
   }
+  copilot: {
+    setConfig: (config: any) => Promise<void>
+    getConfig: () => Promise<any>
+    isEnabled: () => Promise<boolean>
+    chat: (chatId: string, options: any) => Promise<any>
+    cancelChat: (chatId: string) => Promise<boolean>
+    openVSCodeTokenHelper: () => Promise<void>
+    startDeviceFlow: () => Promise<{ userCode: string; verificationUri: string; deviceCode: string }>
+    completeDeviceFlow: (deviceCode: string) => Promise<string>
+  }
 }
 
 declare global {

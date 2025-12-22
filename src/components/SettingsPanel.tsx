@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { AppSettings, ShellType, FontType, ColorPresetId } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, CopilotConfig } from '../types'
 import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 import { settingsStore } from '../stores/settings-store'
 
@@ -23,11 +23,31 @@ const checkFontAvailable = (fontFamily: string): boolean => {
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(settingsStore.getSettings())
   const [availableFonts, setAvailableFonts] = useState<Set<FontType>>(new Set())
+  const [copilotConfig, setCopilotConfig] = useState<CopilotConfig>({
+    enabled: false,
+    apiKey: '',
+    organizationSlug: ''
+  })
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authMessage, setAuthMessage] = useState('')
+  const [userCode, setUserCode] = useState('') // Store user code separately for better display
+  const [deviceCode, setDeviceCode] = useState('') // Store device code for manual completion
 
   useEffect(() => {
     return settingsStore.subscribe(() => {
       setSettings(settingsStore.getSettings())
     })
+  }, [])
+
+  // Load Copilot config
+  useEffect(() => {
+    const loadCopilotConfig = async () => {
+      const config = settingsStore.getCopilotConfig()
+      if (config) {
+        setCopilotConfig(config)
+      }
+    }
+    loadCopilotConfig()
   }, [])
 
   // Check font availability on mount
@@ -83,6 +103,142 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     settingsStore.setCustomCursorColor(color)
   }
 
+  const handleCopilotEnabledChange = async (enabled: boolean) => {
+    const newConfig = { ...copilotConfig, enabled }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleCopilotApiKeyChange = async (apiKey: string) => {
+    const newConfig = { ...copilotConfig, apiKey }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleCopilotOrgSlugChange = async (organizationSlug: string) => {
+    const newConfig = { ...copilotConfig, organizationSlug }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleShowVSCodeTokenGuide = async () => {
+    try {
+      await window.electronAPI.copilot.openVSCodeTokenHelper()
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      // 將指南顯示在訊息欄位
+      setAuthMessage(errorMsg)
+    }
+  }
+
+  const handleManualComplete = async () => {
+    if (!deviceCode) {
+      setAuthMessage('❌ 請先點擊「GitHub 登入」按鈕')
+      return
+    }
+
+    try {
+      setAuthLoading(true)
+      setAuthMessage('正在檢查授權狀態...')
+      
+      const token = await window.electronAPI.copilot.completeDeviceFlow(deviceCode)
+      
+      // Save the OAuth token and enable Copilot
+      const newConfig = { 
+        ...copilotConfig, 
+        enabled: true,
+        apiKey: token
+      }
+      
+      setCopilotConfig(newConfig)
+      await settingsStore.setCopilotConfig(newConfig)
+      await window.electronAPI.copilot.setConfig(newConfig)
+      
+      setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
+      setUserCode('')
+      setDeviceCode('')
+      setAuthLoading(false)
+    } catch (error: any) {
+      if (error.message === 'PENDING') {
+        setAuthMessage('⚠️ 請先在瀏覽器中完成授權，然後再點擊此按鈕')
+      } else {
+        setAuthMessage(`❌ 授權失敗: ${error.message}`)
+      }
+      setAuthLoading(false)
+    }
+  }
+
+  const handleGitHubLogin = async () => {
+    try {
+      setAuthLoading(true)
+      setAuthMessage('正在啟動 GitHub 認證...')
+      setUserCode('') // Clear previous user code
+      
+      const deviceFlow = await window.electronAPI.copilot.startDeviceFlow()
+      setUserCode(deviceFlow.userCode) // Store user code for display
+      setDeviceCode(deviceFlow.deviceCode) // Store device code for manual completion
+      setAuthMessage(`請在打開的瀏覽器中輸入上方代碼，或授權後點擊下方「我已授權」按鈕`)
+      
+      // 自動開啟瀏覽器
+      window.open(deviceFlow.verificationUri, '_blank')
+      
+      // 輪詢檢查授權狀態
+      let attempts = 0
+      const maxAttempts = 60 // 5 minutes (5 seconds * 60)
+      
+      const checkAuth = async (): Promise<boolean> => {
+        if (attempts >= maxAttempts) {
+          setAuthMessage('⚠️ 自動檢測逾時，請點擊下方「我已授權」按鈕手動完成')
+          setAuthLoading(false)
+          return false
+        }
+        
+        try {
+          const token = await window.electronAPI.copilot.completeDeviceFlow(deviceFlow.deviceCode)
+          
+          // Save the OAuth token and enable Copilot
+          const newConfig = { 
+            ...copilotConfig, 
+            enabled: true,
+            apiKey: token // Save the OAuth token
+          }
+          
+          // Update local state
+          setCopilotConfig(newConfig)
+          
+          // Save to store and notify backend
+          await settingsStore.setCopilotConfig(newConfig)
+          await window.electronAPI.copilot.setConfig(newConfig)
+          
+          // Show success message
+          setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
+          setUserCode('') // Clear user code on success
+          setAuthLoading(false)
+          
+          return true
+        } catch (error: any) {
+          if (error.message === 'PENDING') {
+            attempts++
+            await new Promise(resolve => setTimeout(resolve, 5000))
+            return checkAuth()
+          } else {
+            setAuthMessage(`授權失敗: ${error.message}`)
+            setAuthLoading(false)
+            return false
+          }
+        }
+      }
+      
+      await checkAuth()
+    } catch (error: any) {
+      setAuthMessage(`錯誤: ${error.message}`)
+      setAuthLoading(false)
+    }
+  }
+
   const terminalColors = settingsStore.getTerminalColors()
 
   return (
@@ -94,6 +250,169 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         </div>
 
         <div className="settings-content">
+          {/* GitHub Copilot Section */}
+          <div className="settings-section">
+            <h3>🤖 GitHub Copilot</h3>
+            <div className="settings-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={copilotConfig.enabled}
+                  onChange={e => handleCopilotEnabledChange(e.target.checked)}
+                />
+                Enable GitHub Copilot
+              </label>
+            </div>
+
+            {!copilotConfig.apiKey && !authLoading && (
+              <div className="settings-group">
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                  <button 
+                    onClick={handleShowVSCodeTokenGuide}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#6366f1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      flex: 1
+                    }}
+                  >
+                    📖 VS Code Token 指南
+                  </button>
+                  <button 
+                    onClick={handleGitHubLogin}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#7bbda4',
+                      color: '#1f1d1a',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      flex: 1
+                    }}
+                  >
+                    🔐 GitHub 登入
+                  </button>
+                </div>
+                <small style={{ color: '#888', display: 'block' }}>
+                  推薦：查看指南從 VS Code 複製 token，或使用 GitHub OAuth 認證
+                </small>
+              </div>
+            )}
+
+            {/* Display User Code prominently */}
+            {userCode && (
+              <div className="settings-group">
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#1e3a8a',
+                  borderRadius: '8px',
+                  border: '3px solid #3b82f6',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ color: '#93c5fd', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' }}>
+                    請在瀏覽器中輸入此代碼：
+                  </div>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 'bold',
+                    color: '#ffffff',
+                    letterSpacing: '8px',
+                    fontFamily: 'monospace',
+                    padding: '10px',
+                    backgroundColor: '#1e40af',
+                    borderRadius: '4px',
+                    userSelect: 'all'
+                  }}>
+                    {userCode}
+                  </div>
+                  <div style={{ color: '#93c5fd', fontSize: '11px', marginTop: '8px' }}>
+                    💡 點擊代碼可複製
+                  </div>
+                </div>
+                
+                {/* Manual completion button */}
+                <button 
+                  onClick={handleManualComplete}
+                  disabled={authLoading}
+                  style={{
+                    marginTop: '10px',
+                    padding: '10px 20px',
+                    width: '100%',
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: authLoading ? 'not-allowed' : 'pointer',
+                    fontWeight: 'bold',
+                    opacity: authLoading ? 0.5 : 1
+                  }}
+                >
+                  {authLoading ? '⏳ 檢查中...' : '✅ 我已授權，完成設定'}
+                </button>
+              </div>
+            )}
+
+            {authMessage && (
+              <div className="settings-group">
+                <div style={{
+                  padding: '10px',
+                  backgroundColor: authMessage.includes('✅') ? '#2d4a2d' : '#4a3d2d',
+                  borderRadius: '4px',
+                  color: '#dfdbc3',
+                  fontSize: '14px'
+                }}>
+                  {authMessage}
+                </div>
+              </div>
+            )}
+
+            {copilotConfig.enabled && (
+              <>
+                <div style={{
+                  padding: '10px',
+                  backgroundColor: '#2d3a2d',
+                  borderRadius: '4px',
+                  marginBottom: '10px'
+                }}>
+                  <small style={{ color: '#7bbda4' }}>
+                    💡 或者手動輸入 GitHub Token (不推薦)
+                  </small>
+                </div>
+
+                <div className="settings-group">
+                  <label>GitHub Token (PAT) - 可選</label>
+                  <input
+                    type="password"
+                    value={copilotConfig.apiKey}
+                    onChange={e => handleCopilotApiKeyChange(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  />
+                  <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
+                    Generate at: <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" style={{ color: '#7bbda4' }}>github.com/settings/tokens</a> (需要 'copilot' scope)
+                  </small>
+                </div>
+
+                <div className="settings-group">
+                  <label>Organization Slug (Optional)</label>
+                  <input
+                    type="text"
+                    value={copilotConfig.organizationSlug || ''}
+                    onChange={e => handleCopilotOrgSlugChange(e.target.value)}
+                    placeholder="your-organization"
+                  />
+                  <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
+                    僅在使用組織版 Copilot 時需要
+                  </small>
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="settings-section">
             <h3>Shell</h3>
             <div className="settings-group">
