@@ -151,13 +151,13 @@ export class PtyManager {
     if (!usedPty) {
       try {
         // Fallback to child_process with proper stdio
-        // For PowerShell, add -NoExit and UTF-8 command
         let shellArgs = [...args]
         if (shell.includes('powershell') || shell.includes('pwsh')) {
+          // Use -NoExit for interactive mode and force UTF-8 encoding
           shellArgs.push(
             '-NoExit',
             '-Command',
-            '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8'
+            '[Console]::OutputEncoding=[Console]::InputEncoding=[System.Text.Encoding]::UTF8'
           )
         }
 
@@ -179,7 +179,7 @@ export class PtyManager {
 
         childProcess.stdout?.on('data', (data: Buffer) => {
           const instance = this.instances.get(id)
-          const output = data.toString()
+          const output = data.toString('utf8')
           if (instance?.isCapturing) {
             instance.outputBuffer += output
           }
@@ -190,7 +190,7 @@ export class PtyManager {
 
         childProcess.stderr?.on('data', (data: Buffer) => {
           const instance = this.instances.get(id)
-          const output = data.toString()
+          const output = data.toString('utf8')
           if (instance?.isCapturing) {
             instance.outputBuffer += output
           }
@@ -215,7 +215,7 @@ export class PtyManager {
 
         // Send initial message
         if (!this.window.isDestroyed()) {
-          this.window.webContents.send('pty:output', id, `[Terminal - child_process mode]\r\n`)
+          this.window.webContents.send('pty:output', id, `[Terminal - child_process mode]\r\n[Note: Backspace and arrow keys may not work. Install node-pty for full support]\r\n`)
         }
 
         this.instances.set(id, { process: childProcess, type, cwd, usePty: false, outputBuffer: '', isCapturing: false })
@@ -235,9 +235,11 @@ export class PtyManager {
       if (instance.usePty) {
         instance.process.write(data)
       } else {
-        // For child_process, write to stdin only (shell handles echo)
+        // For child_process, write to stdin
         const cp = instance.process as ChildProcess
-        cp.stdin?.write(data)
+        // Convert \r to \r\n for proper line ending on Windows
+        const converted = data.replace(/\r(?!\n)/g, '\r\n')
+        cp.stdin?.write(converted)
       }
     }
   }
