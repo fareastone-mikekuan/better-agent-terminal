@@ -124,6 +124,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     await window.electronAPI.copilot.setConfig(newConfig)
   }
 
+  const handleCopilotModelChange = async (model: string) => {
+    const newConfig = { ...copilotConfig, model }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
   const handleLogout = async () => {
     const newConfig = {
       enabled: false,
@@ -282,6 +289,63 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     Token: {copilotConfig.apiKey.substring(0, 20)}...
                   </small>
                 </div>
+
+                {/* Model selector */}
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
+                    選擇模型 (Model)
+                  </label>
+                  <select
+                    value={copilotConfig.model || 'gpt-4o'}
+                    onChange={e => handleCopilotModelChange(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      backgroundColor: '#2a2826',
+                      color: '#dfdbc3',
+                      border: '1px solid #3a3836',
+                      borderRadius: '4px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <optgroup label="🔥 推薦 (Recommended)">
+                      <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                      <option value="gpt-4o">GPT-4o (Default)</option>
+                      <option value="gpt-5">GPT-5</option>
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                    </optgroup>
+                    <optgroup label="🚀 Claude Models">
+                      <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                      <option value="claude-opus-4.5">Claude Opus 4.5</option>
+                      <option value="claude-opus-4.1">Claude Opus 4.1</option>
+                      <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
+                    </optgroup>
+                    <optgroup label="🤖 OpenAI Models">
+                      <option value="gpt-5.2">GPT-5.2</option>
+                      <option value="gpt-5.1">GPT-5.1</option>
+                      <option value="gpt-5-mini">GPT-5 Mini</option>
+                      <option value="gpt-4.1">GPT-4.1</option>
+                    </optgroup>
+                    <optgroup label="💎 Code-Specialized">
+                      <option value="gpt-5.1-codex-max">GPT-5.1 Codex Max</option>
+                      <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
+                      <option value="gpt-5.1-codex-mini">GPT-5.1 Codex Mini</option>
+                      <option value="gpt-5-codex">GPT-5 Codex</option>
+                    </optgroup>
+                    <optgroup label="🌟 Google Models">
+                      <option value="gemini-3-pro">Gemini 3 Pro</option>
+                      <option value="gemini-3-flash">Gemini 3 Flash</option>
+                    </optgroup>
+                    <optgroup label="⚡ Fast Models">
+                      <option value="grok-code-fast-1">Grok Code Fast 1</option>
+                      <option value="raptor-mini">Raptor Mini</option>
+                    </optgroup>
+                  </select>
+                  <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
+                    💡 不同模型有不同特性與速度
+                  </small>
+                </div>
+
                 <button 
                   onClick={handleLogout}
                   style={{

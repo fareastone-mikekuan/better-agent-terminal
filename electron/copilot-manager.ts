@@ -224,7 +224,7 @@ gh auth token
     try {
       const request: CopilotChatRequest = {
         messages: options.messages,
-        model: 'gpt-4',
+        model: this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
         max_tokens: options.maxTokens ?? 2048,
@@ -260,7 +260,7 @@ gh auth token
     try {
       const request: CopilotChatRequest = {
         messages: options.messages,
-        model: 'gpt-4',
+        model: this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
         max_tokens: options.maxTokens ?? 2048,

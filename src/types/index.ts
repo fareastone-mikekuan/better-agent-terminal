@@ -143,6 +143,7 @@ export interface CopilotConfig {
   enabled: boolean;
   apiKey: string; // GitHub PAT with 'copilot' scope
   organizationSlug?: string; // For organization-based Copilot access
+  model?: string; // Model to use: gpt-4, gpt-4o, claude-3.5-sonnet, etc.
 }
 
 export interface CopilotMessage {
