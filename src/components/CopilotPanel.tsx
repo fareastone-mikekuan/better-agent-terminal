@@ -21,7 +21,8 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
 
   // Extract bash commands from message content
   const extractCommands = (content: string): string[] => {
-    const codeBlockRegex = /```(?:bash|sh|shell)?\n([\s\S]*?)```/g
+    // Match code blocks with various shell types: bash, sh, shell, powershell, pwsh, cmd, or no language specified
+    const codeBlockRegex = /```(?:bash|sh|shell|powershell|pwsh|cmd|ps1)?\n([\s\S]*?)```/g
     const commands: string[] = []
     let match
     while ((match = codeBlockRegex.exec(content)) !== null) {
