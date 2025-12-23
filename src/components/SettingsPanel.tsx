@@ -124,16 +124,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     await window.electronAPI.copilot.setConfig(newConfig)
   }
 
-  const handleShowVSCodeTokenGuide = async () => {
-    try {
-      await window.electronAPI.copilot.openVSCodeTokenHelper()
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      // 將指南顯示在訊息欄位
-      setAuthMessage(errorMsg)
-    }
-  }
-
   const handleManualComplete = async () => {
     if (!deviceCode) {
       setAuthMessage('❌ 請先點擊「GitHub 登入」按鈕')
@@ -266,40 +256,23 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
             {!copilotConfig.apiKey && !authLoading && (
               <div className="settings-group">
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                  <button 
-                    onClick={handleShowVSCodeTokenGuide}
-                    style={{
-                      padding: '10px 20px',
-                      backgroundColor: '#6366f1',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: 'bold',
-                      flex: 1
-                    }}
-                  >
-                    📖 VS Code Token 指南
-                  </button>
-                  <button 
-                    onClick={handleGitHubLogin}
-                    style={{
-                      padding: '10px 20px',
-                      backgroundColor: '#7bbda4',
-                      color: '#1f1d1a',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: 'bold',
-                      flex: 1
-                    }}
-                  >
-                    🔐 GitHub 登入
-                  </button>
-                </div>
-                <small style={{ color: '#888', display: 'block' }}>
-                  推薦：查看指南從 VS Code 複製 token，或使用 GitHub OAuth 認證
+                <button 
+                  onClick={handleGitHubLogin}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#7bbda4',
+                    color: '#1f1d1a',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    width: '100%'
+                  }}
+                >
+                  🔐 GitHub 登入
+                </button>
+                <small style={{ color: '#888', display: 'block', marginTop: '8px' }}>
+                  使用 GitHub OAuth 認證以啟用 Copilot
                 </small>
               </div>
             )}
@@ -373,17 +346,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
             {copilotConfig.enabled && (
               <>
-                <div style={{
-                  padding: '10px',
-                  backgroundColor: '#2d3a2d',
-                  borderRadius: '4px',
-                  marginBottom: '10px'
-                }}>
-                  <small style={{ color: '#7bbda4' }}>
-                    💡 或者手動輸入 GitHub Token (不推薦)
-                  </small>
-                </div>
-
                 <div className="settings-group">
                   <label>GitHub Token (PAT) - 可選</label>
                   <input
@@ -569,6 +531,22 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
         <div className="settings-footer">
           <p className="settings-note">Changes are saved automatically. Font changes apply immediately to all terminals.</p>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 24px',
+              backgroundColor: '#7bbda4',
+              color: '#1f1d1a',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '14px',
+              marginTop: '12px'
+            }}
+          >
+            ✓ 完成
+          </button>
         </div>
       </div>
     </div>

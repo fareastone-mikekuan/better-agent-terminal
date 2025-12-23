@@ -20,6 +20,7 @@ interface PtyInstance {
   type: 'terminal' | 'claude-code' | 'copilot'
   cwd: string
   usePty: boolean
+  shell: string
   outputBuffer: string
   isCapturing: boolean
 }
@@ -139,7 +140,7 @@ export class PtyManager {
           this.instances.delete(id)
         })
 
-        this.instances.set(id, { process: ptyProcess, type, cwd, usePty: true, outputBuffer: '', isCapturing: false })
+        this.instances.set(id, { process: ptyProcess, type, cwd, usePty: true, shell, outputBuffer: '', isCapturing: false })
         usedPty = true
         console.log('Created terminal using node-pty')
       } catch (e) {
@@ -159,6 +160,9 @@ export class PtyManager {
             '-Command',
             '[Console]::OutputEncoding=[Console]::InputEncoding=[System.Text.Encoding]::UTF8'
           )
+        } else if (shell.toLowerCase().includes('cmd')) {
+          // For cmd.exe, use /Q (quiet) and /K (keep running)
+          shellArgs = ['/Q', '/K', 'chcp 65001 >nul']
         }
 
         // Set UTF-8 environment variables
@@ -218,7 +222,7 @@ export class PtyManager {
           this.window.webContents.send('pty:output', id, `[Terminal - child_process mode]\r\n[Note: Backspace and arrow keys may not work. Install node-pty for full support]\r\n`)
         }
 
-        this.instances.set(id, { process: childProcess, type, cwd, usePty: false, outputBuffer: '', isCapturing: false })
+        this.instances.set(id, { process: childProcess, type, cwd, usePty: false, shell, outputBuffer: '', isCapturing: false })
         console.log('Created terminal using child_process fallback')
       } catch (error) {
         console.error('Failed to create terminal:', error)
@@ -239,6 +243,15 @@ export class PtyManager {
         const cp = instance.process as ChildProcess
         // Convert \r to \r\n for proper line ending on Windows
         const converted = data.replace(/\r(?!\n)/g, '\r\n')
+        
+        // For cmd.exe, manually echo input (except newlines)
+        if (instance.shell.toLowerCase().includes('cmd')) {
+          // Echo the input back for visual feedback
+          if (!this.window.isDestroyed()) {
+            this.window.webContents.send('pty:output', id, data)
+          }
+        }
+        
         cp.stdin?.write(converted)
       }
     }
