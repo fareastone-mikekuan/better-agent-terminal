@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { TerminalInstance } from '../types'
 import { ActivityIndicator } from './ActivityIndicator'
 import { settingsStore } from '../stores/settings-store'
+import { getAgentPreset } from '../types/agent-presets'
 
 // Global preview cache - persists across component unmounts
 const previewCache = new Map<string, string>()
@@ -57,8 +58,10 @@ interface TerminalThumbnailProps {
 export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumbnailProps) {
   const [preview, setPreview] = useState<string>(previewCache.get(terminal.id) || '')
   const [fontFamily, setFontFamily] = useState<string>(settingsStore.getFontFamilyString())
-  const isAiTerminal = terminal.type === 'claude-code' || terminal.type === 'copilot'
-  const isCopilot = terminal.type === 'copilot'
+
+  // Check if this is an agent terminal
+  const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
+  const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
 
   useEffect(() => {
     setupGlobalListener()
@@ -82,12 +85,13 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
 
   return (
     <div
-      className={`thumbnail ${isActive ? 'active' : ''} ${isAiTerminal ? 'ai-terminal' : ''}`}
+      className={`thumbnail ${isActive ? 'active' : ''} ${isAgent ? 'agent-terminal' : ''}`}
       onClick={onClick}
+      style={agentConfig ? { '--agent-color': agentConfig.color } as React.CSSProperties : undefined}
     >
       <div className="thumbnail-header">
-        <div className={`thumbnail-title ${isAiTerminal ? 'ai-terminal' : ''}`}>
-          {isAiTerminal && <span>{isCopilot ? '⚡' : '✦'}</span>}
+        <div className={`thumbnail-title ${isAgent ? 'agent-terminal' : ''}`}>
+          {isAgent && <span>{agentConfig?.icon}</span>}
           <span>{terminal.title}</span>
         </div>
         <ActivityIndicator terminalId={terminal.id} size="small" />

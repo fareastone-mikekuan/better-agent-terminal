@@ -1,3 +1,12 @@
+import { AgentPresetId } from './agent-presets';
+
+// 環境變數定義
+export interface EnvVariable {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -5,6 +14,8 @@ export interface Workspace {
   role?: string;
   folderPath: string;
   createdAt: number;
+  defaultAgent?: AgentPresetId;  // Workspace 預設 Agent
+  envVars?: EnvVariable[];       // Workspace 專屬環境變數
 }
 
 // Preset roles for quick selection
@@ -21,7 +32,8 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'copilot' | 'claude-code';
+  type: 'terminal';              // 統一為 terminal
+  agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;
   pid?: number;
@@ -41,8 +53,10 @@ export interface AppState {
 export interface CreatePtyOptions {
   id: string;
   cwd: string;
-  type: 'terminal' | 'copilot' | 'claude-code';
+  type: 'terminal';              // 統一為 terminal
+  agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   shell?: string;
+  customEnv?: Record<string, string>;  // 自定義環境變數
 }
 
 export interface PtyOutput {
@@ -125,6 +139,16 @@ export const COLOR_PRESETS = [
 
 export type ColorPresetId = typeof COLOR_PRESETS[number]['id'];
 
+// Agent command type for auto-start
+export type AgentCommandType = 'claude' | 'gemini' | 'codex' | 'custom';
+
+export const AGENT_COMMAND_OPTIONS: { id: AgentCommandType; name: string; command: string }[] = [
+  { id: 'claude', name: 'Claude Code', command: 'claude' },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini' },
+  { id: 'codex', name: 'Codex CLI', command: 'codex' },
+  { id: 'custom', name: 'Custom', command: '' },
+];
+
 export interface AppSettings {
   shell: ShellType;
   customShellPath: string;
@@ -136,6 +160,13 @@ export interface AppSettings {
   customBackgroundColor: string;
   customForegroundColor: string;
   customCursorColor: string;
+  globalEnvVars?: EnvVariable[];  // 全域環境變數
+  defaultAgent?: AgentPresetId;   // 全域預設 Agent
+  agentAutoCommand: boolean;      // 是否自動啟動 Agent
+  agentCommandType: AgentCommandType;  // Agent 命令類型
+  agentCustomCommand: string;     // 自定義 Agent 命令
+  defaultTerminalCount: number;   // 每個 workspace 預設的 terminal 數量
+  createDefaultAgentTerminal: boolean;  // 是否預設建立 Agent Terminal
 }
 
 // GitHub Copilot Integration

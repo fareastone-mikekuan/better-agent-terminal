@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import type { AppSettings, ShellType, FontType, ColorPresetId, CopilotConfig } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId } from '../types'
 import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 import { settingsStore } from '../stores/settings-store'
+import { EnvVarEditor } from './EnvVarEditor'
+import { AGENT_PRESETS, AgentPresetId } from '../types/agent-presets'
 
 interface SettingsPanelProps {
   onClose: () => void
@@ -101,151 +103,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   const handleCustomCursorColorChange = (color: string) => {
     settingsStore.setCustomCursorColor(color)
-  }
-
-  const handleCopilotEnabledChange = async (enabled: boolean) => {
-    const newConfig = { ...copilotConfig, enabled }
-    setCopilotConfig(newConfig)
-    await settingsStore.setCopilotConfig(newConfig)
-    await window.electronAPI.copilot.setConfig(newConfig)
-  }
-
-  const handleCopilotApiKeyChange = async (apiKey: string) => {
-    const newConfig = { ...copilotConfig, apiKey }
-    setCopilotConfig(newConfig)
-    await settingsStore.setCopilotConfig(newConfig)
-    await window.electronAPI.copilot.setConfig(newConfig)
-  }
-
-  const handleCopilotOrgSlugChange = async (organizationSlug: string) => {
-    const newConfig = { ...copilotConfig, organizationSlug }
-    setCopilotConfig(newConfig)
-    await settingsStore.setCopilotConfig(newConfig)
-    await window.electronAPI.copilot.setConfig(newConfig)
-  }
-
-  const handleCopilotModelChange = async (model: string) => {
-    const newConfig = { ...copilotConfig, model }
-    setCopilotConfig(newConfig)
-    await settingsStore.setCopilotConfig(newConfig)
-    await window.electronAPI.copilot.setConfig(newConfig)
-  }
-
-  const handleLogout = async () => {
-    const newConfig = {
-      enabled: false,
-      apiKey: '',
-      organizationSlug: ''
-    }
-    setCopilotConfig(newConfig)
-    await settingsStore.setCopilotConfig(newConfig)
-    await window.electronAPI.copilot.setConfig(newConfig)
-    setAuthMessage('✅ 已登出 GitHub Copilot')
-  }
-
-  const handleManualComplete = async () => {
-    if (!deviceCode) {
-      setAuthMessage('❌ 請先點擊「GitHub 登入」按鈕')
-      return
-    }
-
-    try {
-      setAuthLoading(true)
-      setAuthMessage('正在檢查授權狀態...')
-      
-      const token = await window.electronAPI.copilot.completeDeviceFlow(deviceCode)
-      
-      // Save the OAuth token and enable Copilot
-      const newConfig = { 
-        ...copilotConfig, 
-        enabled: true,
-        apiKey: token
-      }
-      
-      setCopilotConfig(newConfig)
-      await settingsStore.setCopilotConfig(newConfig)
-      await window.electronAPI.copilot.setConfig(newConfig)
-      
-      setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
-      setUserCode('')
-      setDeviceCode('')
-      setAuthLoading(false)
-    } catch (error: any) {
-      if (error.message === 'PENDING') {
-        setAuthMessage('⚠️ 請先在瀏覽器中完成授權，然後再點擊此按鈕')
-      } else {
-        setAuthMessage(`❌ 授權失敗: ${error.message}`)
-      }
-      setAuthLoading(false)
-    }
-  }
-
-  const handleGitHubLogin = async () => {
-    try {
-      setAuthLoading(true)
-      setAuthMessage('正在啟動 GitHub 認證...')
-      setUserCode('') // Clear previous user code
-      
-      const deviceFlow = await window.electronAPI.copilot.startDeviceFlow()
-      setUserCode(deviceFlow.userCode) // Store user code for display
-      setDeviceCode(deviceFlow.deviceCode) // Store device code for manual completion
-      setAuthMessage(`請在打開的瀏覽器中輸入上方代碼，或授權後點擊下方「我已授權」按鈕`)
-      
-      // 自動開啟瀏覽器
-      window.open(deviceFlow.verificationUri, '_blank')
-      
-      // 輪詢檢查授權狀態
-      let attempts = 0
-      const maxAttempts = 60 // 5 minutes (5 seconds * 60)
-      
-      const checkAuth = async (): Promise<boolean> => {
-        if (attempts >= maxAttempts) {
-          setAuthMessage('⚠️ 自動檢測逾時，請點擊下方「我已授權」按鈕手動完成')
-          setAuthLoading(false)
-          return false
-        }
-        
-        try {
-          const token = await window.electronAPI.copilot.completeDeviceFlow(deviceFlow.deviceCode)
-          
-          // Save the OAuth token and enable Copilot
-          const newConfig = { 
-            ...copilotConfig, 
-            enabled: true,
-            apiKey: token // Save the OAuth token
-          }
-          
-          // Update local state
-          setCopilotConfig(newConfig)
-          
-          // Save to store and notify backend
-          await settingsStore.setCopilotConfig(newConfig)
-          await window.electronAPI.copilot.setConfig(newConfig)
-          
-          // Show success message
-          setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
-          setUserCode('') // Clear user code on success
-          setAuthLoading(false)
-          
-          return true
-        } catch (error: any) {
-          if (error.message === 'PENDING') {
-            attempts++
-            await new Promise(resolve => setTimeout(resolve, 5000))
-            return checkAuth()
-          } else {
-            setAuthMessage(`授權失敗: ${error.message}`)
-            setAuthLoading(false)
-            return false
-          }
-        }
-      }
-      
-      await checkAuth()
-    } catch (error: any) {
-      setAuthMessage(`錯誤: ${error.message}`)
-      setAuthLoading(false)
-    }
   }
 
   const terminalColors = settingsStore.getTerminalColors()
@@ -513,6 +370,59 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 />
               </div>
             )}
+
+            <div className="settings-group">
+              <label>Default Terminals per Workspace: {settings.defaultTerminalCount || 1}</label>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={settings.defaultTerminalCount || 1}
+                onChange={e => settingsStore.setDefaultTerminalCount(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="settings-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={settings.createDefaultAgentTerminal === true}
+                  onChange={e => settingsStore.setCreateDefaultAgentTerminal(e.target.checked)}
+                />
+                Create Agent Terminal by default
+              </label>
+              <p className="settings-hint">When enabled, new workspaces will include an Agent Terminal.</p>
+            </div>
+
+            {settings.createDefaultAgentTerminal && (
+              <>
+                <div className="settings-group">
+                  <label>Default Agent</label>
+                  <select
+                    value={settings.defaultAgent || 'claude-code'}
+                    onChange={e => settingsStore.setDefaultAgent(e.target.value as AgentPresetId)}
+                  >
+                    {AGENT_PRESETS.filter(p => p.id !== 'none').map(preset => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.icon} {preset.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="settings-group checkbox-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settings.agentAutoCommand === true}
+                      onChange={e => settingsStore.setAgentAutoCommand(e.target.checked)}
+                    />
+                    Auto-run agent command
+                  </label>
+                  <p className="settings-hint">Automatically execute the agent command (e.g., `claude`) when creating an Agent Terminal.</p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="settings-section">
@@ -637,6 +547,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 $ echo "Hello World" 你好世界 0123456789
               </div>
             </div>
+          </div>
+
+          <div className="settings-section">
+            <h3>Environment Variables</h3>
+            <p className="settings-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              Global environment variables applied to ALL workspaces. Workspace-specific variables (⚙ button) will override these.
+            </p>
+            <EnvVarEditor
+              envVars={settings.globalEnvVars || []}
+              onAdd={(envVar) => settingsStore.addGlobalEnvVar(envVar)}
+              onRemove={(key) => settingsStore.removeGlobalEnvVar(key)}
+              onUpdate={(key, updates) => settingsStore.updateGlobalEnvVar(key, updates)}
+            />
           </div>
         </div>
 

@@ -1,5 +1,6 @@
-import type { AppSettings, ShellType, FontType, ColorPresetId, CopilotConfig } from '../types'
-import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable, AgentCommandType } from '../types'
+import type { AgentPresetId } from '../types/agent-presets'
+import { FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS } from '../types'
 
 type Listener = () => void
 
@@ -13,7 +14,14 @@ const defaultSettings: AppSettings = {
   colorPreset: 'novel',
   customBackgroundColor: '#1f1d1a',
   customForegroundColor: '#dfdbc3',
-  customCursorColor: '#dfdbc3'
+  customCursorColor: '#dfdbc3',
+  globalEnvVars: [],
+  defaultAgent: 'claude-code' as AgentPresetId,
+  agentAutoCommand: true,
+  agentCommandType: 'claude',
+  agentCustomCommand: '',
+  defaultTerminalCount: 1,
+  createDefaultAgentTerminal: false
 }
 
 class SettingsStore {
@@ -92,6 +100,84 @@ class SettingsStore {
     this.settings = { ...this.settings, customCursorColor }
     this.notify()
     this.save()
+  }
+
+  // Environment Variables
+  setGlobalEnvVars(envVars: EnvVariable[]): void {
+    this.settings = { ...this.settings, globalEnvVars: envVars }
+    this.notify()
+    this.save()
+  }
+
+  addGlobalEnvVar(envVar: EnvVariable): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = { ...this.settings, globalEnvVars: [...current, envVar] }
+    this.notify()
+    this.save()
+  }
+
+  removeGlobalEnvVar(key: string): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = { ...this.settings, globalEnvVars: current.filter(e => e.key !== key) }
+    this.notify()
+    this.save()
+  }
+
+  updateGlobalEnvVar(key: string, updates: Partial<EnvVariable>): void {
+    const current = this.settings.globalEnvVars || []
+    this.settings = {
+      ...this.settings,
+      globalEnvVars: current.map(e => e.key === key ? { ...e, ...updates } : e)
+    }
+    this.notify()
+    this.save()
+  }
+
+  // Agent Auto Command
+  setAgentAutoCommand(agentAutoCommand: boolean): void {
+    this.settings = { ...this.settings, agentAutoCommand }
+    this.notify()
+    this.save()
+  }
+
+  setAgentCommandType(agentCommandType: AgentCommandType): void {
+    this.settings = { ...this.settings, agentCommandType }
+    this.notify()
+    this.save()
+  }
+
+  setAgentCustomCommand(agentCustomCommand: string): void {
+    this.settings = { ...this.settings, agentCustomCommand }
+    this.notify()
+    this.save()
+  }
+
+  setDefaultTerminalCount(count: number): void {
+    this.settings = { ...this.settings, defaultTerminalCount: Math.max(1, Math.min(5, count)) }
+    this.notify()
+    this.save()
+  }
+
+  setCreateDefaultAgentTerminal(create: boolean): void {
+    this.settings = { ...this.settings, createDefaultAgentTerminal: create }
+    this.notify()
+    this.save()
+  }
+
+  setDefaultAgent(agent: AgentPresetId): void {
+    this.settings = { ...this.settings, defaultAgent: agent }
+    this.notify()
+    this.save()
+  }
+
+  // Get the agent command to execute
+  getAgentCommand(): string | null {
+    if (!this.settings.agentAutoCommand) return null
+    if (this.settings.agentCommandType === 'custom') {
+      return this.settings.agentCustomCommand || null
+    }
+    const option = AGENT_COMMAND_OPTIONS.find(o => o.id === this.settings.agentCommandType)
+    return option?.command || null
   }
 
   // Get terminal colors based on preset or custom settings

@@ -3,6 +3,12 @@ import path from 'path'
 import { PtyManager } from './pty-manager'
 import { CopilotManager } from './copilot-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
+import { snippetDb, CreateSnippetInput } from './snippet-db'
+
+// Set AppUserModelId for Windows taskbar pinning (must be before app.whenReady)
+if (process.platform === 'win32') {
+  app.setAppUserModelId('org.tonyq.better-agent-terminal')
+}
 
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
@@ -310,87 +316,39 @@ ipcMain.handle('update:get-version', () => {
   return app.getVersion()
 })
 
-// GitHub Copilot Integration handlers
-ipcMain.handle('copilot:set-config', async (_event, config: any) => {
-  copilotManager?.setConfig(config)
-  
-  // Persist config to disk
-  try {
-    const fs = await import('fs/promises')
-    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('Failed to save Copilot config:', error)
-  }
-  
-  return true
+// Snippet handlers
+ipcMain.handle('snippet:getAll', () => {
+  return snippetDb.getAll()
 })
 
-ipcMain.handle('copilot:get-config', async () => {
-  // Try to load config from disk first
-  try {
-    const fs = await import('fs/promises')
-    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
-    const data = await fs.readFile(configPath, 'utf-8')
-    const config = JSON.parse(data)
-    
-    // Set config to manager if not already set
-    if (!copilotManager?.getConfig()) {
-      copilotManager?.setConfig(config)
-    }
-    
-    return config
-  } catch {
-    // Fall back to in-memory config
-    return copilotManager?.getConfig()
-  }
+ipcMain.handle('snippet:getById', (_event, id: number) => {
+  return snippetDb.getById(id)
 })
 
-ipcMain.handle('copilot:is-enabled', async () => {
-  return copilotManager?.isEnabled() ?? false
+ipcMain.handle('snippet:create', (_event, input: CreateSnippetInput) => {
+  return snippetDb.create(input)
 })
 
-ipcMain.handle('copilot:chat', async (_event, chatId: string, options: any) => {
-  try {
-    return await copilotManager?.chat(chatId, options)
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    return {
-      error: errorMessage,
-      content: '',
-      finishReason: 'error' as const
-    }
-  }
+ipcMain.handle('snippet:update', (_event, id: number, updates: Partial<CreateSnippetInput>) => {
+  return snippetDb.update(id, updates)
 })
 
-ipcMain.handle('copilot:cancel-chat', async (_event, chatId: string) => {
-  copilotManager?.cancelChat(chatId)
-  return true
+ipcMain.handle('snippet:delete', (_event, id: number) => {
+  return snippetDb.delete(id)
 })
 
-ipcMain.handle('copilot:open-vscode-token-helper', async () => {
-  try {
-    return await copilotManager?.openVSCodeTokenHelper()
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    throw new Error(errorMessage)
-  }
+ipcMain.handle('snippet:toggleFavorite', (_event, id: number) => {
+  return snippetDb.toggleFavorite(id)
 })
 
-ipcMain.handle('copilot:start-device-flow', async () => {
-  try {
-    return await copilotManager?.startDeviceFlow()
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    throw new Error(errorMessage)
-  }
+ipcMain.handle('snippet:search', (_event, query: string) => {
+  return snippetDb.search(query)
 })
 
-ipcMain.handle('copilot:complete-device-flow', async (_event, deviceCode: string) => {
-  try {
-    return await copilotManager?.completeDeviceFlow(deviceCode)
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    throw new Error(errorMessage)
-  }
+ipcMain.handle('snippet:getCategories', () => {
+  return snippetDb.getCategories()
+})
+
+ipcMain.handle('snippet:getFavorites', () => {
+  return snippetDb.getFavorites()
 })

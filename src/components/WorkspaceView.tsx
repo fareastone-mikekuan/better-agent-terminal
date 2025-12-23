@@ -1,11 +1,43 @@
 import { useEffect, useCallback, useState } from 'react'
-import type { Workspace, TerminalInstance } from '../types'
+import type { Workspace, TerminalInstance, EnvVariable } from '../types'
 import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
-import { TerminalPanel } from './TerminalPanel'
 import { ThumbnailBar } from './ThumbnailBar'
 import { CloseConfirmDialog } from './CloseConfirmDialog'
-import { ActivityIndicator } from './ActivityIndicator'
+import { MainPanel } from './MainPanel'
+import { ResizeHandle } from './ResizeHandle'
+import { AgentPresetId, getAgentPreset } from '../types/agent-presets'
+
+// ThumbnailBar panel settings
+const THUMBNAIL_SETTINGS_KEY = 'better-terminal-thumbnail-settings'
+const DEFAULT_THUMBNAIL_HEIGHT = 180
+const MIN_THUMBNAIL_HEIGHT = 80
+const MAX_THUMBNAIL_HEIGHT = 400
+
+interface ThumbnailSettings {
+  height: number
+  collapsed: boolean
+}
+
+function loadThumbnailSettings(): ThumbnailSettings {
+  try {
+    const saved = localStorage.getItem(THUMBNAIL_SETTINGS_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    console.error('Failed to load thumbnail settings:', e)
+  }
+  return { height: DEFAULT_THUMBNAIL_HEIGHT, collapsed: false }
+}
+
+function saveThumbnailSettings(settings: ThumbnailSettings): void {
+  try {
+    localStorage.setItem(THUMBNAIL_SETTINGS_KEY, JSON.stringify(settings))
+  } catch (e) {
+    console.error('Failed to save thumbnail settings:', e)
+  }
+}
 
 interface WorkspaceViewProps {
   workspace: Workspace
@@ -23,75 +55,152 @@ async function getShellFromSettings(): Promise<string | undefined> {
   return window.electronAPI.settings.getShellPath(settings.shell)
 }
 
-export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: WorkspaceViewProps) {
+// Helper to merge environment variables
+function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = []): Record<string, string> {
+  const result: Record<string, string> = {}
+  // Add global vars first
+  for (const env of global) {
+    if (env.enabled && env.key) {
+      result[env.key] = env.value
+    }
+  }
+  // Workspace vars override global
+  for (const env of workspace) {
+    if (env.enabled && env.key) {
+      result[env.key] = env.value
+    }
+  }
+  return result
+}
+
+// Track which workspaces have been initialized (outside component to persist across renders)
+const initializedWorkspaces = new Set<string>()
+
+export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: Readonly<WorkspaceViewProps>) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
-  const [aiTerminalType, setAiTerminalType] = useState<'claude-code' | 'copilot'>('copilot')
+  const [thumbnailSettings, setThumbnailSettings] = useState<ThumbnailSettings>(loadThumbnailSettings)
 
-  const aiTerminal = terminals.find(t => t.type === aiTerminalType || (aiTerminalType === 'claude-code' && t.type === 'claude-code') || (aiTerminalType === 'copilot' && t.type === 'copilot'))
-  const regularTerminals = terminals.filter(t => t.type === 'terminal')
+  // Handle thumbnail bar resize
+  const handleThumbnailResize = useCallback((delta: number) => {
+    setThumbnailSettings(prev => {
+      // Note: delta is negative when dragging up (making bar taller)
+      const newHeight = Math.min(MAX_THUMBNAIL_HEIGHT, Math.max(MIN_THUMBNAIL_HEIGHT, prev.height - delta))
+      const updated = { ...prev, height: newHeight }
+      saveThumbnailSettings(updated)
+      return updated
+    })
+  }, [])
 
+  // Toggle thumbnail bar collapse
+  const handleThumbnailCollapse = useCallback(() => {
+    setThumbnailSettings(prev => {
+      const updated = { ...prev, collapsed: !prev.collapsed }
+      saveThumbnailSettings(updated)
+      return updated
+    })
+  }, [])
+
+  // Reset thumbnail bar to default height
+  const handleThumbnailResetHeight = useCallback(() => {
+    setThumbnailSettings(prev => {
+      const updated = { ...prev, height: DEFAULT_THUMBNAIL_HEIGHT }
+      saveThumbnailSettings(updated)
+      return updated
+    })
+  }, [])
+
+  // Categorize terminals
+  const agentTerminal = terminals.find(t => t.agentPreset && t.agentPreset !== 'none')
+  const regularTerminals = terminals.filter(t => !t.agentPreset || t.agentPreset === 'none')
   const focusedTerminal = terminals.find(t => t.id === focusedTerminalId)
-  const isAiTerminalFocused = focusedTerminal?.type === aiTerminalType || (aiTerminalType === 'claude-code' && focusedTerminal?.type === 'claude-code') || (aiTerminalType === 'copilot' && focusedTerminal?.type === 'copilot')
+  const isAgentFocused = focusedTerminal?.agentPreset && focusedTerminal.agentPreset !== 'none'
 
-  // Initialize AI terminal when workspace loads
+  // Initialize terminals when workspace becomes active (if no terminals exist)
   useEffect(() => {
-    if (!aiTerminal) {
-      const createAiTerminal = async () => {
-        // Always use copilot by default (GitHub Copilot)
-        const terminalType = 'copilot'
-        setAiTerminalType(terminalType)
-        
-        const terminal = workspaceStore.addTerminal(workspace.id, terminalType)
+    if (isActive && terminals.length === 0 && !initializedWorkspaces.has(workspace.id)) {
+      initializedWorkspaces.add(workspace.id)
+      const createInitialTerminals = async () => {
+        const settings = settingsStore.getSettings()
+        const terminalCount = settings.defaultTerminalCount || 1
+        const createAgentTerminal = settings.createDefaultAgentTerminal === true
+        // Use 'claude' as default agent when createDefaultAgentTerminal is enabled
+        const defaultAgent = createAgentTerminal
+          ? (workspace.defaultAgent || settings.defaultAgent || 'claude')
+          : 'none'
         const shell = await getShellFromSettings()
-        window.electronAPI.pty.create({
-          id: terminal.id,
-          cwd: workspace.folderPath,
-          type: terminalType,
-          shell
-        })
-      }
-      createAiTerminal()
-    }
-  }, [workspace.id, aiTerminal])
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
 
-  // Auto-create first terminal if none exists
-  useEffect(() => {
-    if (regularTerminals.length === 0 && aiTerminal) {
-      const createTerminal = async () => {
-        const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
-        const shell = await getShellFromSettings()
-        window.electronAPI.pty.create({
-          id: terminal.id,
-          cwd: workspace.folderPath,
-          type: 'terminal',
-          shell
-        })
+        // Create agent terminal first (if enabled)
+        if (createAgentTerminal) {
+          const agentTerminal = workspaceStore.addTerminal(workspace.id, defaultAgent as AgentPresetId)
+          window.electronAPI.pty.create({
+            id: agentTerminal.id,
+            cwd: workspace.folderPath,
+            type: 'terminal',
+            agentPreset: defaultAgent as AgentPresetId,
+            shell,
+            customEnv
+          })
+
+          // Auto-run agent command if enabled
+          if (settings.agentAutoCommand) {
+            const agentPreset = getAgentPreset(defaultAgent)
+            if (agentPreset?.command) {
+              // Small delay to ensure terminal is ready
+              setTimeout(() => {
+                window.electronAPI.pty.write(agentTerminal.id, agentPreset.command + '\r')
+              }, 500)
+            }
+          }
+        }
+
+        // Create regular terminals based on settings
+        for (let i = 0; i < terminalCount; i++) {
+          const terminal = workspaceStore.addTerminal(workspace.id)
+          window.electronAPI.pty.create({
+            id: terminal.id,
+            cwd: workspace.folderPath,
+            type: 'terminal',
+            shell,
+            customEnv
+          })
+        }
       }
-      createTerminal()
+      createInitialTerminals()
     }
-  }, [workspace.id, regularTerminals.length, aiTerminal])
+  }, [isActive, workspace.id, terminals.length, workspace.defaultAgent, workspace.folderPath, workspace.envVars])
 
   // Set default focus - only for active workspace
   useEffect(() => {
-    if (isActive && !focusedTerminalId && aiTerminal) {
-      workspaceStore.setFocusedTerminal(aiTerminal.id)
+    if (isActive && !focusedTerminalId && terminals.length > 0) {
+      // Focus the first terminal (agent or regular)
+      const firstTerminal = agentTerminal || terminals[0]
+      if (firstTerminal) {
+        workspaceStore.setFocusedTerminal(firstTerminal.id)
+      }
     }
-  }, [isActive, focusedTerminalId, aiTerminal])
+  }, [isActive, focusedTerminalId, terminals, agentTerminal])
 
   const handleAddTerminal = useCallback(async () => {
-    const terminal = workspaceStore.addTerminal(workspace.id, 'terminal')
+    const terminal = workspaceStore.addTerminal(workspace.id)
     const shell = await getShellFromSettings()
+    const settings = settingsStore.getSettings()
+    const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
     window.electronAPI.pty.create({
       id: terminal.id,
       cwd: workspace.folderPath,
       type: 'terminal',
-      shell
+      shell,
+      customEnv
     })
-  }, [workspace.id, workspace.folderPath])
+    // Focus the new terminal
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id, workspace.folderPath, workspace.envVars])
 
   const handleCloseTerminal = useCallback((id: string) => {
     const terminal = terminals.find(t => t.id === id)
-    if (terminal?.type === 'claude-code' || terminal?.type === 'copilot') {
+    // Show confirm for agent terminals
+    if (terminal?.agentPreset && terminal.agentPreset !== 'none') {
       setShowCloseConfirm(id)
     } else {
       window.electronAPI.pty.kill(id)
@@ -121,11 +230,12 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     workspaceStore.setFocusedTerminal(id)
   }, [])
 
-  // Determine what to show in thumbnail bar
-  const mainTerminal = focusedTerminal || aiTerminal
-  const thumbnailTerminals = isAiTerminalFocused
-    ? regularTerminals
-    : (aiTerminal ? [aiTerminal] : [])
+  // Determine what to show
+  // mainTerminal: the currently focused or first available terminal
+  const mainTerminal = focusedTerminal || agentTerminal || terminals[0]
+
+  // Show all terminals in thumbnail bar (except the currently focused one)
+  const thumbnailTerminals = terminals.filter(t => t.id !== mainTerminal?.id)
 
   return (
     <div className="workspace-view">
@@ -136,60 +246,43 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
             key={terminal.id}
             className={`terminal-wrapper ${terminal.id === mainTerminal?.id ? 'active' : 'hidden'}`}
           >
-            <div className="main-panel">
-              <div className="main-panel-header">
-                <div className={`main-panel-title ${terminal.type === 'claude-code' || terminal.type === 'copilot' ? 'ai-terminal' : ''}`}>
-                  {(terminal.type === 'claude-code' || terminal.type === 'copilot') && <span>{terminal.type === 'copilot' ? '⚡' : '✦'}</span>}
-                  <span>{terminal.title}</span>
-                </div>
-                <div className="main-panel-actions">
-                  <ActivityIndicator
-                    terminalId={terminal.id}
-                    size="small"
-                  />
-                  <button
-                    className="action-btn"
-                    onClick={() => handleRestart(terminal.id)}
-                    title="Restart terminal"
-                  >
-                    ⟳
-                  </button>
-                  <button
-                    className="action-btn danger"
-                    onClick={() => handleCloseTerminal(terminal.id)}
-                    title="Close terminal"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-              <div className="main-panel-content">
-                <TerminalPanel
-                  terminalId={terminal.id}
-                  isActive={terminal.id === mainTerminal?.id}
-                  terminalType={terminal.type}
-                />
-              </div>
-            </div>
+            <MainPanel
+              terminal={terminal}
+              onClose={handleCloseTerminal}
+              onRestart={handleRestart}
+            />
           </div>
         ))}
       </div>
+
+      {/* Resize handle for thumbnail bar */}
+      {!thumbnailSettings.collapsed && (
+        <ResizeHandle
+          direction="vertical"
+          onResize={handleThumbnailResize}
+          onDoubleClick={handleThumbnailResetHeight}
+        />
+      )}
 
       <ThumbnailBar
         terminals={thumbnailTerminals}
         focusedTerminalId={focusedTerminalId}
         onFocus={handleFocus}
-        onAddTerminal={isAiTerminalFocused ? handleAddTerminal : undefined}
-        showAddButton={isAiTerminalFocused}
+        onAddTerminal={handleAddTerminal}
+        showAddButton={true}
+        height={thumbnailSettings.height}
+        collapsed={thumbnailSettings.collapsed}
+        onCollapse={handleThumbnailCollapse}
       />
 
-      {showCloseConfirm && (
-        <CloseConfirmDialog
-          onConfirm={handleConfirmClose}
-          onCancel={() => setShowCloseConfirm(null)}
-          terminalType={terminals.find(t => t.id === showCloseConfirm)?.type as 'claude-code' | 'copilot' | undefined}
-        />
-      )}
-    </div>
+      {
+        showCloseConfirm && (
+          <CloseConfirmDialog
+            onConfirm={handleConfirmClose}
+            onCancel={() => setShowCloseConfirm(null)}
+          />
+        )
+      }
+    </div >
   )
 }
