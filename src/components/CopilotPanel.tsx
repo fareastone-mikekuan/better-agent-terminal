@@ -161,7 +161,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     analyzeOutput(messages)
   }, [messages, isLoading, isEnabled])
 
-  // Check if Copilot is enabled
+  // Check if Copilot is enabled - runs on mount and when settings change
   useEffect(() => {
     const checkCopilot = async () => {
       try {
@@ -172,7 +172,16 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
         setIsEnabled(false)
       }
     }
+    
+    // Initial check
     checkCopilot()
+    
+    // Subscribe to settings changes to re-check when Copilot config updates
+    const unsubscribe = settingsStore.subscribe(() => {
+      checkCopilot()
+    })
+    
+    return unsubscribe
   }, [])
 
   // Get available terminals and subscribe to changes

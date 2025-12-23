@@ -124,6 +124,18 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     await window.electronAPI.copilot.setConfig(newConfig)
   }
 
+  const handleLogout = async () => {
+    const newConfig = {
+      enabled: false,
+      apiKey: '',
+      organizationSlug: ''
+    }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+    setAuthMessage('✅ 已登出 GitHub Copilot')
+  }
+
   const handleManualComplete = async () => {
     if (!deviceCode) {
       setAuthMessage('❌ 請先點擊「GitHub 登入」按鈕')
@@ -254,6 +266,41 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </label>
             </div>
 
+            {/* Show login status and logout button if already logged in */}
+            {copilotConfig.apiKey && !authLoading && (
+              <div className="settings-group">
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#2d4a2d',
+                  borderRadius: '4px',
+                  marginBottom: '10px'
+                }}>
+                  <div style={{ color: '#7bbda4', fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
+                    ✅ 已登入 GitHub Copilot
+                  </div>
+                  <small style={{ color: '#888' }}>
+                    Token: {copilotConfig.apiKey.substring(0, 20)}...
+                  </small>
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#cb6077',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    width: '100%'
+                  }}
+                >
+                  🚪 登出
+                </button>
+              </div>
+            )}
+
+            {/* Show login button if not logged in */}
             {!copilotConfig.apiKey && !authLoading && (
               <div className="settings-group">
                 <button 

@@ -25,7 +25,7 @@ async function getShellFromSettings(): Promise<string | undefined> {
 
 export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: WorkspaceViewProps) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
-  const [aiTerminalType, setAiTerminalType] = useState<'claude-code' | 'copilot'>('claude-code')
+  const [aiTerminalType, setAiTerminalType] = useState<'claude-code' | 'copilot'>('copilot')
 
   const aiTerminal = terminals.find(t => t.type === aiTerminalType || (aiTerminalType === 'claude-code' && t.type === 'claude-code') || (aiTerminalType === 'copilot' && t.type === 'copilot'))
   const regularTerminals = terminals.filter(t => t.type === 'terminal')
@@ -37,9 +37,9 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
   useEffect(() => {
     if (!aiTerminal) {
       const createAiTerminal = async () => {
-        const isCopilotEnabled = await settingsStore.isCopilotEnabled()
-        const terminalType = isCopilotEnabled ? 'copilot' : 'claude-code'
-        setAiTerminalType(terminalType as 'claude-code' | 'copilot')
+        // Always use copilot by default (GitHub Copilot)
+        const terminalType = 'copilot'
+        setAiTerminalType(terminalType)
         
         const terminal = workspaceStore.addTerminal(workspace.id, terminalType)
         const shell = await getShellFromSettings()

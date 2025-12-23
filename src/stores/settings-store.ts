@@ -136,6 +136,8 @@ class SettingsStore {
     // Load Copilot config from main process
     try {
       this.copilotConfig = await window.electronAPI.copilot.getConfig()
+      // Notify subscribers after loading Copilot config
+      this.notify()
     } catch (e) {
       console.warn('Failed to load Copilot config:', e)
     }

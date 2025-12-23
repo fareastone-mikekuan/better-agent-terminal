@@ -4,7 +4,7 @@ interface CloseConfirmDialogProps {
   terminalType?: 'claude-code' | 'copilot'
 }
 
-export function CloseConfirmDialog({ onConfirm, onCancel, terminalType = 'claude-code' }: CloseConfirmDialogProps) {
+export function CloseConfirmDialog({ onConfirm, onCancel, terminalType = 'copilot' }: CloseConfirmDialogProps) {
   const isGitHubCopilot = terminalType === 'copilot'
   const title = isGitHubCopilot ? 'Close GitHub Copilot?' : 'Close Claude Code?'
   const description = isGitHubCopilot 

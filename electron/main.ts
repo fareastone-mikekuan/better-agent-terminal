@@ -313,11 +313,37 @@ ipcMain.handle('update:get-version', () => {
 // GitHub Copilot Integration handlers
 ipcMain.handle('copilot:set-config', async (_event, config: any) => {
   copilotManager?.setConfig(config)
+  
+  // Persist config to disk
+  try {
+    const fs = await import('fs/promises')
+    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('Failed to save Copilot config:', error)
+  }
+  
   return true
 })
 
 ipcMain.handle('copilot:get-config', async () => {
-  return copilotManager?.getConfig()
+  // Try to load config from disk first
+  try {
+    const fs = await import('fs/promises')
+    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
+    const data = await fs.readFile(configPath, 'utf-8')
+    const config = JSON.parse(data)
+    
+    // Set config to manager if not already set
+    if (!copilotManager?.getConfig()) {
+      copilotManager?.setConfig(config)
+    }
+    
+    return config
+  } catch {
+    // Fall back to in-memory config
+    return copilotManager?.getConfig()
+  }
 })
 
 ipcMain.handle('copilot:is-enabled', async () => {
