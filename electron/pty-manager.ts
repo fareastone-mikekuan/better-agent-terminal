@@ -242,6 +242,7 @@ export class PtyManager {
 
   write(id: string, data: string): void {
     const instance = this.instances.get(id)
+    console.log('[PtyManager] write:', { id, hasInstance: !!instance, data: data.charCodeAt(0) })
     if (instance) {
       if (instance.usePty) {
         instance.process.write(data)

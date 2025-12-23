@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Workspace } from '../types'
 import { PRESET_ROLES } from '../types'
 import { ActivityIndicator } from './ActivityIndicator'
 
 interface SidebarProps {
+  width?: number
   workspaces: Workspace[]
   activeWorkspaceId: string | null
   onSelectWorkspace: (id: string) => void
@@ -15,6 +16,7 @@ interface SidebarProps {
   onOpenEnvVars: (workspaceId: string) => void
   onOpenSettings: () => void
   onOpenAbout: () => void
+  onAddCopilotChat?: (workspaceId: string) => void
 }
 
 function getRoleColor(role?: string): string {
@@ -24,6 +26,7 @@ function getRoleColor(role?: string): string {
 }
 
 export function Sidebar({
+  width = 220,
   workspaces,
   activeWorkspaceId,
   onSelectWorkspace,
@@ -34,7 +37,8 @@ export function Sidebar({
   onReorderWorkspaces,
   onOpenEnvVars,
   onOpenSettings,
-  onOpenAbout
+  onOpenAbout,
+  onAddCopilotChat
 }: Readonly<SidebarProps>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -46,6 +50,7 @@ export function Sidebar({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; workspaceId: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const roleMenuRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (editingId && inputRef.current) {
@@ -322,6 +327,31 @@ export function Sidebar({
         <button className="add-workspace-btn" onClick={onAddWorkspace}>
           + Add Workspace
         </button>
+        {onAddCopilotChat && activeWorkspaceId && (
+          <button
+            className="copilot-chat-btn"
+            onClick={() => onAddCopilotChat(activeWorkspaceId)}
+            title="Open Copilot Chat"
+            style={{
+              padding: '10px',
+              backgroundColor: '#6e40c9',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⚡</span>
+            <span>Copilot Chat</span>
+          </button>
+        )}
         <div className="sidebar-footer-buttons">
           <button className="settings-btn" onClick={onOpenSettings}>
             Settings

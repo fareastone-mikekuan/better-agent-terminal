@@ -67,6 +67,12 @@ export default function App() {
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
 
+  // Debug: log state on mount
+  useEffect(() => {
+    console.log('[App] Initial state:', state)
+    console.log('[App] Panel settings:', panelSettings)
+  }, [])
+
   // Handle sidebar resize
   const handleSidebarResize = useCallback((delta: number) => {
     setPanelSettings(prev => {
@@ -131,9 +137,37 @@ export default function App() {
     workspaceStore.load()
     settingsStore.load()
 
+    // Save terminal cwds before app closes
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Trigger async save, but don't wait for it
+      // The periodic save in WorkspaceView should have already saved most recent state
+      const state = workspaceStore.getState()
+      
+      // Quick synchronous save attempt
+      Promise.all(
+        state.terminals
+          .filter(t => t.type === 'terminal')
+          .map(async (terminal) => {
+            try {
+              const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+              if (cwd) {
+                workspaceStore.updateTerminalCwd(terminal.id, cwd)
+              }
+            } catch (err) {
+              // Ignore errors during shutdown
+            }
+          })
+      ).then(() => {
+        workspaceStore.save()
+      })
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     return () => {
       unsubscribe()
       unsubscribeOutput()
+      window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [])
 
@@ -166,6 +200,12 @@ export default function App() {
     }
   }, [])
 
+  const handleAddCopilotChat = useCallback((workspaceId: string) => {
+    const terminal = workspaceStore.addCopilotChat(workspaceId)
+    // Copilot chat doesn't need PTY creation
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [])
+
   // Get the workspace for env dialog
   const envDialogWorkspace = envDialogWorkspaceId
     ? state.workspaces.find(w => w.id === envDialogWorkspaceId)
@@ -196,6 +236,7 @@ export default function App() {
         onOpenEnvVars={(workspaceId) => setEnvDialogWorkspaceId(workspaceId)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
+        onAddCopilotChat={handleAddCopilotChat}
       />
       <ResizeHandle
         direction="horizontal"

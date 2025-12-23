@@ -170,6 +170,78 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     }
   }, [isActive, workspace.id, terminals.length, workspace.defaultAgent, workspace.folderPath, workspace.envVars])
 
+  // Restore PTY processes for loaded terminals (from saved state)
+  useEffect(() => {
+    if (isActive) {
+      console.log('[WorkspaceView] restoreTerminals useEffect triggered, terminals:', terminals.length)
+      const restoreTerminals = async () => {
+        const shell = await getShellFromSettings()
+        const settings = settingsStore.getSettings()
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
+
+        for (const terminal of terminals) {
+          console.log('[WorkspaceView] Processing terminal:', { id: terminal.id, type: terminal.type })
+          // Skip copilot chat terminals (they don't need PTY)
+          if (terminal.type === 'copilot') continue
+
+          // Check if PTY already exists
+          let ptyExists = false
+          try {
+            const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+            console.log('[WorkspaceView] getCwd result:', terminal.id, 'cwd:', cwd)
+            if (cwd) {
+              ptyExists = true
+              console.log('[WorkspaceView] PTY already exists for:', terminal.id)
+            }
+          } catch (err) {
+            console.log('[WorkspaceView] getCwd threw error:', err)
+          }
+
+          if (!ptyExists) {
+            // PTY doesn't exist, create it
+            console.log('[WorkspaceView] Creating PTY for restored terminal:', terminal.id)
+            try {
+              await window.electronAPI.pty.create({
+                id: terminal.id,
+                cwd: terminal.cwd,
+                type: terminal.type,
+                agentPreset: terminal.agentPreset,
+                shell,
+                customEnv
+              })
+              console.log('[WorkspaceView] PTY created successfully:', terminal.id)
+            } catch (err) {
+              console.error('[WorkspaceView] Failed to create PTY:', terminal.id, err)
+              continue
+            }
+
+            // Give terminal more time to start properly, then send commands to activate it
+            setTimeout(() => {
+              // Send a space and backspace to "wake up" the terminal without visible effect
+              window.electronAPI.pty.write(terminal.id, ' \b')
+            }, 500)
+            
+            // Then send a newline to show the prompt
+            setTimeout(() => {
+              window.electronAPI.pty.write(terminal.id, '\r')
+            }, 800)
+
+            // Auto-run agent command if it's an agent terminal
+            if (terminal.agentPreset && terminal.agentPreset !== 'none' && settings.agentAutoCommand) {
+              const agentPreset = getAgentPreset(terminal.agentPreset)
+              if (agentPreset?.command) {
+                setTimeout(() => {
+                  window.electronAPI.pty.write(terminal.id, agentPreset.command + '\r')
+                }, 1000)
+              }
+            }
+          }
+        }
+      }
+      restoreTerminals()
+    }
+  }, [isActive, terminals, workspace.envVars])
+
   // Set default focus - only for active workspace
   useEffect(() => {
     if (isActive && !focusedTerminalId && terminals.length > 0) {
@@ -180,6 +252,35 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
       }
     }
   }, [isActive, focusedTerminalId, terminals, agentTerminal])
+
+  // Periodically update terminal cwds for persistence
+  useEffect(() => {
+    if (!isActive) return
+
+    const updateCwds = async () => {
+      for (const terminal of terminals) {
+        if (terminal.type === 'terminal') {
+          try {
+            const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+            if (cwd && cwd !== terminal.cwd) {
+              workspaceStore.updateTerminalCwd(terminal.id, cwd)
+            }
+          } catch (e) {
+            // Terminal might not be ready or closed
+          }
+        }
+      }
+      // Save after updating all cwds
+      workspaceStore.save()
+    }
+
+    // Update cwds every 5 seconds
+    const interval = setInterval(updateCwds, 5000)
+    // Also update immediately
+    updateCwds()
+
+    return () => clearInterval(interval)
+  }, [isActive, terminals])
 
   const handleAddTerminal = useCallback(async () => {
     const terminal = workspaceStore.addTerminal(workspace.id)

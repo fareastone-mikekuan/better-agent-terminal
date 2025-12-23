@@ -32,7 +32,7 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal';              // 統一為 terminal
+  type: 'terminal' | 'copilot';  // terminal 或 copilot chat
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;
@@ -53,7 +53,7 @@ export interface AppState {
 export interface CreatePtyOptions {
   id: string;
   cwd: string;
-  type: 'terminal';              // 統一為 terminal
+  type: 'terminal' | 'copilot';  // terminal 或 copilot chat
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   shell?: string;
   customEnv?: Record<string, string>;  // 自定義環境變數

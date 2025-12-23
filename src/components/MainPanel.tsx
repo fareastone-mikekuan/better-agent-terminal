@@ -83,7 +83,7 @@ export function MainPanel({ terminal, onClose, onRestart }: Readonly<MainPanelPr
         </div>
       </div>
       <div className="main-panel-content">
-        <TerminalPanel terminalId={terminal.id} />
+        <TerminalPanel terminalId={terminal.id} terminalType={terminal.type} />
       </div>
     </div>
   )

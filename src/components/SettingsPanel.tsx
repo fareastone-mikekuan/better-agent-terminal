@@ -105,6 +105,139 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     settingsStore.setCustomCursorColor(color)
   }
 
+  const handleCopilotEnabledChange = async (enabled: boolean) => {
+    const newConfig = { ...copilotConfig, enabled }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleCopilotModelChange = async (model: string) => {
+    const newConfig = { ...copilotConfig, model }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleLogout = async () => {
+    const newConfig = {
+      enabled: false,
+      apiKey: '',
+      organizationSlug: ''
+    }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+    setAuthMessage('✅ 已登出 GitHub Copilot')
+  }
+
+  const handleManualComplete = async () => {
+    if (!deviceCode) {
+      setAuthMessage('❌ 請先點擊「GitHub 登入」按鈕')
+      return
+    }
+
+    try {
+      setAuthLoading(true)
+      setAuthMessage('正在檢查授權狀態...')
+      
+      const token = await window.electronAPI.copilot.completeDeviceFlow(deviceCode)
+      
+      // Save the OAuth token and enable Copilot
+      const newConfig = { 
+        ...copilotConfig, 
+        enabled: true,
+        apiKey: token
+      }
+      
+      setCopilotConfig(newConfig)
+      await settingsStore.setCopilotConfig(newConfig)
+      await window.electronAPI.copilot.setConfig(newConfig)
+      
+      setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
+      setUserCode('')
+      setDeviceCode('')
+      setAuthLoading(false)
+    } catch (error: any) {
+      if (error.message === 'PENDING') {
+        setAuthMessage('⚠️ 請先在瀏覽器中完成授權，然後再點擊此按鈕')
+      } else {
+        setAuthMessage(`❌ 授權失敗: ${error.message}`)
+      }
+      setAuthLoading(false)
+    }
+  }
+
+  const handleGitHubLogin = async () => {
+    try {
+      setAuthLoading(true)
+      setAuthMessage('正在啟動 GitHub 認證...')
+      setUserCode('') // Clear previous user code
+      
+      const deviceFlow = await window.electronAPI.copilot.startDeviceFlow()
+      setUserCode(deviceFlow.userCode) // Store user code for display
+      setDeviceCode(deviceFlow.deviceCode) // Store device code for manual completion
+      setAuthMessage(`請在打開的瀏覽器中輸入上方代碼，或授權後點擊下方「我已授權」按鈕`)
+      
+      // 自動開啟瀏覽器
+      window.open(deviceFlow.verificationUri, '_blank')
+      
+      // 輪詢檢查授權狀態
+      let attempts = 0
+      const maxAttempts = 60 // 5 minutes (5 seconds * 60)
+      
+      const checkAuth = async (): Promise<boolean> => {
+        if (attempts >= maxAttempts) {
+          setAuthMessage('⚠️ 自動檢測逾時，請點擊下方「我已授權」按鈕手動完成')
+          setAuthLoading(false)
+          return false
+        }
+        
+        try {
+          const token = await window.electronAPI.copilot.completeDeviceFlow(deviceFlow.deviceCode)
+          
+          // Save the OAuth token and enable Copilot
+          const newConfig = { 
+            ...copilotConfig, 
+            enabled: true,
+            apiKey: token // Save the OAuth token
+          }
+          
+          // Update local state
+          setCopilotConfig(newConfig)
+          
+          // Save to store and notify backend
+          await settingsStore.setCopilotConfig(newConfig)
+          await window.electronAPI.copilot.setConfig(newConfig)
+          
+          // Show success message
+          setAuthMessage('✅ 授權成功！GitHub Copilot 已啟用')
+          setUserCode('') // Clear user code on success
+          setDeviceCode('') // Clear device code on success
+          setAuthLoading(false)
+          return true
+        } catch (error: any) {
+          if (error.message === 'PENDING') {
+            // Authorization still pending, continue polling
+            attempts++
+            await new Promise(resolve => setTimeout(resolve, 5000)) // Wait 5 seconds
+            return checkAuth()
+          } else {
+            // Real error occurred
+            setAuthMessage(`授權失敗: ${error.message}`)
+            setAuthLoading(false)
+            return false
+          }
+        }
+      }
+      
+      await checkAuth()
+    } catch (error: any) {
+      setAuthMessage(`錯誤: ${error.message}`)
+      setAuthLoading(false)
+    }
+  }
+
   const terminalColors = settingsStore.getTerminalColors()
 
   return (

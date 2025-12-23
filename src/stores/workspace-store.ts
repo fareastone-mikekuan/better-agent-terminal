@@ -159,9 +159,17 @@ class WorkspaceStore {
 
     // Get agent preset info for title
     const preset = agentPreset ? getAgentPreset(agentPreset) : null
-    const title = preset && preset.id !== 'none'
-      ? preset.name
-      : 'New Terminal'
+    let title: string
+    if (preset && preset.id !== 'none') {
+      title = preset.name
+    } else {
+      // Count existing regular terminals in this workspace to get next number
+      const regularTerminals = this.state.terminals.filter(
+        t => t.workspaceId === workspaceId && t.type === 'terminal' && !t.agentPreset
+      )
+      const terminalNumber = regularTerminals.length + 1
+      title = `Terminal #${terminalNumber}`
+    }
 
     const terminal: TerminalInstance = {
       id: uuidv4(),
@@ -184,6 +192,32 @@ class WorkspaceStore {
     }
 
     this.notify()
+    this.save()
+    return terminal
+  }
+
+  addCopilotChat(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'copilot',
+      title: '⚡ Copilot Chat',
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
     return terminal
   }
 
@@ -199,6 +233,7 @@ class WorkspaceStore {
     }
 
     this.notify()
+    this.save()
   }
 
   renameTerminal(id: string, title: string): void {
@@ -239,6 +274,16 @@ class WorkspaceStore {
       ...this.state,
       terminals: this.state.terminals.map(t =>
         t.id === id ? { ...t, scrollbackBuffer: [...t.scrollbackBuffer, data] } : t
+      )
+    }
+    // Don't notify for scrollback updates to avoid re-renders
+  }
+
+  updateTerminalScrollback(id: string, lines: string[]): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id ? { ...t, scrollbackBuffer: lines } : t
       )
     }
     // Don't notify for scrollback updates to avoid re-renders
@@ -309,7 +354,9 @@ class WorkspaceStore {
   async save(): Promise<void> {
     const data = JSON.stringify({
       workspaces: this.state.workspaces,
-      activeWorkspaceId: this.state.activeWorkspaceId
+      activeWorkspaceId: this.state.activeWorkspaceId,
+      terminals: this.state.terminals,
+      focusedTerminalId: this.state.focusedTerminalId
     })
     await window.electronAPI.workspace.save(data)
   }
@@ -322,7 +369,9 @@ class WorkspaceStore {
         this.state = {
           ...this.state,
           workspaces: parsed.workspaces || [],
-          activeWorkspaceId: parsed.activeWorkspaceId || null
+          activeWorkspaceId: parsed.activeWorkspaceId || null,
+          terminals: parsed.terminals || [],
+          focusedTerminalId: parsed.focusedTerminalId || null
         }
         this.notify()
       } catch (e) {

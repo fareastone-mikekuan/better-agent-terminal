@@ -228,7 +228,10 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
 
     // Handle terminal input
     terminal.onData((data) => {
-      window.electronAPI.pty.write(terminalId, data)
+      console.log('[TerminalPanel] User input:', { terminalId, data: data.charCodeAt(0), char: data })
+      window.electronAPI.pty.write(terminalId, data).catch((err: Error) => {
+        console.error('[TerminalPanel] Failed to write to PTY:', err)
+      })
     })
 
     // Handle copy and paste shortcuts
@@ -327,6 +330,29 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       }
     })
 
+    // Periodically save terminal buffer for persistence (every 3 seconds)
+    const saveBufferInterval = setInterval(() => {
+      try {
+        // Get terminal buffer content (last 200 lines)
+        const buffer = terminal.buffer.active
+        const lines: string[] = []
+        const lineCount = Math.min(buffer.length, 200)
+        const startLine = Math.max(0, buffer.length - lineCount)
+        
+        for (let i = startLine; i < buffer.length; i++) {
+          const line = buffer.getLine(i)
+          if (line) {
+            lines.push(line.translateToString(true) + '\r\n')
+          }
+        }
+        
+        // Replace the entire scrollback buffer with latest content
+        workspaceStore.updateTerminalScrollback(terminalId, lines)
+      } catch (e) {
+        // Ignore errors during buffer read
+      }
+    }, 3000)
+
     // Handle terminal exit
     const unsubscribeExit = window.electronAPI.pty.onExit((id, exitCode) => {
       if (id === terminalId) {
@@ -344,6 +370,18 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       }
     })
     resizeObserver.observe(containerRef.current)
+
+    // Restore scrollback buffer if exists
+    const terminalInstance = workspaceStore.getState().terminals.find(t => t.id === terminalId)
+    if (terminalInstance?.scrollbackBuffer && terminalInstance.scrollbackBuffer.length > 0) {
+      // Write saved scrollback content to terminal
+      const scrollbackContent = terminalInstance.scrollbackBuffer.join('')
+      if (scrollbackContent) {
+        terminal.write(scrollbackContent)
+        // Add a visual separator to indicate restored content
+        terminal.write('\x1b[2m--- Session restored ---\x1b[0m\r\n')
+      }
+    }
 
     // Initial resize
     setTimeout(() => {
@@ -371,6 +409,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     })
 
     return () => {
+      clearInterval(saveBufferInterval)
       unsubscribeOutput()
       unsubscribeExit()
       unsubscribeSettings()

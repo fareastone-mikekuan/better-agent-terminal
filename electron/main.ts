@@ -177,6 +177,7 @@ ipcMain.handle('pty:create', async (_event, options) => {
 })
 
 ipcMain.handle('pty:write', async (_event, id: string, data: string) => {
+  console.log('[Main] pty:write received:', { id, data: data.charCodeAt(0), char: data })
   ptyManager?.write(id, data)
 })
 
@@ -351,4 +352,84 @@ ipcMain.handle('snippet:getCategories', () => {
 
 ipcMain.handle('snippet:getFavorites', () => {
   return snippetDb.getFavorites()
+})
+
+// GitHub Copilot Integration handlers
+ipcMain.handle('copilot:set-config', async (_event, config: any) => {
+  copilotManager?.setConfig(config)
+
+  // Persist config to disk
+  try {
+    const fs = await import('fs/promises')
+    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('Failed to save Copilot config:', error)
+  }
+
+  return true
+})
+
+ipcMain.handle('copilot:get-config', async () => {
+  // Try to load config from disk first
+  try {
+    const fs = await import('fs/promises')
+    const configPath = path.join(app.getPath('userData'), 'copilot-config.json')
+    const data = await fs.readFile(configPath, 'utf-8')
+    const config = JSON.parse(data)
+
+    // Set config to manager if not already set
+    if (copilotManager) {
+      copilotManager.setConfig(config)
+    }
+
+    return config
+  } catch {
+    // Return default config if file doesn't exist
+    return {
+      enabled: false,
+      apiKey: '',
+      organizationSlug: ''
+    }
+  }
+})
+
+ipcMain.handle('copilot:is-enabled', async () => {
+  return copilotManager?.isEnabled() ?? false
+})
+
+ipcMain.handle('copilot:chat', async (_event, chatId: string, options: any) => {
+  try {
+    return await copilotManager?.chat(chatId, options)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return {
+      error: errorMessage,
+      content: '',
+      finishReason: 'error' as const
+    }
+  }
+})
+
+ipcMain.handle('copilot:cancel-chat', async (_event, chatId: string) => {
+  copilotManager?.cancelChat(chatId)
+  return true
+})
+
+ipcMain.handle('copilot:start-device-flow', async () => {
+  try {
+    return await copilotManager?.startDeviceFlow()
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(errorMessage)
+  }
+})
+
+ipcMain.handle('copilot:complete-device-flow', async (_event, deviceCode: string) => {
+  try {
+    return await copilotManager?.completeDeviceFlow(deviceCode)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(errorMessage)
+  }
 })
