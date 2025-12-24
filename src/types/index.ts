@@ -168,6 +168,7 @@ export interface AppSettings {
   agentCustomCommand: string;     // 自定義 Agent 命令
   defaultTerminalCount: number;   // 每個 workspace 預設的 terminal 數量
   createDefaultAgentTerminal: boolean;  // 是否預設建立 Agent Terminal
+  webViewUrl?: string;            // 嵌入網頁的 URL
 }
 
 // GitHub Copilot Integration

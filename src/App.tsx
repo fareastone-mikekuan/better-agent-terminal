@@ -60,6 +60,7 @@ function savePanelSettings(settings: PanelSettings): void {
 
 export default function App() {
   const [state, setState] = useState<AppState>(workspaceStore.getState())
+  const [settings, setSettings] = useState(settingsStore.getSettings())
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
@@ -140,6 +141,10 @@ export default function App() {
       setState(workspaceStore.getState())
     })
 
+    const unsubscribeSettings = settingsStore.subscribe(() => {
+      setSettings(settingsStore.getSettings())
+    })
+
     // Global listener for all terminal output - updates activity for ALL terminals
     // This is needed because WorkspaceView only renders terminals for the active workspace
     const unsubscribeOutput = window.electronAPI.pty.onOutput((id) => {
@@ -179,6 +184,7 @@ export default function App() {
 
     return () => {
       unsubscribe()
+      unsubscribeSettings()
       unsubscribeOutput()
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
@@ -301,7 +307,9 @@ export default function App() {
           direction="vertical"
           onResize={handleSnippetHeightResize}
         />
-        <WebViewPanel height={`${100 - snippetHeight}%`} />
+        {settings.webViewUrl && (
+          <WebViewPanel height={`${100 - snippetHeight}%`} url={settings.webViewUrl} />
+        )}
       </div>
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />

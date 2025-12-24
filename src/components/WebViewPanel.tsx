@@ -2,11 +2,11 @@ import { useState } from 'react'
 
 interface WebViewPanelProps {
   height: string
+  url: string
 }
 
-export function WebViewPanel({ height }: WebViewPanelProps) {
-  const url = 'http://10.68.52.50:8080/vdsview/view?show=CCBS_Billing_Diagram.asp'
-  const [zoom, setZoom] = useState(100)
+export function WebViewPanel({ height, url }: WebViewPanelProps) {
+  const [zoom, setZoom] = useState(40)
 
   return (
     <div

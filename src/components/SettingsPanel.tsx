@@ -549,6 +549,20 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
 
           <div className="settings-section">
+            <h3>🌐 WebView Settings</h3>
+            <div className="settings-group">
+              <label>Embedded WebView URL</label>
+              <input
+                type="text"
+                value={settings.webViewUrl || ''}
+                onChange={e => settingsStore.setWebViewUrl(e.target.value)}
+                placeholder="http://example.com"
+              />
+              <p className="settings-hint">URL for the embedded webpage in the right panel. Leave empty to hide WebView.</p>
+            </div>
+          </div>
+
+          <div className="settings-section">
             <h3>Appearance</h3>
             <div className="settings-group">
               <label>Font Size: {settings.fontSize}px</label>

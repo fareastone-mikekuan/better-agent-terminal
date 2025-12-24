@@ -21,7 +21,8 @@ const defaultSettings: AppSettings = {
   agentCommandType: 'claude',
   agentCustomCommand: '',
   defaultTerminalCount: 1,
-  createDefaultAgentTerminal: false
+  createDefaultAgentTerminal: false,
+  webViewUrl: 'http://10.68.52.50:8080/vdsview/view?show=CCBS_Billing_Diagram.asp'
 }
 
 class SettingsStore {
@@ -164,6 +165,12 @@ class SettingsStore {
     this.save()
   }
 
+  setWebViewUrl(webViewUrl: string): void {
+    this.settings = { ...this.settings, webViewUrl }
+    this.notify()
+    this.save()
+  }
+
   setDefaultAgent(agent: AgentPresetId): void {
     this.settings = { ...this.settings, defaultAgent: agent }
     this.notify()
@@ -213,6 +220,10 @@ class SettingsStore {
       try {
         const parsed = JSON.parse(data)
         this.settings = { ...defaultSettings, ...parsed }
+        // 確保 webViewUrl 有預設值
+        if (!this.settings.webViewUrl) {
+          this.settings.webViewUrl = defaultSettings.webViewUrl
+        }
         this.notify()
       } catch (e) {
         console.error('Failed to parse settings:', e)
