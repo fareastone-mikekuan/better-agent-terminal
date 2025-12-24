@@ -20,14 +20,10 @@ export interface Workspace {
 
 // Preset roles for quick selection
 export const PRESET_ROLES = [
-  { id: 'iris', name: 'Iris', color: '#7bbda4' },
-  { id: 'irisgo-pm', name: 'IrisGo PM', color: '#8ab3b5' },
-  { id: 'lucy', name: 'Lucy', color: '#a89bb9' },
-  { id: 'veda', name: 'Veda', color: '#f4bc87' },
-  { id: 'exia', name: 'Exia', color: '#cb6077' },
-  { id: 'leo', name: 'Leo', color: '#beb55b' },
-  { id: 'custom', name: 'Custom', color: '#dfdbc3' },
-];
+  { id: 'not-started', name: '尚未開始', color: '#550a0aff' },
+  { id: 'in-progress', name: '進行中', color: '#1100ffff' },
+  { id: 'completed', name: '已完成', color: '#074901ff' },
+] as const;
 
 export interface TerminalInstance {
   id: string;

@@ -414,15 +414,10 @@ ${webPageContent}
             <p>👋 你好！我是 GitHub Copilot Agent。</p>
             <p>💡 使用方式：</p>
             <ol style={{ marginLeft: '20px', marginTop: '8px' }}>
-              <li>🗣️ 告訴我你的問題或需求</li>
-              <li>⚡ 我會建議解決方案和命令</li>
+              <li>🗣️ 透過我執行程式或分析</li>
+              <li>⚡ 我可以檢視網頁</li>
               <li>🖱️ 點擊綠色按鈕執行命令</li>
-              <li>📋 複製終端輸出貼給我分析</li>
-              <li>🔄 根據結果繼續改進</li>
             </ol>
-            <p style={{ marginTop: '12px', fontSize: '13px', opacity: 0.7 }}>
-              ⚠️ 注意：我看不到終端輸出，需要你複製貼上給我
-            </p>
           </div>
         )}
 
