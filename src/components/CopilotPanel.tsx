@@ -326,7 +326,14 @@ ${webPageContent}
       
       // Get text content
       const textContent = doc.body.textContent || ''
-      const cleanText = textContent.replace(/\s+/g, ' ').trim().substring(0, 5000) // Limit to 5000 chars
+      let cleanText = textContent.replace(/\s+/g, ' ').trim()
+      
+      // Safely truncate to avoid cutting UTF-8 multibyte characters
+      if (cleanText.length > 5000) {
+        cleanText = cleanText.substring(0, 5000)
+        // Remove any incomplete multibyte character at the end
+        cleanText = cleanText.replace(/[\uD800-\uDBFF]$/, '')
+      }
 
       // Store the web page content for the next message
       setWebPageContent(cleanText)
