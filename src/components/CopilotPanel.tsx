@@ -19,6 +19,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const [targetTerminalId, setTargetTerminalId] = useState<string>(terminalId)
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   const [includeWebContext, setIncludeWebContext] = useState(true)
+  const [webPageContent, setWebPageContent] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -234,7 +235,27 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       content: input
     }
 
-    setMessages(prev => [...prev, userMessage])
+    // If we have web page content, include it with the user's question
+    let finalUserMessage = userMessage
+    if (webPageContent) {
+      const settings = settingsStore.getSettings()
+      finalUserMessage = {
+        role: 'user',
+        content: `[網頁內容]
+網址: ${settings.webViewUrl}
+
+網頁文字內容:
+${webPageContent}
+
+---
+
+我的問題: ${input}`
+      }
+      // Clear web page content after using it
+      setWebPageContent(null)
+    }
+
+    setMessages(prev => [...prev, finalUserMessage])
     setInput('')
     setIsLoading(true)
     setError(null)
@@ -250,10 +271,10 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       const settings = settingsStore.getSettings()
       
       // Build context messages
-      let contextMessages: CopilotMessage[] = [systemPrompt, ...messages, userMessage]
+      let contextMessages: CopilotMessage[] = [systemPrompt, ...messages, finalUserMessage]
       
-      // Add web context if enabled and URL is available
-      if (includeWebContext && settings.webViewUrl) {
+      // Add web context if enabled and URL is available (and no specific web content)
+      if (includeWebContext && settings.webViewUrl && !webPageContent) {
         const webContextMessage: CopilotMessage = {
           role: 'system',
           content: `[網頁上下文] 使用者正在查看以下網頁: ${settings.webViewUrl}。如果問題與這個網頁相關，請提供具體的幫助。`
@@ -319,49 +340,19 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       const textContent = doc.body.textContent || ''
       const cleanText = textContent.replace(/\s+/g, ' ').trim().substring(0, 5000) // Limit to 5000 chars
 
-      const webContentMessage: CopilotMessage = {
-        role: 'user',
-        content: `[網頁內容分析]
-網址: ${settings.webViewUrl}
-
-網頁文字內容:
-${cleanText}
-
-請分析這個網頁的內容，告訴我現在在執行什麼 job 或顯示什麼資訊。`
-      }
-
-      setMessages(prev => [...prev, webContentMessage])
-
-      // Send to Copilot
-      const copilotConfig = await settingsStore.getCopilotConfig()
-      const systemPrompt: CopilotMessage = {
-        role: 'system',
-        content: '你是一個 AI 助手，擅長分析網頁內容。請根據網頁文字內容提供有用的資訊和解釋。用繁體中文回答。'
-      }
-
-      const options: CopilotChatOptions = {
-        messages: [systemPrompt, ...messages, webContentMessage],
-        model: copilotConfig.model
-      }
-
-      const apiResponse = await window.electronAPI.copilot.chat(terminalId, options)
-
-      if (apiResponse.error) {
-        setError(apiResponse.error)
-      } else {
-        const assistantMessage: CopilotMessage = {
-          role: 'assistant',
-          content: apiResponse.content
-        }
-        setMessages(prev => [...prev, assistantMessage])
-      }
+      // Store the web page content for the next message
+      setWebPageContent(cleanText)
+      
+      // Show success message
+      setError(null)
+      
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       setError(`無法取得網頁內容: ${errorMessage}`)
     } finally {
       setIsLoading(false)
     }
-  }, [messages, isLoading, terminalId])
+  }, [isLoading])
 
   if (!isEnabled) {
     return (
@@ -525,6 +516,34 @@ ${cleanText}
       </div>
 
       <div className="copilot-input-area">
+        {webPageContent && (
+          <div style={{
+            padding: '6px 10px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            fontSize: '12px',
+            borderRadius: '4px 4px 0 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span>✅ 網頁內容已準備好，輸入您的問題...</span>
+            <button
+              onClick={() => setWebPageContent(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '0 4px'
+              }}
+              title="取消網頁分析"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <textarea
           className="copilot-input"
           placeholder="Ask GitHub Copilot... (Press Enter to send, Shift+Enter for newline)"
