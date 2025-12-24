@@ -27,7 +27,7 @@ export const PRESET_ROLES = [
   { id: 'exia', name: 'Exia', color: '#cb6077' },
   { id: 'leo', name: 'Leo', color: '#beb55b' },
   { id: 'custom', name: 'Custom', color: '#dfdbc3' },
-] as const;
+];
 
 export interface TerminalInstance {
   id: string;

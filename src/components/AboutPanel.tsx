@@ -11,24 +11,24 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel about-panel" onClick={e => e.stopPropagation()}>
         <div className="settings-header">
-          <h2>About</h2>
+          <h2>關於</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
         <div className="settings-content about-content">
           <div className="about-logo">
             <span className="about-icon">⬛</span>
-            <h1>Better Agent Terminal</h1>
+            <h1>3101出帳整合平台</h1>
           </div>
 
           <p className="about-description">
-            A Windows terminal aggregator with multi-workspace support and Claude Code integration.
+            提供先進的終端機整合平台，整合 GitHub Copilot 智慧小助手。
           </p>
 
           <div className="about-info">
             <div className="about-row">
-              <span className="about-label">Author</span>
-              <span className="about-value">TonyQ</span>
+              <span className="about-label">作者</span>
+              <span className="about-value">TonyQ、Mike Kuan</span>
             </div>
             <div className="about-row">
               <span className="about-label">GitHub</span>
@@ -37,16 +37,16 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
                 className="about-link"
                 onClick={(e) => {
                   e.preventDefault()
-                  handleLinkClick('https://github.com/tony1223/better-agent-terminal')
+                  handleLinkClick('https://github.com/fareastone-mikekuan/better-agent-terminal')
                 }}
               >
-                github.com/tony1223/better-agent-terminal
+                github.com/fareastone-mikekuan/better-agent-terminal
               </a>
             </div>
           </div>
 
           <div className="about-credits">
-            <p>Built with Electron, React, and xterm.js</p>
+            <p>使用 Electron、React 和 xterm.js 構建</p>
           </div>
         </div>
       </div>

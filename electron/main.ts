@@ -7,8 +7,9 @@ import { snippetDb, CreateSnippetInput } from './snippet-db'
 
 // Set AppUserModelId for Windows taskbar pinning (must be before app.whenReady)
 if (process.platform === 'win32') {
-  app.setAppUserModelId('org.tonyq.better-agent-terminal')
+  app.setAppUserModelId('com.fareastone.billing-integration')
 }
+app.name = '3101出帳整合平台'
 
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
@@ -16,66 +17,65 @@ let copilotManager: CopilotManager | null = null
 let updateCheckResult: UpdateCheckResult | null = null
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-const GITHUB_REPO_URL = 'https://github.com/tony1223/better-agent-terminal'
+const GITHUB_REPO_URL = 'https://github.com/fareastone-mikekuan/better-agent-terminal'
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'File',
+      label: '檔案',
       submenu: [
-        { role: 'quit' }
+        { role: 'quit', label: '結束' }
       ]
     },
     {
-      label: 'Edit',
+      label: '編輯',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
+        { role: 'undo', label: '復原' },
+        { role: 'redo', label: '重做' },
         { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' }
+        { role: 'cut', label: '剪下' },
+        { role: 'copy', label: '複製' },
+        { role: 'paste', label: '貼上' },
+        { role: 'selectAll', label: '全選' }
       ]
     },
     {
-      label: 'View',
+      label: '檢視',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        { role: 'reload', label: '重新載入' },
+        { role: 'toggleDevTools', label: '開發者工具' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { role: 'resetZoom', label: '重設縮放' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '縮小' },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'togglefullscreen', label: '全螢幕' }
       ]
     },
     {
-      label: 'Help',
+      label: '說明',
       submenu: [
         {
-          label: 'GitHub Repository',
+          label: 'GitHub 儲存庫',
           click: () => shell.openExternal(GITHUB_REPO_URL)
         },
         {
-          label: 'Report Issue',
+          label: '回報問題',
           click: () => shell.openExternal(`${GITHUB_REPO_URL}/issues`)
         },
         {
-          label: 'Releases',
+          label: '發行版本',
           click: () => shell.openExternal(`${GITHUB_REPO_URL}/releases`)
         },
         { type: 'separator' },
         {
-          label: 'About',
+          label: '關於',
           click: () => {
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
-              title: 'About Better Agent Terminal',
-              message: 'Better Agent Terminal',
-          detail: `Version: ${app.getVersion()}\n\nA cross-platform terminal aggregator with multi-workspace support, GitHub Copilot integration, and Claude Code support.\n\nAuthor: TonyQ`
+              title: '關於 3101出帳整合平台',
+              message: '3101出帳整合平台',
+          detail: `版本: ${app.getVersion()}\n\n提供先進的終端機整合平台，整合 GitHub Copilot 智慧小助手。\n\n作者: TonyQ、Mike Kuan`
             })
           }
         }
@@ -86,17 +86,17 @@ function buildMenu() {
   // Add Update menu item if update is available
   if (updateCheckResult?.hasUpdate && updateCheckResult.latestRelease) {
     template.push({
-      label: '🎉 Update Available!',
+      label: '🎉 有新版本！',
       submenu: [
         {
-          label: `Download ${updateCheckResult.latestRelease.tagName}`,
+          label: `下載 ${updateCheckResult.latestRelease.tagName}`,
           click: () => {
             const url = updateCheckResult!.latestRelease!.downloadUrl || updateCheckResult!.latestRelease!.htmlUrl
             shell.openExternal(url)
           }
         },
         {
-          label: 'View Release Notes',
+          label: '查看更新說明',
           click: () => shell.openExternal(updateCheckResult!.latestRelease!.htmlUrl)
         }
       ]
@@ -121,7 +121,7 @@ function createWindow() {
     },
     frame: true,
     titleBarStyle: 'default',
-    title: 'Better Agent Terminal',
+    title: '3101出帳整合平台',
     icon: path.join(__dirname, '../assets/icon.ico')
   })
 
@@ -219,7 +219,16 @@ ipcMain.handle('dialog:select-folder', async () => {
 
 ipcMain.handle('workspace:save', async (_event, data: string) => {
   const fs = await import('fs/promises')
-  const configPath = path.join(app.getPath('userData'), 'workspaces.json')
+  const userDataPath = app.getPath('userData')
+  const configPath = path.join(userDataPath, 'workspaces.json')
+  
+  // Ensure directory exists
+  try {
+    await fs.mkdir(userDataPath, { recursive: true })
+  } catch (err) {
+    console.error('Failed to create userData directory:', err)
+  }
+  
   await fs.writeFile(configPath, data, 'utf-8')
   return true
 })

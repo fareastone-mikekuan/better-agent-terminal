@@ -210,7 +210,7 @@ export function Sidebar({
 
   return (
     <aside className="sidebar" style={{ width }}>
-      <div className="sidebar-header">Workspaces</div>
+      <div className="sidebar-header">工作區</div>
       <div className="workspace-list">
         {workspaces.map(workspace => (
           <div
@@ -273,7 +273,7 @@ export function Sidebar({
               </div>
               {roleMenuId === workspace.id && (
                 <div className="role-selector-menu" ref={roleMenuRef} onClick={(e) => e.stopPropagation()}>
-                  <div className="role-menu-title">Select Role</div>
+                  <div className="role-menu-title">選擇角色</div>
                   {PRESET_ROLES.filter(r => r.id !== 'custom').map(role => (
                     <div
                       key={role.id}
@@ -288,7 +288,7 @@ export function Sidebar({
                   <div className="role-menu-custom">
                     <input
                       type="text"
-                      placeholder="Custom role..."
+                      placeholder="自訂角色..."
                       value={customRoleInput}
                       onChange={(e) => setCustomRoleInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -297,7 +297,7 @@ export function Sidebar({
                       }}
                       autoFocus
                     />
-                    <button onClick={() => handleCustomRoleSubmit(workspace.id)}>OK</button>
+                    <button onClick={() => handleCustomRoleSubmit(workspace.id)}>確定</button>
                   </div>
                   {workspace.role && (
                     <>
@@ -306,7 +306,7 @@ export function Sidebar({
                         className="role-menu-item role-menu-clear"
                         onClick={() => handleSelectRole(workspace.id, '')}
                       >
-                        Clear Role
+                        清除角色
                       </div>
                     </>
                   )}
@@ -325,13 +325,13 @@ export function Sidebar({
       </div>
       <div className="sidebar-footer">
         <button className="add-workspace-btn" onClick={onAddWorkspace}>
-          + Add Workspace
+          + 新增工作區
         </button>
         {onAddCopilotChat && activeWorkspaceId && (
           <button
             className="copilot-chat-btn"
             onClick={() => onAddCopilotChat(activeWorkspaceId)}
-            title="Open Copilot Chat"
+            title="開啟 Copilot 聊天"
             style={{
               padding: '10px',
               backgroundColor: '#6e40c9',
@@ -349,15 +349,15 @@ export function Sidebar({
             }}
           >
             <span>⚡</span>
-            <span>Copilot Chat</span>
+            <span>Copilot 聊天</span>
           </button>
         )}
         <div className="sidebar-footer-buttons">
           <button className="settings-btn" onClick={onOpenSettings}>
-            Settings
+            設定
           </button>
           <button className="settings-btn" onClick={onOpenAbout}>
-            About
+            關於
           </button>
         </div>
       </div>
@@ -380,7 +380,7 @@ export function Sidebar({
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            Environment Variables
+            環境變數
           </div>
           <div className="context-menu-divider" />
           <div
@@ -395,7 +395,7 @@ export function Sidebar({
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
-            Close Workspace
+            關閉工作區
           </div>
         </div>
       )}
