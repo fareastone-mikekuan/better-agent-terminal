@@ -18,7 +18,6 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const [error, setError] = useState<string | null>(null)
   const [targetTerminalId, setTargetTerminalId] = useState<string>(terminalId)
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
-  const [includeWebContext, setIncludeWebContext] = useState(true)
   const [webPageContent, setWebPageContent] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -268,27 +267,16 @@ ${webPageContent}
       }
       
       const copilotConfig = await settingsStore.getCopilotConfig()
-      const settings = settingsStore.getSettings()
       
       // Build context messages
-      let contextMessages: CopilotMessage[] = [systemPrompt, ...messages, finalUserMessage]
-      
-      // Add web context if enabled and URL is available (and no specific web content)
-      if (includeWebContext && settings.webViewUrl && !webPageContent) {
-        const webContextMessage: CopilotMessage = {
-          role: 'system',
-          content: `[網頁上下文] 使用者正在查看以下網頁: ${settings.webViewUrl}。如果問題與這個網頁相關，請提供具體的幫助。`
-        }
-        // Insert web context after system prompt
-        contextMessages.splice(1, 0, webContextMessage)
-      }
+      const contextMessages: CopilotMessage[] = [systemPrompt, ...messages, finalUserMessage]
       
       const options: CopilotChatOptions = {
         messages: contextMessages,
         model: copilotConfig.model
       }
 
-      console.log('[CopilotPanel] Sending message with model:', copilotConfig.model, 'includeWeb:', includeWebContext)
+      console.log('[CopilotPanel] Sending message with model:', copilotConfig.model)
       const response = await window.electronAPI.copilot.chat(terminalId, options)
 
       if (response.error) {
@@ -307,7 +295,7 @@ ${webPageContent}
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, isEnabled, messages, terminalId, includeWebContext])
+  }, [input, isLoading, isEnabled, messages, terminalId])
 
   // Handle keyboard shortcut (Enter to send, Shift+Enter for newline)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -369,46 +357,30 @@ ${webPageContent}
     <div className="copilot-panel" ref={containerRef}>
       <div className="copilot-header">
         <h3>⚡ GitHub Copilot Chat</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-          <span style={{ opacity: 0.7 }}>目標終端:</span>
-          <select
-            value={targetTerminalId}
-            onChange={(e) => setTargetTerminalId(e.target.value)}
-            style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              border: '1px solid #444',
-              backgroundColor: '#2a2a2a',
-              color: '#e0e0e0',
-              fontSize: '13px',
-              cursor: 'pointer'
-            }}
-          >
-            {availableTerminals.map(terminal => (
-              <option key={terminal.id} value={terminal.id}>
-                {terminal.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ opacity: 0.7 }}>目標終端:</span>
+            <select
+              value={targetTerminalId}
+              onChange={(e) => setTargetTerminalId(e.target.value)}
+              style={{
+                padding: '4px 8px',
+                borderRadius: '4px',
+                border: '1px solid #444',
+                backgroundColor: '#2a2a2a',
+                color: '#e0e0e0',
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              {availableTerminals.map(terminal => (
+                <option key={terminal.id} value={terminal.id}>
+                  {terminal.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* Web Context Toggle */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          padding: '4px 8px',
-          fontSize: '13px'
-        }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={includeWebContext}
-              onChange={(e) => setIncludeWebContext(e.target.checked)}
-              style={{ cursor: 'pointer' }}
-            />
-            🌐 包含網頁上下文
-          </label>
           <button
             onClick={handleAnalyzeWebPage}
             disabled={isLoading || !settingsStore.getSettings().webViewUrl}
@@ -422,7 +394,7 @@ ${webPageContent}
               cursor: isLoading ? 'not-allowed' : 'pointer',
               opacity: isLoading ? 0.5 : 1
             }}
-            title="抽取網頁內容並分析"
+            title="抽取網頁內容，然後您可以輸入問題"
           >
             🔍 分析網頁
           </button>
