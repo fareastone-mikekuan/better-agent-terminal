@@ -39,6 +39,7 @@ export interface TerminalInstance {
   pid?: number;
   cwd: string;
   scrollbackBuffer: string[];
+  chatMessages?: CopilotMessage[]; // Copilot chat 對話記錄（僅用於 type='copilot'）
   lastActivityTime?: number;
 }
 
@@ -184,6 +185,7 @@ export interface CopilotMessage {
 
 export interface CopilotChatOptions {
   messages: CopilotMessage[];
+  model?: string;
   temperature?: number;
   maxTokens?: number;
 }
@@ -191,6 +193,7 @@ export interface CopilotChatOptions {
 export interface CopilotChatResponse {
   content: string;
   finishReason: 'stop' | 'length' | 'error';
+  model?: string; // 實際使用的模型名稱
   usage?: {
     promptTokens: number;
     completionTokens: number;

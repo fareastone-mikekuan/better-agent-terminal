@@ -289,6 +289,17 @@ class WorkspaceStore {
     // Don't notify for scrollback updates to avoid re-renders
   }
 
+  updateChatMessages(id: string, messages: any[]): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id && t.type === 'copilot' ? { ...t, chatMessages: messages } : t
+      )
+    }
+    // Auto-save when chat messages are updated
+    this.save()
+  }
+
   clearScrollback(id: string): void {
     this.state = {
       ...this.state,

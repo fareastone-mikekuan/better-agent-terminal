@@ -224,13 +224,14 @@ gh auth token
     try {
       const request: CopilotChatRequest = {
         messages: options.messages,
-        model: this.config?.model || 'gpt-4o',
+        model: options.model || this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
         max_tokens: options.maxTokens ?? 2048,
         stream: false
       }
 
+      console.log('[CopilotManager] Using model:', request.model)
       return await this.makeRequest(request)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -260,13 +261,14 @@ gh auth token
     try {
       const request: CopilotChatRequest = {
         messages: options.messages,
-        model: this.config?.model || 'gpt-4o',
+        model: options.model || this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
         max_tokens: options.maxTokens ?? 2048,
         stream: true
       }
 
+      console.log('[CopilotManager] Using model for stream:', request.model)
       yield* this.makeStreamRequest(request, controller.signal)
     } finally {
       this.activeChats.delete(chatId)
@@ -327,11 +329,17 @@ gh auth token
             }
 
             const response = JSON.parse(data)
+            console.log('[CopilotManager] API Response:', {
+              model: response.model,
+              requestedModel: request.model,
+              finishReason: response.choices?.[0]?.finish_reason
+            })
             const content = response.choices?.[0]?.message?.content || ''
             const finishReason = response.choices?.[0]?.finish_reason || 'stop'
 
             resolve({
               content,
+              model: response.model, // 返回實際使用的模型
               finishReason: finishReason as 'stop' | 'length' | 'error',
               usage: response.usage
             })

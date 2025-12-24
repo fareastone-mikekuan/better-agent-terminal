@@ -299,36 +299,26 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     }}
                   >
                     <optgroup label="🔥 推薦 (Recommended)">
-                      <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                       <option value="gpt-4o">GPT-4o (Default)</option>
-                      <option value="gpt-5">GPT-5</option>
-                      <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                      <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                      <option value="o1-preview">O1 Preview</option>
+                      <option value="o1-mini">O1 Mini</option>
+                    </optgroup>
+                    <optgroup label="🤖 GPT Models">
+                      <option value="gpt-4o-mini">GPT-4o Mini</option>
+                      <option value="gpt-4">GPT-4</option>
+                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                     </optgroup>
                     <optgroup label="🚀 Claude Models">
-                      <option value="claude-sonnet-4">Claude Sonnet 4</option>
-                      <option value="claude-opus-4.5">Claude Opus 4.5</option>
-                      <option value="claude-opus-4.1">Claude Opus 4.1</option>
-                      <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
-                    </optgroup>
-                    <optgroup label="🤖 OpenAI Models">
-                      <option value="gpt-5.2">GPT-5.2</option>
-                      <option value="gpt-5.1">GPT-5.1</option>
-                      <option value="gpt-5-mini">GPT-5 Mini</option>
-                      <option value="gpt-4.1">GPT-4.1</option>
-                    </optgroup>
-                    <optgroup label="💎 Code-Specialized">
-                      <option value="gpt-5.1-codex-max">GPT-5.1 Codex Max</option>
-                      <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
-                      <option value="gpt-5.1-codex-mini">GPT-5.1 Codex Mini</option>
-                      <option value="gpt-5-codex">GPT-5 Codex</option>
+                      <option value="claude-3-opus">Claude 3 Opus</option>
+                      <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                      <option value="claude-3-haiku">Claude 3 Haiku</option>
                     </optgroup>
                     <optgroup label="🌟 Google Models">
-                      <option value="gemini-3-pro">Gemini 3 Pro</option>
-                      <option value="gemini-3-flash">Gemini 3 Flash</option>
-                    </optgroup>
-                    <optgroup label="⚡ Fast Models">
-                      <option value="grok-code-fast-1">Grok Code Fast 1</option>
-                      <option value="raptor-mini">Raptor Mini</option>
+                      <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                     </optgroup>
                   </select>
                   <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>

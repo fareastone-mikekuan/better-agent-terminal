@@ -10,7 +10,9 @@ interface CopilotPanelProps {
 
 export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps) {
   const [isEnabled, setIsEnabled] = useState(false)
-  const [messages, setMessages] = useState<CopilotMessage[]>([])
+  // Load initial messages from store
+  const terminal = workspaceStore.getState().terminals.find(t => t.id === terminalId)
+  const [messages, setMessages] = useState<CopilotMessage[]>(terminal?.chatMessages || [])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -131,11 +133,13 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
         content: '請分析上面的命令輸出結果。這個輸出告訴我們什麼？有沒有問題或需要注意的地方？'
       }
       
+      const copilotConfig = await settingsStore.getCopilotConfig()
       const options: CopilotChatOptions = {
-        messages: [systemPrompt, ...messagesWithOutput, analysisPrompt]
+        messages: [systemPrompt, ...messagesWithOutput, analysisPrompt],
+        model: copilotConfig.model
       }
 
-      console.log('[CopilotPanel] Sending to Copilot, message count:', options.messages.length)
+      console.log('[CopilotPanel] Sending to Copilot, model:', copilotConfig.model, 'message count:', options.messages.length)
 
       const response = await window.electronAPI.copilot.chat(terminalId, options)
 
@@ -213,6 +217,13 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Save messages to store whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      workspaceStore.updateChatMessages(terminalId, messages)
+    }
+  }, [messages, terminalId])
+
   // Handle sending a message
   const handleSendMessage = useCallback(async () => {
     if (!input.trim() || isLoading || !isEnabled) return
@@ -234,10 +245,13 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
         content: 'You are an AI coding assistant with command execution capabilities. When users ask for help:\n\n1. Analyze their problem\n2. Suggest shell commands in ```bash blocks\n3. Users can click the execute button to run commands\n4. Users will paste terminal output for you to analyze\n5. Continue helping based on the results\n\nBe concise and helpful. Explain commands clearly and warn about risks. Remember: you CANNOT see terminal output directly - users must paste it to you.'
       }
       
+      const copilotConfig = await settingsStore.getCopilotConfig()
       const options: CopilotChatOptions = {
-        messages: [systemPrompt, ...messages, userMessage]
+        messages: [systemPrompt, ...messages, userMessage],
+        model: copilotConfig.model
       }
 
+      console.log('[CopilotPanel] Sending message with model:', copilotConfig.model)
       const response = await window.electronAPI.copilot.chat(terminalId, options)
 
       if (response.error) {
@@ -247,6 +261,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
           role: 'assistant',
           content: response.content
         }
+        console.log('[CopilotPanel] Response from model:', response.model, 'tokens:', response.usage)
         setMessages(prev => [...prev, assistantMessage])
       }
     } catch (err) {
