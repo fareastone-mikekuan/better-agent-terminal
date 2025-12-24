@@ -350,6 +350,34 @@ ipcMain.handle('snippet:getCategories', () => {
   return snippetDb.getCategories()
 })
 
+// Fetch webpage content (bypass CORS)
+ipcMain.handle('webpage:fetch', async (_event, url: string) => {
+  try {
+    const https = await import('https')
+    const http = await import('http')
+    
+    return new Promise((resolve, reject) => {
+      const client = url.startsWith('https') ? https : http
+      
+      client.get(url, (res) => {
+        let data = ''
+        
+        res.on('data', (chunk) => {
+          data += chunk
+        })
+        
+        res.on('end', () => {
+          resolve(data)
+        })
+      }).on('error', (err) => {
+        reject(err.message)
+      })
+    })
+  } catch (error) {
+    throw new Error(`Failed to fetch webpage: ${error}`)
+  }
+})
+
 ipcMain.handle('snippet:getFavorites', () => {
   return snippetDb.getFavorites()
 })

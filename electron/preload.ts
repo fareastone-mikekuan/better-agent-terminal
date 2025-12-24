@@ -64,6 +64,9 @@ const electronAPI = {
     search: (query: string) => ipcRenderer.invoke('snippet:search', query),
     getCategories: () => ipcRenderer.invoke('snippet:getCategories'),
     getFavorites: () => ipcRenderer.invoke('snippet:getFavorites')
+  },
+  webpage: {
+    fetch: (url: string) => ipcRenderer.invoke('webpage:fetch', url) as Promise<string>
   }
 }
 

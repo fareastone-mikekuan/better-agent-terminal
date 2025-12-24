@@ -18,6 +18,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const [error, setError] = useState<string | null>(null)
   const [targetTerminalId, setTargetTerminalId] = useState<string>(terminalId)
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
+  const [includeWebContext, setIncludeWebContext] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -246,12 +247,27 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       }
       
       const copilotConfig = await settingsStore.getCopilotConfig()
+      const settings = settingsStore.getSettings()
+      
+      // Build context messages
+      let contextMessages: CopilotMessage[] = [systemPrompt, ...messages, userMessage]
+      
+      // Add web context if enabled and URL is available
+      if (includeWebContext && settings.webViewUrl) {
+        const webContextMessage: CopilotMessage = {
+          role: 'system',
+          content: `[網頁上下文] 使用者正在查看以下網頁: ${settings.webViewUrl}。如果問題與這個網頁相關，請提供具體的幫助。`
+        }
+        // Insert web context after system prompt
+        contextMessages.splice(1, 0, webContextMessage)
+      }
+      
       const options: CopilotChatOptions = {
-        messages: [systemPrompt, ...messages, userMessage],
+        messages: contextMessages,
         model: copilotConfig.model
       }
 
-      console.log('[CopilotPanel] Sending message with model:', copilotConfig.model)
+      console.log('[CopilotPanel] Sending message with model:', copilotConfig.model, 'includeWeb:', includeWebContext)
       const response = await window.electronAPI.copilot.chat(terminalId, options)
 
       if (response.error) {
@@ -270,7 +286,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, isEnabled, messages, terminalId])
+  }, [input, isLoading, isEnabled, messages, terminalId, includeWebContext])
 
   // Handle keyboard shortcut (Enter to send, Shift+Enter for newline)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -279,6 +295,73 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
       handleSendMessage()
     }
   }
+
+  // Analyze web page content
+  const handleAnalyzeWebPage = useCallback(async () => {
+    const settings = settingsStore.getSettings()
+    if (!settings.webViewUrl || isLoading) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Fetch webpage content via Electron main process (bypasses CORS)
+      const html = await window.electronAPI.webpage.fetch(settings.webViewUrl)
+      
+      // Extract text content (remove scripts and styles)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      
+      // Remove script and style tags
+      doc.querySelectorAll('script, style').forEach(el => el.remove())
+      
+      // Get text content
+      const textContent = doc.body.textContent || ''
+      const cleanText = textContent.replace(/\s+/g, ' ').trim().substring(0, 5000) // Limit to 5000 chars
+
+      const webContentMessage: CopilotMessage = {
+        role: 'user',
+        content: `[網頁內容分析]
+網址: ${settings.webViewUrl}
+
+網頁文字內容:
+${cleanText}
+
+請分析這個網頁的內容，告訴我現在在執行什麼 job 或顯示什麼資訊。`
+      }
+
+      setMessages(prev => [...prev, webContentMessage])
+
+      // Send to Copilot
+      const copilotConfig = await settingsStore.getCopilotConfig()
+      const systemPrompt: CopilotMessage = {
+        role: 'system',
+        content: '你是一個 AI 助手，擅長分析網頁內容。請根據網頁文字內容提供有用的資訊和解釋。用繁體中文回答。'
+      }
+
+      const options: CopilotChatOptions = {
+        messages: [systemPrompt, ...messages, webContentMessage],
+        model: copilotConfig.model
+      }
+
+      const apiResponse = await window.electronAPI.copilot.chat(terminalId, options)
+
+      if (apiResponse.error) {
+        setError(apiResponse.error)
+      } else {
+        const assistantMessage: CopilotMessage = {
+          role: 'assistant',
+          content: apiResponse.content
+        }
+        setMessages(prev => [...prev, assistantMessage])
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      setError(`無法取得網頁內容: ${errorMessage}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [messages, isLoading, terminalId])
 
   if (!isEnabled) {
     return (
@@ -316,6 +399,42 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Web Context Toggle */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          padding: '4px 8px',
+          fontSize: '13px'
+        }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={includeWebContext}
+              onChange={(e) => setIncludeWebContext(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            🌐 包含網頁上下文
+          </label>
+          <button
+            onClick={handleAnalyzeWebPage}
+            disabled={isLoading || !settingsStore.getSettings().webViewUrl}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '4px',
+              border: '1px solid #444',
+              backgroundColor: '#2a7d2e',
+              color: 'white',
+              fontSize: '12px',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.5 : 1
+            }}
+            title="抽取網頁內容並分析"
+          >
+            🔍 分析網頁
+          </button>
         </div>
       </div>
 
