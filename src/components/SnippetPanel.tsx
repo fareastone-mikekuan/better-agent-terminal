@@ -22,6 +22,7 @@ interface SnippetSidebarProps {
     onCollapse?: () => void
     onPasteToClipboard?: (content: string) => void
     onPasteToTerminal?: (content: string) => void
+    style?: React.CSSProperties
 }
 
 interface EditDialogProps {
@@ -99,7 +100,8 @@ export function SnippetSidebar({
     collapsed = false,
     onCollapse,
     onPasteToClipboard,
-    onPasteToTerminal
+    onPasteToTerminal,
+    style
 }: Readonly<SnippetSidebarProps>) {
     const [snippets, setSnippets] = useState<Snippet[]>([])
     const [searchQuery, setSearchQuery] = useState('')
@@ -201,7 +203,7 @@ export function SnippetSidebar({
 
     return (
         <>
-            <aside className="snippet-sidebar" style={{ width: `${width}px`, minWidth: `${width}px` }}>
+            <aside className="snippet-sidebar" style={{ width: `${width}px`, minWidth: `${width}px`, ...style }}>
                 <div className="snippet-sidebar-header">
                     <h3>📝 Snippets</h3>
                     <div className="snippet-header-actions">

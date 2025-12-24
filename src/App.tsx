@@ -8,6 +8,7 @@ import { AboutPanel } from './components/AboutPanel'
 import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { ResizeHandle } from './components/ResizeHandle'
+import { WebViewPanel } from './components/WebViewPanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -66,6 +67,7 @@ export default function App() {
   const [showSnippetSidebar] = useState(true)
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
+  const [snippetHeight, setSnippetHeight] = useState(75) // Percentage
 
   // Debug: log state on mount
   useEffect(() => {
@@ -119,6 +121,17 @@ export default function App() {
       const updated = { ...prev, snippetSidebar: { ...prev.snippetSidebar, width: DEFAULT_SNIPPET_WIDTH } }
       savePanelSettings(updated)
       return updated
+    })
+  }, [])
+
+  // Handle snippet height resize (vertical)
+  const handleSnippetHeightResize = useCallback((delta: number) => {
+    setSnippetHeight(prev => {
+      const container = document.querySelector('.right-panel-container')
+      if (!container) return prev
+      const containerHeight = container.clientHeight
+      const deltaPercent = (delta / containerHeight) * 100
+      return Math.min(90, Math.max(10, prev + deltaPercent))
     })
   }, [])
 
@@ -274,13 +287,22 @@ export default function App() {
           onDoubleClick={handleSnippetResetWidth}
         />
       )}
-      <SnippetSidebar
-        isVisible={showSnippetSidebar}
-        width={panelSettings.snippetSidebar.width}
-        collapsed={panelSettings.snippetSidebar.collapsed}
-        onCollapse={handleSnippetCollapse}
-        onPasteToTerminal={handlePasteToTerminal}
-      />
+      {/* Right panel container */}
+      <div className="right-panel-container" style={{ width: panelSettings.snippetSidebar.width, display: showSnippetSidebar && !panelSettings.snippetSidebar.collapsed ? 'flex' : 'none' }}>
+        <SnippetSidebar
+          isVisible={showSnippetSidebar}
+          width={panelSettings.snippetSidebar.width}
+          collapsed={panelSettings.snippetSidebar.collapsed}
+          onCollapse={handleSnippetCollapse}
+          onPasteToTerminal={handlePasteToTerminal}
+          style={{ height: `${snippetHeight}%` }}
+        />
+        <ResizeHandle
+          direction="vertical"
+          onResize={handleSnippetHeightResize}
+        />
+        <WebViewPanel height={`${100 - snippetHeight}%`} />
+      </div>
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
