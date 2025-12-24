@@ -91,14 +91,13 @@ export function WebViewPanel({ height, url }: WebViewPanelProps) {
           width: `${10000 / zoom}%`,
           height: `${10000 / zoom}%`
         }}>
-          <iframe
+          <webview
             src={url}
             style={{
               width: '100%',
               height: '100%',
               border: 'none'
             }}
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
           />
         </div>
       </div>
