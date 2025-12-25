@@ -1526,6 +1526,37 @@ body {
   margin: 0;
 }
 
+/* Tab Navigation */
+.snippet-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.snippet-tab {
+  flex: 1;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.snippet-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.snippet-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  background: var(--bg-secondary);
+}
+
 .snippet-sidebar .snippet-add-btn {
   width: 28px;
   height: 28px;
@@ -1615,6 +1646,34 @@ body {
 .snippet-sidebar-item:hover {
   border-color: var(--accent-color);
   background: var(--bg-hover);
+}
+
+/* Community Item Specific Styles */
+.snippet-sidebar-item.community-item {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(13, 110, 253, 0.05) 100%);
+}
+
+.snippet-sidebar-item.community-item:hover {
+  background: linear-gradient(135deg, var(--bg-hover) 0%, rgba(13, 110, 253, 0.1) 100%);
+}
+
+/* Wiki Item Specific Styles */
+.snippet-sidebar-item.wiki-item {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-left: 3px solid rgba(139, 92, 246, 0.3);
+}
+
+.snippet-sidebar-item.wiki-item:hover {
+  background: linear-gradient(135deg, var(--bg-hover) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border-left-color: rgba(139, 92, 246, 0.6);
+}
+
+.snippet-item-meta {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
 }
 
 .snippet-sidebar-item.search-match {
@@ -1723,6 +1782,9 @@ body {
   border: 1px solid var(--glass-border);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
   animation: slideIn 0.2s ease-out;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1001;
 }
 
 .snippet-edit-header {
@@ -1743,10 +1805,12 @@ body {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+  pointer-events: auto;
 }
 
 .snippet-edit-body .form-group {
   margin-bottom: 16px;
+  pointer-events: auto;
 }
 
 .snippet-edit-body .form-group label {
@@ -1766,6 +1830,7 @@ body {
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 14px;
+  pointer-events: auto;
 }
 
 .snippet-edit-body .form-group textarea {
@@ -1773,6 +1838,7 @@ body {
   font-size: 13px;
   resize: vertical;
   min-height: 200px;
+  pointer-events: auto;
 }
 
 .snippet-edit-body .form-group input:focus,

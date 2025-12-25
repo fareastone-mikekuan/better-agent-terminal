@@ -30,6 +30,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     apiKey: '',
     organizationSlug: ''
   })
+  const [gistToken, setGistToken] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [authMessage, setAuthMessage] = useState('')
   const [userCode, setUserCode] = useState('') // Store user code separately for better display
@@ -50,6 +51,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       }
     }
     loadCopilotConfig()
+    
+    // Load Gist Token
+    const savedGistToken = localStorage.getItem('gist_token') || ''
+    setGistToken(savedGistToken)
   }, [])
 
   // Check font availability on mount
@@ -117,6 +122,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     setCopilotConfig(newConfig)
     await settingsStore.setCopilotConfig(newConfig)
     await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
+  const handleGistTokenChange = (token: string) => {
+    setGistToken(token)
+    localStorage.setItem('gist_token', token)
   }
 
   const handleLogout = async () => {
@@ -447,6 +457,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                   <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
                     Generate at: <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" style={{ color: '#7bbda4' }}>github.com/settings/tokens</a> (需要 'copilot' scope)
+                    <br />
+                    用途：Copilot Chat
                   </small>
                 </div>
 
@@ -464,6 +476,27 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </>
             )}
+          </div>
+
+          {/* Gist Token Section */}
+          <div className="settings-section">
+            <h3>📦 GitHub Gist</h3>
+            <div className="settings-group">
+              <label>GitHub Token (用於 Gist 分享)</label>
+              <input
+                type="password"
+                value={gistToken}
+                onChange={e => handleGistTokenChange(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              />
+              <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
+                前往 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" style={{ color: '#7bbda4' }}>github.com/settings/tokens/new</a> 建立 Token
+                <br />
+                權限：勾選 <strong>gist</strong> (Create gists)
+                <br />
+                用途：上傳和導入 Snippet 片段到 GitHub Gist
+              </small>
+            </div>
           </div>
 
           <div className="settings-section">
