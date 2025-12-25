@@ -372,7 +372,13 @@ export default function App() {
           {/* WebView Panel */}
           {showWebView && !isWebViewFloating && settings.webViewUrl && (
             <div style={{ height: `${rightPanelHeights.webview}%`, minHeight: '100px' }}>
-              <WebViewPanel height="100%" url={settings.webViewUrl} />
+              <WebViewPanel 
+                height="100%" 
+                url={settings.webViewUrl}
+                isFloating={false}
+                onToggleFloat={() => setIsWebViewFloating(true)}
+                onClose={() => setShowWebView(false)}
+              />
             </div>
           )}
         </div>
@@ -459,65 +465,13 @@ export default function App() {
       )}
       
       {showWebView && isWebViewFloating && settings.webViewUrl && (
-        <div style={{
-          position: 'fixed',
-          top: '80px',
-          left: '20px',
-          width: '600px',
-          height: '500px',
-          backgroundColor: '#1e1e1e',
-          border: '1px solid #3a3836',
-          borderRadius: '6px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-          zIndex: 1002,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}>
-          <div style={{ 
-            padding: '8px 12px',
-            backgroundColor: '#2a2826',
-            borderBottom: '1px solid #3a3836',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500 }}>🌐 网页视窗</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button
-                onClick={() => setIsWebViewFloating(false)}
-                style={{
-                  background: 'none',
-                  border: '1px solid #3a3836',
-                  color: '#dfdbc3',
-                  cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  borderRadius: '4px'
-                }}
-                title="固定"
-              >
-                📌
-              </button>
-              <button
-                onClick={() => setShowWebView(false)}
-                style={{
-                  background: 'none',
-                  border: '1px solid #3a3836',
-                  color: '#dfdbc3',
-                  cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  borderRadius: '4px'
-                }}
-                title="关闭"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <WebViewPanel height="100%" url={settings.webViewUrl} />
-        </div>
+        <WebViewPanel 
+          height="100%" 
+          url={settings.webViewUrl}
+          isFloating={true}
+          onToggleFloat={() => setIsWebViewFloating(false)}
+          onClose={() => setShowWebView(false)}
+        />
       )}
       
       {/* Panel Control Menu */}

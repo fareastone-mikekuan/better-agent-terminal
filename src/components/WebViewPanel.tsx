@@ -1,27 +1,143 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface WebViewPanelProps {
   height: string
   url: string
+  isFloating?: boolean
+  onToggleFloat?: () => void
+  onClose?: () => void
 }
 
-export function WebViewPanel({ height, url }: WebViewPanelProps) {
+export function WebViewPanel({ height, url, isFloating = false, onToggleFloat, onClose }: WebViewPanelProps) {
   const [zoom, setZoom] = useState(40)
 
+  // Dragging and resizing state
+  const [position, setPosition] = useState(() => {
+    const saved = localStorage.getItem('webview-position')
+    return saved ? JSON.parse(saved) : { x: 20, y: 80 }
+  })
+  const [size, setSize] = useState(() => {
+    const saved = localStorage.getItem('webview-size')
+    return saved ? JSON.parse(saved) : { width: 800, height: 600 }
+  })
+  const [isDragging, setIsDragging] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Save position and size to localStorage
+  useEffect(() => {
+    if (isFloating) {
+      localStorage.setItem('webview-position', JSON.stringify(position))
+    }
+  }, [position, isFloating])
+
+  useEffect(() => {
+    if (isFloating) {
+      localStorage.setItem('webview-size', JSON.stringify(size))
+    }
+  }, [size, isFloating])
+
+  // Handle dragging
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragStart.x
+      const deltaY = e.clientY - dragStart.y
+      
+      setPosition(prev => ({
+        x: Math.max(0, Math.min(window.innerWidth - size.width, prev.x + deltaX)),
+        y: Math.max(0, Math.min(window.innerHeight - 100, prev.y + deltaY))
+      }))
+      
+      setDragStart({ x: e.clientX, y: e.clientY })
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging, dragStart, size.width])
+
+  // Handle resizing
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      
+      const rect = containerRef.current.getBoundingClientRect()
+      const newWidth = Math.max(400, e.clientX - rect.left)
+      const newHeight = Math.max(300, e.clientY - rect.top)
+      
+      setSize({
+        width: Math.min(newWidth, window.innerWidth - position.x),
+        height: Math.min(newHeight, window.innerHeight - position.y)
+      })
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, position])
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    setIsDragging(true)
+    setDragStart({ x: e.clientX, y: e.clientY })
+  }
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsResizing(true)
+  }
+
+  const containerStyle: React.CSSProperties = isFloating ? {
+    position: 'fixed',
+    left: `${position.x}px`,
+    top: `${position.y}px`,
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    backgroundColor: '#1e1e1e',
+    border: '1px solid #3a3836',
+    borderRadius: '6px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+    zIndex: 1002,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    cursor: isDragging ? 'move' : 'default'
+  } : {
+    width: '100%',
+    height: height,
+    backgroundColor: '#1e1e1e',
+    borderTop: '1px solid #3a3836',
+    borderLeft: '1px solid #3a3836',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    flexShrink: 0
+  }
+
   return (
-    <div
-      style={{
-        width: '100%',
-        height: height,
-        backgroundColor: '#1e1e1e',
-        borderTop: '1px solid #3a3836',
-        borderLeft: '1px solid #3a3836',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        flexShrink: 0
-      }}
-    >
+    <div ref={containerRef} style={containerStyle}>
       {/* Header */}
       <div
         style={{
@@ -31,8 +147,10 @@ export function WebViewPanel({ height, url }: WebViewPanelProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          userSelect: 'none'
+          userSelect: 'none',
+          cursor: isFloating ? 'move' : 'default'
         }}
+        onMouseDown={isFloating ? handleDragStart : undefined}
       >
         <span style={{ color: '#dfdbc3', fontSize: '12px', fontWeight: 500, flex: 1 }}>🌐 網頁視窗</span>
         <button
@@ -81,6 +199,40 @@ export function WebViewPanel({ height, url }: WebViewPanelProps) {
         >
           100%
         </button>
+        {onToggleFloat && (
+          <button
+            onClick={onToggleFloat}
+            style={{
+              background: 'none',
+              border: '1px solid #3a3836',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontSize: '12px',
+              borderRadius: '4px'
+            }}
+            title={isFloating ? '固定' : '浮動'}
+          >
+            {isFloating ? '📌' : '🎈'}
+          </button>
+        )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: '1px solid #3a3836',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontSize: '12px',
+              borderRadius: '4px'
+            }}
+            title="關閉"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* WebView */}
@@ -101,6 +253,24 @@ export function WebViewPanel({ height, url }: WebViewPanelProps) {
           />
         </div>
       </div>
+      
+      {/* Resize Handle (only show when floating) */}
+      {isFloating && (
+        <div
+          onMouseDown={handleResizeStart}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: '20px',
+            height: '20px',
+            cursor: 'nwse-resize',
+            background: 'linear-gradient(135deg, transparent 50%, #3a3836 50%)',
+            borderBottomRightRadius: '6px'
+          }}
+          title="拖動調整大小"
+        />
+      )}
     </div>
   )
 }

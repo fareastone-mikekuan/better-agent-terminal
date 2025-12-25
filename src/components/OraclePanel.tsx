@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface OraclePanelProps {
   onQueryResult?: (result: string) => void
@@ -16,33 +16,152 @@ interface ConnectionConfig {
 }
 
 export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose }: OraclePanelProps) {
-  const [isConnected, setIsConnected] = useState(false)
-  const [config, setConfig] = useState<ConnectionConfig>({
-    host: 'localhost',
-    port: '1521',
-    service: 'ORCL',
-    username: '',
-    password: ''
+  // Initialize state from localStorage
+  const [isConnected, setIsConnected] = useState(() => {
+    const saved = localStorage.getItem('oracle-connected')
+    return saved === 'true'
   })
-  const [query, setQuery] = useState('SELECT * FROM dual')
-  const [result, setResult] = useState<string>('')
+  const [config, setConfig] = useState<ConnectionConfig>(() => {
+    const saved = localStorage.getItem('oracle-config')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch (e) {
+        console.error('Failed to load Oracle config:', e)
+      }
+    }
+    return {
+      host: 'localhost',
+      port: '1521',
+      service: 'ORCL',
+      username: '',
+      password: ''
+    }
+  })
+  const [query, setQuery] = useState(() => {
+    const saved = localStorage.getItem('oracle-query')
+    return saved || 'SELECT * FROM dual'
+  })
+  const [result, setResult] = useState<string>(() => {
+    const saved = localStorage.getItem('oracle-result')
+    return saved || ''
+  })
   const [error, setError] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isExpanded, setIsExpanded] = useState(true)
 
+  // Dragging and resizing state
+  const [position, setPosition] = useState(() => {
+    const saved = localStorage.getItem('oracle-position')
+    return saved ? JSON.parse(saved) : { x: window.innerWidth - 520, y: 80 }
+  })
+  const [size, setSize] = useState(() => {
+    const saved = localStorage.getItem('oracle-size')
+    return saved ? JSON.parse(saved) : { width: 500, height: 600 }
+  })
+  const [isDragging, setIsDragging] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Save state to localStorage whenever it changes
   useEffect(() => {
-    // Load saved config from localStorage
-    const saved = localStorage.getItem('oracle-config')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        setConfig(parsed)
-      } catch (e) {
-        console.error('Failed to load Oracle config:', e)
-      }
+    localStorage.setItem('oracle-connected', isConnected.toString())
+  }, [isConnected])
+
+  useEffect(() => {
+    localStorage.setItem('oracle-query', query)
+  }, [query])
+
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem('oracle-result', result)
     }
-  }, [])
+  }, [result])
+
+  useEffect(() => {
+    if (isFloating) {
+      localStorage.setItem('oracle-position', JSON.stringify(position))
+    }
+  }, [position, isFloating])
+
+  useEffect(() => {
+    if (isFloating) {
+      localStorage.setItem('oracle-size', JSON.stringify(size))
+    }
+  }, [size, isFloating])
+
+  // Handle dragging
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragStart.x
+      const deltaY = e.clientY - dragStart.y
+      
+      setPosition(prev => ({
+        x: Math.max(0, Math.min(window.innerWidth - size.width, prev.x + deltaX)),
+        y: Math.max(0, Math.min(window.innerHeight - 100, prev.y + deltaY))
+      }))
+      
+      setDragStart({ x: e.clientX, y: e.clientY })
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging, dragStart, size.width])
+
+  // Handle resizing
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      
+      const rect = containerRef.current.getBoundingClientRect()
+      const newWidth = Math.max(400, e.clientX - rect.left)
+      const newHeight = Math.max(300, e.clientY - rect.top)
+      
+      setSize({
+        width: Math.min(newWidth, window.innerWidth - position.x),
+        height: Math.min(newHeight, window.innerHeight - position.y)
+      })
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, position])
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, textarea')) return
+    setIsDragging(true)
+    setDragStart({ x: e.clientX, y: e.clientY })
+  }
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsResizing(true)
+  }
 
   const saveConfig = (newConfig: ConnectionConfig) => {
     setConfig(newConfig)
@@ -81,6 +200,8 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
   const handleDisconnect = () => {
     setIsConnected(false)
     setResult('')
+    localStorage.removeItem('oracle-connected')
+    localStorage.removeItem('oracle-result')
   }
 
   const handleExecuteQuery = async () => {
@@ -189,24 +310,30 @@ Value7       Value8       Value9
 
   const containerStyle: React.CSSProperties = isFloating ? {
     position: 'fixed',
-    top: '80px',
-    right: '20px',
-    width: '400px',
+    left: `${position.x}px`,
+    top: `${position.y}px`,
+    width: `${size.width}px`,
+    height: `${size.height}px`,
     backgroundColor: '#1e1e1e',
     border: '1px solid #3a3836',
     borderRadius: '6px',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
     zIndex: 1000,
-    overflow: 'hidden'
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    cursor: isDragging ? 'move' : 'default'
   } : {
     width: '100%',
     backgroundColor: '#1e1e1e',
     borderBottom: '1px solid #3a3836',
+    display: 'flex',
+    flexDirection: 'column',
     overflow: 'hidden'
   }
 
   return (
-    <div style={containerStyle}>
+    <div ref={containerRef} style={containerStyle}>
       {/* Header */}
       <div
         style={{
@@ -216,10 +343,11 @@ Value7       Value8       Value9
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          cursor: 'pointer',
+          cursor: isFloating ? 'move' : 'pointer',
           userSelect: 'none'
         }}
         onClick={() => setIsExpanded(!isExpanded)}
+        onMouseDown={isFloating ? handleDragStart : undefined}
       >
         <span style={{ fontSize: '14px' }}>{isExpanded ? '▼' : '▶'}</span>
         <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500, flex: 1 }}>
@@ -265,7 +393,13 @@ Value7       Value8       Value9
 
       {/* Content */}
       {isExpanded && (
-        <div style={{ padding: '12px', maxHeight: isFloating ? '500px' : '300px', overflow: 'auto' }}>
+        <div style={{ 
+          padding: '12px', 
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
           {/* Connection Config */}
           {!isConnected && (
             <div style={{ marginBottom: '12px' }}>
@@ -548,8 +682,11 @@ Value7       Value8       Value9
                 fontSize: '12px',
                 fontFamily: 'monospace',
                 whiteSpace: 'pre-wrap',
-                maxHeight: '200px',
-                overflow: 'auto'
+                overflowY: 'auto',
+                overflowX: 'auto',
+                flex: 1,
+                minHeight: isFloating ? '300px' : '200px',
+                maxHeight: isFloating ? 'none' : '400px'
               }}
             >
               {result}
@@ -563,6 +700,24 @@ Value7       Value8       Value9
             </div>
           )}
         </div>
+      )}
+      
+      {/* Resize Handle (only show when floating) */}
+      {isFloating && isExpanded && (
+        <div
+          onMouseDown={handleResizeStart}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: '20px',
+            height: '20px',
+            cursor: 'nwse-resize',
+            background: 'linear-gradient(135deg, transparent 50%, #3a3836 50%)',
+            borderBottomRightRadius: '6px'
+          }}
+          title="拖動調整大小"
+        />
       )}
     </div>
   )
