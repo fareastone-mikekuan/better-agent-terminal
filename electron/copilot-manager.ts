@@ -310,6 +310,8 @@ gh auth token
 
       const req = https.request(options, (res: any) => {
         let data = ''
+        
+        res.setEncoding('utf8')
 
         res.on('data', (chunk: any) => {
           data += chunk
@@ -384,6 +386,8 @@ gh auth token
     let streamError: Error | null = null
 
     await new Promise<void>((resolve, reject) => {
+        
+        res.setEncoding('utf8')
       const req = https.request(options, (res: any) => {
         let buffer = ''
 
@@ -400,7 +404,7 @@ gh auth token
         }
 
         res.on('data', (chunk: any) => {
-          buffer += chunk.toString()
+          buffer += chunk.toString('utf8')
           const lines = buffer.split('\n')
 
           // Keep the last incomplete line in buffer
