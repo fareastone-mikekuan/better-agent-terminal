@@ -8,6 +8,8 @@ interface OraclePanelProps {
 }
 
 interface ConnectionConfig {
+  id: string
+  name: string
   host: string
   port: string
   service: string
@@ -15,41 +17,38 @@ interface ConnectionConfig {
   password: string
 }
 
+interface DBTab {
+  id: string
+  config: ConnectionConfig
+  isConnected: boolean
+  query: string
+  result: string
+  error: string
+}
+
 export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose }: OraclePanelProps) {
-  // Initialize state from localStorage
-  const [isConnected, setIsConnected] = useState(() => {
-    const saved = localStorage.getItem('oracle-connected')
-    return saved === 'true'
-  })
-  const [config, setConfig] = useState<ConnectionConfig>(() => {
-    const saved = localStorage.getItem('oracle-config')
+  // Multi-tab state
+  const [tabs, setTabs] = useState<DBTab[]>(() => {
+    const saved = localStorage.getItem('oracle-tabs')
     if (saved) {
       try {
         return JSON.parse(saved)
       } catch (e) {
-        console.error('Failed to load Oracle config:', e)
+        console.error('Failed to load Oracle tabs:', e)
       }
     }
-    return {
-      host: 'localhost',
-      port: '1521',
-      service: 'ORCL',
-      username: '',
-      password: ''
-    }
+    return []
   })
-  const [query, setQuery] = useState(() => {
-    const saved = localStorage.getItem('oracle-query')
-    return saved || 'SELECT * FROM dual'
+  const [activeTabId, setActiveTabId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('oracle-active-tab')
+    return saved || (tabs.length > 0 ? tabs[0].id : null)
   })
-  const [result, setResult] = useState<string>(() => {
-    const saved = localStorage.getItem('oracle-result')
-    return saved || ''
-  })
-  const [error, setError] = useState<string>('')
+  
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isExpanded, setIsExpanded] = useState(true)
+  const [showNewTabDialog, setShowNewTabDialog] = useState(false)
+  const [newTabName, setNewTabName] = useState('')
 
   // Dragging and resizing state
   const [position, setPosition] = useState(() => {
@@ -65,20 +64,19 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Save state to localStorage whenever it changes
+  // Save tabs to localStorage
   useEffect(() => {
-    localStorage.setItem('oracle-connected', isConnected.toString())
-  }, [isConnected])
-
-  useEffect(() => {
-    localStorage.setItem('oracle-query', query)
-  }, [query])
-
-  useEffect(() => {
-    if (result) {
-      localStorage.setItem('oracle-result', result)
+    if (tabs.length > 0) {
+      localStorage.setItem('oracle-tabs', JSON.stringify(tabs))
     }
-  }, [result])
+  }, [tabs])
+
+  // Save active tab
+  useEffect(() => {
+    if (activeTabId) {
+      localStorage.setItem('oracle-active-tab', activeTabId)
+    }
+  }, [activeTabId])
 
   useEffect(() => {
     if (isFloating) {
@@ -163,64 +161,100 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
     setIsResizing(true)
   }
 
-  const saveConfig = (newConfig: ConnectionConfig) => {
-    setConfig(newConfig)
-    // Save without password for security
-    const toSave = { ...newConfig, password: '' }
-    localStorage.setItem('oracle-config', JSON.stringify(toSave))
+  const activeTab = tabs.find(t => t.id === activeTabId)
+
+  const createNewTab = () => {
+    const id = `tab-${Date.now()}`
+    const newTab: DBTab = {
+      id,
+      config: {
+        id,
+        name: newTabName || `連線 ${tabs.length + 1}`,
+        host: 'localhost',
+        port: '1521',
+        service: 'ORCL',
+        username: '',
+        password: ''
+      },
+      isConnected: false,
+      query: 'SELECT * FROM dual',
+      result: '',
+      error: ''
+    }
+    setTabs([...tabs, newTab])
+    setActiveTabId(id)
+    setNewTabName('')
+    setShowNewTabDialog(false)
+  }
+
+  const deleteTab = (id: string) => {
+    const newTabs = tabs.filter(t => t.id !== id)
+    setTabs(newTabs)
+    if (activeTabId === id) {
+      setActiveTabId(newTabs[0]?.id || null)
+    }
+  }
+
+  const updateTab = (id: string, updates: Partial<DBTab>) => {
+    setTabs(tabs.map(t => t.id === id ? { ...t, ...updates } : t))
+  }
+
+  const updateTabConfig = (id: string, configUpdates: Partial<ConnectionConfig>) => {
+    setTabs(tabs.map(t => 
+      t.id === id ? { ...t, config: { ...t.config, ...configUpdates } } : t
+    ))
   }
 
   const handleConnect = async () => {
+    if (!activeTab) return
+    
     setIsLoading(true)
-    setError('')
+    updateTab(activeTab.id, { error: '' })
     
     try {
       // TODO: Implement actual Oracle connection via Electron IPC
-      // For now, simulate connection
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      // Placeholder - need to implement in Electron main process
       console.log('Oracle connection attempt:', {
-        host: config.host,
-        port: config.port,
-        service: config.service,
-        username: config.username
+        host: activeTab.config.host,
+        port: activeTab.config.port,
+        service: activeTab.config.service,
+        username: activeTab.config.username
       })
       
-      setIsConnected(true)
-      setError('')
+      updateTab(activeTab.id, { isConnected: true, error: '' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed')
-      setIsConnected(false)
+      updateTab(activeTab.id, { 
+        error: err instanceof Error ? err.message : 'Connection failed',
+        isConnected: false
+      })
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleDisconnect = () => {
-    setIsConnected(false)
-    setResult('')
-    localStorage.removeItem('oracle-connected')
-    localStorage.removeItem('oracle-result')
+    if (!activeTab) return
+    updateTab(activeTab.id, { isConnected: false, result: '' })
   }
 
   const handleExecuteQuery = async () => {
-    if (!isConnected) {
-      setError('請先連接資料庫')
+    if (!activeTab || !activeTab.isConnected) {
+      if (activeTab) {
+        updateTab(activeTab.id, { error: '請先連接資料庫' })
+      }
       return
     }
 
     setIsLoading(true)
-    setError('')
+    updateTab(activeTab.id, { error: '' })
     
     try {
       // TODO: Implement actual Oracle query via Electron IPC
-      // For now, simulate query execution with realistic mock data
       await new Promise(resolve => setTimeout(resolve, 800))
       
-      // Generate different mock results based on query
       let mockResult = ''
-      const queryLower = query.toLowerCase()
+      const queryLower = activeTab.query.toLowerCase()
       
       if (queryLower.includes('dual')) {
         mockResult = `查詢結果 (模擬資料):
@@ -278,10 +312,9 @@ SYSDATE
 1 行已選取。
 執行時間: 0.01 秒`
       } else {
-        // Generic result for other queries
         mockResult = `查詢結果 (模擬資料):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-查詢: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}
+查詢: ${activeTab.query.substring(0, 50)}${activeTab.query.length > 50 ? '...' : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COL1         COL2         COL3
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -295,14 +328,15 @@ Value7       Value8       Value9
 💡 提示：這是模擬數據。請配置真實的 Oracle 連接以獲取實際結果。`
       }
       
-      setResult(mockResult)
+      updateTab(activeTab.id, { result: mockResult })
       
-      // Send result to callback (for Copilot integration)
       if (onQueryResult) {
         onQueryResult(mockResult)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Query execution failed')
+      updateTab(activeTab.id, { 
+        error: err instanceof Error ? err.message : 'Query execution failed'
+      })
     } finally {
       setIsLoading(false)
     }
@@ -351,7 +385,7 @@ Value7       Value8       Value9
       >
         <span style={{ fontSize: '14px' }}>{isExpanded ? '▼' : '▶'}</span>
         <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500, flex: 1 }}>
-          🗄️ Oracle 資料庫 {isConnected && <span style={{ color: '#4ade80' }}>● 已連接</span>}
+          🗄️ Oracle 資料庫 {activeTab?.isConnected && <span style={{ color: '#4ade80' }}>● 已連接</span>}
         </span>
         <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
           {onToggleFloat && (
@@ -391,8 +425,137 @@ Value7       Value8       Value9
         </div>
       </div>
 
+      {/* Tabs */}
+      {isExpanded && tabs.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            gap: '2px',
+            padding: '4px 8px',
+            backgroundColor: '#1f1d1a',
+            borderBottom: '1px solid #3a3836',
+            overflowX: 'auto',
+            alignItems: 'center'
+          }}
+        >
+          {tabs.map(tab => (
+            <div
+              key={tab.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                backgroundColor: activeTabId === tab.id ? '#2a2826' : '#0f0f0f',
+                border: `1px solid ${activeTabId === tab.id ? '#3a3836' : '#1a1a1a'}`,
+                borderRadius: '3px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                fontSize: '12px',
+                color: '#dfdbc3'
+              }}
+              onClick={() => setActiveTabId(tab.id)}
+            >
+              <span>{tab.config.name}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  deleteTab(tab.id)
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#888',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  padding: '0'
+                }}
+                title="刪除"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setShowNewTabDialog(true)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: '#0a7d0a',
+              border: '1px solid #1a5f1a',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px',
+              marginLeft: 'auto'
+            }}
+            title="新增連線"
+          >
+            + 新增
+          </button>
+        </div>
+      )}
+
+      {/* New Tab Dialog */}
+      {showNewTabDialog && (
+        <div
+          style={{
+            display: 'flex',
+            gap: '4px',
+            padding: '8px',
+            backgroundColor: '#1f1d1a',
+            borderBottom: '1px solid #3a3836'
+          }}
+        >
+          <input
+            type="text"
+            placeholder="連線名稱 (可選)"
+            value={newTabName}
+            onChange={(e) => setNewTabName(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && createNewTab()}
+            style={{
+              flex: 1,
+              padding: '4px 6px',
+              backgroundColor: '#2a2a2a',
+              border: '1px solid #444',
+              color: '#e0e0e0',
+              borderRadius: '3px',
+              fontSize: '12px'
+            }}
+            autoFocus
+          />
+          <button
+            onClick={createNewTab}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: '#2a7d2e',
+              border: 'none',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px'
+            }}
+          >
+            建立
+          </button>
+          <button
+            onClick={() => setShowNewTabDialog(false)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: '#3a3836',
+              border: 'none',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px'
+            }}
+          >
+            取消
+          </button>
+        </div>
+      )}
+
       {/* Content */}
-      {isExpanded && (
+      {isExpanded && activeTab && (
         <div style={{ 
           padding: '12px', 
           flex: 1,
@@ -401,14 +564,30 @@ Value7       Value8       Value9
           flexDirection: 'column'
         }}>
           {/* Connection Config */}
-          {!isConnected && (
+          {!activeTab.isConnected && (
             <div style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                placeholder="連線名稱"
+                value={activeTab.config.name}
+                onChange={(e) => updateTabConfig(activeTab.id, { name: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '6px 8px',
+                  backgroundColor: '#2a2a2a',
+                  border: '1px solid #444',
+                  color: '#e0e0e0',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  marginBottom: '8px'
+                }}
+              />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                 <input
                   type="text"
                   placeholder="Host"
-                  value={config.host}
-                  onChange={(e) => setConfig({ ...config, host: e.target.value })}
+                  value={activeTab.config.host}
+                  onChange={(e) => updateTabConfig(activeTab.id, { host: e.target.value })}
                   style={{
                     padding: '6px 8px',
                     backgroundColor: '#2a2a2a',
@@ -421,8 +600,8 @@ Value7       Value8       Value9
                 <input
                   type="text"
                   placeholder="Port"
-                  value={config.port}
-                  onChange={(e) => setConfig({ ...config, port: e.target.value })}
+                  value={activeTab.config.port}
+                  onChange={(e) => updateTabConfig(activeTab.id, { port: e.target.value })}
                   style={{
                     padding: '6px 8px',
                     backgroundColor: '#2a2a2a',
@@ -436,8 +615,8 @@ Value7       Value8       Value9
               <input
                 type="text"
                 placeholder="Service Name"
-                value={config.service}
-                onChange={(e) => setConfig({ ...config, service: e.target.value })}
+                value={activeTab.config.service}
+                onChange={(e) => updateTabConfig(activeTab.id, { service: e.target.value })}
                 style={{
                   width: '100%',
                   padding: '6px 8px',
@@ -452,8 +631,8 @@ Value7       Value8       Value9
               <input
                 type="text"
                 placeholder="Username"
-                value={config.username}
-                onChange={(e) => setConfig({ ...config, username: e.target.value })}
+                value={activeTab.config.username}
+                onChange={(e) => updateTabConfig(activeTab.id, { username: e.target.value })}
                 style={{
                   width: '100%',
                   padding: '6px 8px',
@@ -465,12 +644,12 @@ Value7       Value8       Value9
                   marginBottom: '8px'
                 }}
               />
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', marginBottom: '8px' }}>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Password"
-                  value={config.password}
-                  onChange={(e) => setConfig({ ...config, password: e.target.value })}
+                  value={activeTab.config.password}
+                  onChange={(e) => updateTabConfig(activeTab.id, { password: e.target.value })}
                   style={{
                     width: '100%',
                     padding: '6px 8px',
@@ -479,8 +658,7 @@ Value7       Value8       Value9
                     border: '1px solid #444',
                     color: '#e0e0e0',
                     borderRadius: '4px',
-                    fontSize: '12px',
-                    marginBottom: '8px'
+                    fontSize: '12px'
                   }}
                 />
                 <button
@@ -501,7 +679,7 @@ Value7       Value8       Value9
               </div>
               <button
                 onClick={handleConnect}
-                disabled={isLoading || !config.username || !config.password}
+                disabled={isLoading || !activeTab.config.username || !activeTab.config.password}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -520,14 +698,13 @@ Value7       Value8       Value9
           )}
 
           {/* Query Interface */}
-          {isConnected && (
+          {activeTab.isConnected && (
             <div>
-              {/* Sample Queries */}
               <div style={{ marginBottom: '8px' }}>
                 <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>快速測試查詢：</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                   <button
-                    onClick={() => setQuery('SELECT * FROM dual')}
+                    onClick={() => updateTab(activeTab.id, { query: 'SELECT * FROM dual' })}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#374151',
@@ -541,7 +718,7 @@ Value7       Value8       Value9
                     DUAL
                   </button>
                   <button
-                    onClick={() => setQuery('SELECT SYSDATE FROM dual')}
+                    onClick={() => updateTab(activeTab.id, { query: 'SELECT SYSDATE FROM dual' })}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#374151',
@@ -555,7 +732,7 @@ Value7       Value8       Value9
                     SYSDATE
                   </button>
                   <button
-                    onClick={() => setQuery('SELECT table_name FROM user_tables')}
+                    onClick={() => updateTab(activeTab.id, { query: 'SELECT table_name FROM user_tables' })}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#374151',
@@ -569,7 +746,7 @@ Value7       Value8       Value9
                     Tables
                   </button>
                   <button
-                    onClick={() => setQuery('SELECT * FROM employees WHERE ROWNUM <= 10')}
+                    onClick={() => updateTab(activeTab.id, { query: 'SELECT * FROM employees WHERE ROWNUM <= 10' })}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#374151',
@@ -583,7 +760,7 @@ Value7       Value8       Value9
                     Employees
                   </button>
                   <button
-                    onClick={() => setQuery('SELECT COUNT(*) FROM employees')}
+                    onClick={() => updateTab(activeTab.id, { query: 'SELECT COUNT(*) FROM employees' })}
                     style={{
                       padding: '4px 8px',
                       backgroundColor: '#374151',
@@ -601,8 +778,8 @@ Value7       Value8       Value9
               
               <textarea
                 placeholder="輸入 SQL 查詢..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={activeTab.query}
+                onChange={(e) => updateTab(activeTab.id, { query: e.target.value })}
                 style={{
                   width: '100%',
                   minHeight: '80px',
@@ -620,7 +797,7 @@ Value7       Value8       Value9
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <button
                   onClick={handleExecuteQuery}
-                  disabled={isLoading || !query.trim()}
+                  disabled={isLoading || !activeTab.query.trim()}
                   style={{
                     flex: 1,
                     padding: '8px',
@@ -654,7 +831,7 @@ Value7       Value8       Value9
           )}
 
           {/* Error Display */}
-          {error && (
+          {activeTab.error && (
             <div
               style={{
                 padding: '8px',
@@ -666,12 +843,12 @@ Value7       Value8       Value9
                 marginBottom: '8px'
               }}
             >
-              ❌ {error}
+              ❌ {activeTab.error}
             </div>
           )}
 
           {/* Result Display */}
-          {result && (
+          {activeTab.result && (
             <div
               style={{
                 padding: '8px',
@@ -689,16 +866,38 @@ Value7       Value8       Value9
                 maxHeight: isFloating ? 'none' : '400px'
               }}
             >
-              {result}
+              {activeTab.result}
             </div>
           )}
 
           {/* Helper Text */}
-          {!isConnected && !error && (
+          {!activeTab.isConnected && !activeTab.error && (
             <div style={{ fontSize: '11px', color: '#888', marginTop: '8px' }}>
               💡 提示：連接後，Copilot Chat 可以讀取查詢結果
             </div>
           )}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {isExpanded && tabs.length === 0 && (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#888', fontSize: '12px' }}>
+          <p>📭 還沒有資料庫連線</p>
+          <button
+            onClick={() => setShowNewTabDialog(true)}
+            style={{
+              marginTop: '10px',
+              padding: '6px 12px',
+              backgroundColor: '#0a7d0a',
+              border: '1px solid #1a5f1a',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              fontSize: '12px',
+              borderRadius: '3px'
+            }}
+          >
+            + 新增連線
+          </button>
         </div>
       )}
       
