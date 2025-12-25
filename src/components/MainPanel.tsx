@@ -9,9 +9,10 @@ interface MainPanelProps {
   terminal: TerminalInstance
   onClose: (id: string) => void
   onRestart: (id: string) => void
+  oracleQueryResult?: string | null
 }
 
-export function MainPanel({ terminal, onClose, onRestart }: Readonly<MainPanelProps>) {
+export function MainPanel({ terminal, onClose, onRestart, oracleQueryResult }: Readonly<MainPanelProps>) {
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
   const [isEditing, setIsEditing] = useState(false)
@@ -83,7 +84,7 @@ export function MainPanel({ terminal, onClose, onRestart }: Readonly<MainPanelPr
         </div>
       </div>
       <div className="main-panel-content">
-        <TerminalPanel terminalId={terminal.id} terminalType={terminal.type} />
+        <TerminalPanel terminalId={terminal.id} terminalType={terminal.type} oracleQueryResult={oracleQueryResult} />
       </div>
     </div>
   )

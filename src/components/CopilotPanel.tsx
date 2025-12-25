@@ -6,9 +6,10 @@ import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../ty
 interface CopilotPanelProps {
   terminalId: string
   isActive?: boolean
+  oracleQueryResult?: string | null
 }
 
-export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps) {
+export function CopilotPanel({ terminalId, isActive = true, oracleQueryResult }: CopilotPanelProps) {
   const [isEnabled, setIsEnabled] = useState(false)
   // Load initial messages from store
   const terminal = workspaceStore.getState().terminals.find(t => t.id === terminalId)
@@ -19,6 +20,7 @@ export function CopilotPanel({ terminalId, isActive = true }: CopilotPanelProps)
   const [targetTerminalId, setTargetTerminalId] = useState<string>(terminalId)
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   const [webPageContent, setWebPageContent] = useState<string | null>(null)
+  const [oracleContent, setOracleContent] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -252,6 +254,19 @@ ${webPageContent}
       }
       // Clear web page content after using it
       setWebPageContent(null)
+    } else if (oracleContent) {
+      finalUserMessage = {
+        role: 'user',
+        content: `[Oracle 查詢結果]
+
+${oracleContent}
+
+---
+
+我的問題: ${input}`
+      }
+      // Clear Oracle content after using it
+      setOracleContent(null)
     }
 
     setMessages(prev => [...prev, finalUserMessage])
@@ -405,6 +420,26 @@ ${webPageContent}
           >
             🔍 分析網頁
           </button>
+
+          {oracleQueryResult && (
+            <button
+              onClick={() => setOracleContent(oracleQueryResult)}
+              disabled={isLoading}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '4px',
+                border: '1px solid #444',
+                backgroundColor: '#dc2626',
+                color: 'white',
+                fontSize: '12px',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                opacity: isLoading ? 0.5 : 1
+              }}
+              title="導入 Oracle 查詢結果"
+            >
+              🗄️ 導入查詢
+            </button>
+          )}
         </div>
       </div>
 
@@ -513,6 +548,34 @@ ${webPageContent}
                 padding: '0 4px'
               }}
               title="取消網頁分析"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {oracleContent && (
+          <div style={{
+            padding: '6px 10px',
+            backgroundColor: '#dc2626',
+            color: 'white',
+            fontSize: '12px',
+            borderRadius: '4px 4px 0 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span>✅ Oracle 查詢結果已準備好，輸入您的問題...</span>
+            <button
+              onClick={() => setOracleContent(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '0 4px'
+              }}
+              title="取消 Oracle 導入"
             >
               ✕
             </button>

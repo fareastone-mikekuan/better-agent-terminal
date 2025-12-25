@@ -12,6 +12,7 @@ interface TerminalPanelProps {
   terminalId: string
   isActive?: boolean
   terminalType?: 'terminal' | 'claude-code' | 'copilot'
+  oracleQueryResult?: string | null
 }
 
 interface ContextMenu {
@@ -20,7 +21,7 @@ interface ContextMenu {
   hasSelection: boolean
 }
 
-export function TerminalPanel({ terminalId, isActive = true, terminalType = 'terminal' }: TerminalPanelProps) {
+export function TerminalPanel({ terminalId, isActive = true, terminalType = 'terminal', oracleQueryResult }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -28,7 +29,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
 
   // If this is a Copilot terminal, render CopilotPanel instead
   if (terminalType === 'copilot') {
-    return <CopilotPanel terminalId={terminalId} isActive={isActive} />
+    return <CopilotPanel terminalId={terminalId} isActive={isActive} oracleQueryResult={oracleQueryResult} />
   }
 
   // Handle paste with text size checking

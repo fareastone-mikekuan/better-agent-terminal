@@ -44,6 +44,7 @@ interface WorkspaceViewProps {
   terminals: TerminalInstance[]
   focusedTerminalId: string | null
   isActive: boolean
+  oracleQueryResult?: string | null
 }
 
 // Helper to get shell path from settings
@@ -76,7 +77,7 @@ function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = [])
 // Track which workspaces have been initialized (outside component to persist across renders)
 const initializedWorkspaces = new Set<string>()
 
-export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive }: Readonly<WorkspaceViewProps>) {
+export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, oracleQueryResult }: Readonly<WorkspaceViewProps>) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
   const [thumbnailSettings, setThumbnailSettings] = useState<ThumbnailSettings>(loadThumbnailSettings)
 
@@ -351,6 +352,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
               terminal={terminal}
               onClose={handleCloseTerminal}
               onRestart={handleRestart}
+              oracleQueryResult={oracleQueryResult}
             />
           </div>
         ))}

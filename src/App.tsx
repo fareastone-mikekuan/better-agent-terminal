@@ -9,6 +9,7 @@ import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { ResizeHandle } from './components/ResizeHandle'
 import { WebViewPanel } from './components/WebViewPanel'
+import { OraclePanel } from './components/OraclePanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -64,11 +65,21 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
-  // Snippet sidebar is always visible by default
-  const [showSnippetSidebar] = useState(true)
+  // Panel visibility and floating states
+  const [showSnippetSidebar, setShowSnippetSidebar] = useState(true)
+  const [isSnippetFloating, setIsSnippetFloating] = useState(false)
+  const [showWebView, setShowWebView] = useState(true)
+  const [isWebViewFloating, setIsWebViewFloating] = useState(false)
+  const [showOracle, setShowOracle] = useState(true)
+  const [isOracleFloating, setIsOracleFloating] = useState(false)
+  const [oracleQueryResult, setOracleQueryResult] = useState<string | null>(null)
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
-  const [snippetHeight, setSnippetHeight] = useState(75) // Percentage
+  const [rightPanelHeights, setRightPanelHeights] = useState({
+    snippet: 33,
+    oracle: 33,
+    webview: 34
+  })
 
   // Debug: log state on mount
   useEffect(() => {
@@ -127,12 +138,35 @@ export default function App() {
 
   // Handle snippet height resize (vertical)
   const handleSnippetHeightResize = useCallback((delta: number) => {
-    setSnippetHeight(prev => {
+    setRightPanelHeights(prev => {
       const container = document.querySelector('.right-panel-container')
       if (!container) return prev
       const containerHeight = container.clientHeight
       const deltaPercent = (delta / containerHeight) * 100
-      return Math.min(90, Math.max(10, prev + deltaPercent))
+      const newSnippetHeight = Math.min(80, Math.max(10, prev.snippet + deltaPercent))
+      const newOracleHeight = Math.max(10, prev.oracle - deltaPercent)
+      return {
+        ...prev,
+        snippet: newSnippetHeight,
+        oracle: newOracleHeight
+      }
+    })
+  }, [])
+
+  // Handle oracle height resize (vertical)
+  const handleOracleHeightResize = useCallback((delta: number) => {
+    setRightPanelHeights(prev => {
+      const container = document.querySelector('.right-panel-container')
+      if (!container) return prev
+      const containerHeight = container.clientHeight
+      const deltaPercent = (delta / containerHeight) * 100
+      const newOracleHeight = Math.min(80, Math.max(10, prev.oracle + deltaPercent))
+      const newWebviewHeight = Math.max(10, prev.webview - deltaPercent)
+      return {
+        ...prev,
+        oracle: newOracleHeight,
+        webview: newWebviewHeight
+      }
     })
   }, [])
 
@@ -275,6 +309,7 @@ export default function App() {
                 terminals={workspaceStore.getWorkspaceTerminals(workspace.id)}
                 focusedTerminalId={workspace.id === state.activeWorkspaceId ? state.focusedTerminalId : null}
                 isActive={workspace.id === state.activeWorkspaceId}
+                oracleQueryResult={oracleQueryResult}
               />
             </div>
           ))
@@ -286,31 +321,271 @@ export default function App() {
         )}
       </main>
       {/* Resize handle for snippet sidebar */}
-      {showSnippetSidebar && !panelSettings.snippetSidebar.collapsed && (
+      {showSnippetSidebar && !isSnippetFloating && !panelSettings.snippetSidebar.collapsed && (
         <ResizeHandle
           direction="horizontal"
           onResize={handleSnippetResize}
           onDoubleClick={handleSnippetResetWidth}
         />
       )}
-      {/* Right panel container */}
-      <div className="right-panel-container" style={{ width: panelSettings.snippetSidebar.width, display: showSnippetSidebar && !panelSettings.snippetSidebar.collapsed ? 'flex' : 'none' }}>
-        <SnippetSidebar
-          isVisible={showSnippetSidebar}
-          width={panelSettings.snippetSidebar.width}
-          collapsed={panelSettings.snippetSidebar.collapsed}
-          onCollapse={handleSnippetCollapse}
-          onPasteToTerminal={handlePasteToTerminal}
-          style={{ height: `${snippetHeight}%` }}
+      {/* Right panel container - only show if at least one panel is docked */}
+      {(!isSnippetFloating || !isOracleFloating || !isWebViewFloating) && (
+        <div className="right-panel-container" style={{ 
+          width: panelSettings.snippetSidebar.width, 
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          {/* Snippets Panel */}
+          {showSnippetSidebar && !isSnippetFloating && (
+            <>
+              <SnippetSidebar
+                isVisible={showSnippetSidebar}
+                width={panelSettings.snippetSidebar.width}
+                collapsed={panelSettings.snippetSidebar.collapsed}
+                onCollapse={handleSnippetCollapse}
+                onPasteToTerminal={handlePasteToTerminal}
+                style={{ height: `${rightPanelHeights.snippet}%`, minHeight: '100px' }}
+              />
+              {((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) && (
+                <ResizeHandle direction="vertical" onResize={handleSnippetHeightResize} />
+              )}
+            </>
+          )}
+          
+          {/* Oracle Panel */}
+          {showOracle && !isOracleFloating && (
+            <>
+              <div style={{ height: `${rightPanelHeights.oracle}%`, minHeight: '100px', overflow: 'auto' }}>
+                <OraclePanel
+                  onQueryResult={setOracleQueryResult}
+                  isFloating={false}
+                  onToggleFloat={() => setIsOracleFloating(true)}
+                  onClose={() => setShowOracle(false)}
+                />
+              </div>
+              {(!isWebViewFloating && showWebView && settings.webViewUrl) && (
+                <ResizeHandle direction="vertical" onResize={handleOracleHeightResize} />
+              )}
+            </>
+          )}
+          
+          {/* WebView Panel */}
+          {showWebView && !isWebViewFloating && settings.webViewUrl && (
+            <div style={{ height: `${rightPanelHeights.webview}%`, minHeight: '100px' }}>
+              <WebViewPanel height="100%" url={settings.webViewUrl} />
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Floating Panels */}
+      {showSnippetSidebar && isSnippetFloating && (
+        <div style={{
+          position: 'fixed',
+          top: '80px',
+          right: '20px',
+          width: '350px',
+          maxHeight: '60vh',
+          backgroundColor: '#1e1e1e',
+          border: '1px solid #3a3836',
+          borderRadius: '6px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+          zIndex: 1001,
+          overflow: 'auto'
+        }}>
+          <div style={{ 
+            padding: '8px 12px',
+            backgroundColor: '#2a2826',
+            borderBottom: '1px solid #3a3836',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1
+          }}>
+            <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500 }}>📋 Snippets</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                onClick={() => setIsSnippetFloating(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="固定"
+              >
+                📌
+              </button>
+              <button
+                onClick={() => setShowSnippetSidebar(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="关闭"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <SnippetSidebar
+            isVisible={true}
+            width={350}
+            collapsed={false}
+            onCollapse={() => {}}
+            onPasteToTerminal={handlePasteToTerminal}
+            style={{ height: 'auto' }}
+          />
+        </div>
+      )}
+      
+      {showOracle && isOracleFloating && (
+        <OraclePanel
+          onQueryResult={setOracleQueryResult}
+          isFloating={true}
+          onToggleFloat={() => setIsOracleFloating(false)}
+          onClose={() => setShowOracle(false)}
         />
-        <ResizeHandle
-          direction="vertical"
-          onResize={handleSnippetHeightResize}
-        />
-        {settings.webViewUrl && (
-          <WebViewPanel height={`${100 - snippetHeight}%`} url={settings.webViewUrl} />
+      )}
+      
+      {showWebView && isWebViewFloating && settings.webViewUrl && (
+        <div style={{
+          position: 'fixed',
+          top: '80px',
+          left: '20px',
+          width: '600px',
+          height: '500px',
+          backgroundColor: '#1e1e1e',
+          border: '1px solid #3a3836',
+          borderRadius: '6px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+          zIndex: 1002,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{ 
+            padding: '8px 12px',
+            backgroundColor: '#2a2826',
+            borderBottom: '1px solid #3a3836',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500 }}>🌐 网页视窗</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                onClick={() => setIsWebViewFloating(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="固定"
+              >
+                📌
+              </button>
+              <button
+                onClick={() => setShowWebView(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="关闭"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <WebViewPanel height="100%" url={settings.webViewUrl} />
+        </div>
+      )}
+      
+      {/* Panel Control Menu */}
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        zIndex: 2000
+      }}>
+        {!showSnippetSidebar && (
+          <button
+            onClick={() => setShowSnippetSidebar(true)}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: '#2a7d2e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+            title="显示 Snippets"
+          >
+            📋 Snippets
+          </button>
+        )}
+        {!showOracle && (
+          <button
+            onClick={() => setShowOracle(true)}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: '#dc2626',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+            title="显示 Oracle"
+          >
+            🗄️ Oracle
+          </button>
+        )}
+        {!showWebView && settings.webViewUrl && (
+          <button
+            onClick={() => setShowWebView(true)}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: '#2563eb',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+            title="显示网页视窗"
+          >
+            🌐 网页
+          </button>
         )}
       </div>
+      
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
