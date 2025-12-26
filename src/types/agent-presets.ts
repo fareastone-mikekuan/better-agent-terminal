@@ -19,9 +19,9 @@ export const AGENT_PRESETS: AgentPreset[] = [
     name: 'Claude Code', 
     icon: '✦', 
     color: '#d97706', 
-    command: 'claude' 
+    command: 'claude --continue'
   },
-  { 
+  {
     id: 'gemini-cli', 
     name: 'Gemini CLI', 
     icon: '◇', 

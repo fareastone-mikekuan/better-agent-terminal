@@ -52,14 +52,24 @@
   },
   "build": {
     "appId": "org.tonyq.better-agent-terminal",
-    "productName": "Better Agent Terminal",
+    "productName": "BetterAgentTerminal",
+    "executableName": "BetterAgentTerminal",
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "zip",
+      "target": ["nsis", "zip"],
       "signAndEditExecutable": false,
       "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "BetterAgentTerminal",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
     },
     "mac": {
       "target": {
