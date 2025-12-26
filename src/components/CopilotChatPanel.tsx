@@ -34,7 +34,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   const [zIndex, setZIndex] = useState(1000)
 
   const [isEnabled, setIsEnabled] = useState(false)
-  const [messages, setMessages] = useState<CopilotMessage[]>([])
+  const [messages, setMessages] = useState<CopilotMessage[]>(() => {
+    const saved = localStorage.getItem('copilot-messages')
+    return saved ? JSON.parse(saved) : []
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +107,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   useEffect(() => {
     localStorage.setItem('copilot-size', JSON.stringify(size))
   }, [size])
+
+  useEffect(() => {
+    localStorage.setItem('copilot-messages', JSON.stringify(messages))
+  }, [messages])
 
   // Check if Copilot is configured and subscribe to settings changes
   useEffect(() => {
@@ -366,6 +373,20 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
       <div className="copilot-chat-header" onMouseDown={handleDragStart}>
         <h3>⚡ Copilot Chat</h3>
         <div className="copilot-chat-controls">
+          {messages.length > 0 && (
+            <button
+              className="copilot-toggle-btn"
+              onClick={() => {
+                if (confirm('確定要清除所有聊天記錄嗎？')) {
+                  setMessages([])
+                  localStorage.removeItem('copilot-messages')
+                }
+              }}
+              title="清除聊天記錄"
+            >
+              🗑️
+            </button>
+          )}
           <button
             className="copilot-toggle-btn"
             onClick={() => setIsFloating(!isFloating)}

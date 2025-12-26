@@ -168,11 +168,26 @@ export interface AppSettings {
 }
 
 // GitHub Copilot Integration
+export type CopilotProvider = 'github' | 'm365'
+
 export interface CopilotConfig {
   enabled: boolean;
+  provider: CopilotProvider; // 選擇使用哪個 Copilot
+  
+  // GitHub Copilot
   apiKey: string; // GitHub PAT with 'copilot' scope
   organizationSlug?: string; // For organization-based Copilot access
   model?: string; // Model to use: gpt-4, gpt-4o, claude-3.5-sonnet, etc.
+  
+  // M365 Copilot
+  m365Config?: {
+    tenantId: string; // Azure AD Tenant ID
+    clientId: string; // Azure AD App Client ID
+    accessToken?: string; // OAuth access token
+    refreshToken?: string; // OAuth refresh token
+    tokenExpiry?: number; // Token 過期時間
+    endpoint?: string; // M365 Copilot API endpoint
+  };
 }
 
 export interface CopilotMessage {

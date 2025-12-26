@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { AppSettings, ShellType, FontType, ColorPresetId } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, CopilotConfig } from '../types'
 import { FONT_OPTIONS, COLOR_PRESETS } from '../types'
 import { settingsStore } from '../stores/settings-store'
 import { EnvVarEditor } from './EnvVarEditor'
@@ -27,6 +27,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [availableFonts, setAvailableFonts] = useState<Set<FontType>>(new Set())
   const [copilotConfig, setCopilotConfig] = useState<CopilotConfig>({
     enabled: false,
+    provider: 'github',
     apiKey: '',
     organizationSlug: ''
   })
@@ -47,7 +48,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     const loadCopilotConfig = async () => {
       const config = settingsStore.getCopilotConfig()
       if (config) {
-        setCopilotConfig(config)
+        // 确保有 provider 字段，如果没有则默认为 github
+        setCopilotConfig({
+          ...config,
+          provider: config.provider || 'github'
+        })
       }
     }
     loadCopilotConfig()
@@ -124,6 +129,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     await window.electronAPI.copilot.setConfig(newConfig)
   }
 
+  const handleCopilotProviderChange = async (provider: 'github' | 'm365') => {
+    const newConfig = { ...copilotConfig, provider }
+    setCopilotConfig(newConfig)
+    await settingsStore.setCopilotConfig(newConfig)
+    await window.electronAPI.copilot.setConfig(newConfig)
+  }
+
   const handleGistTokenChange = (token: string) => {
     setGistToken(token)
     localStorage.setItem('gist_token', token)
@@ -157,7 +169,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       const newConfig = { 
         ...copilotConfig, 
         enabled: true,
-        apiKey: token
+        apiKey: token,
+        model: copilotConfig.model || 'gpt-4o' // 设置默认模型
       }
       
       setCopilotConfig(newConfig)
@@ -210,7 +223,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           const newConfig = { 
             ...copilotConfig, 
             enabled: true,
-            apiKey: token // Save the OAuth token
+            apiKey: token, // Save the OAuth token
+            model: copilotConfig.model || 'gpt-4o' // 设置默认模型
           }
           
           // Update local state
@@ -261,7 +275,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <div className="settings-content">
           {/* GitHub Copilot Section */}
           <div className="settings-section">
-            <h3>🤖 GitHub Copilot</h3>
+            <h3>🤖 Copilot 設定</h3>
             <div className="settings-group">
               <label>
                 <input
@@ -269,12 +283,55 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   checked={copilotConfig.enabled}
                   onChange={e => handleCopilotEnabledChange(e.target.checked)}
                 />
-                Enable GitHub Copilot
+                啟用 Copilot
               </label>
             </div>
 
-            {/* Show login status and logout button if already logged in */}
-            {copilotConfig.apiKey && !authLoading && (
+            {/* Provider Selector */}
+            {copilotConfig.enabled && (
+              <div className="settings-group">
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
+                  🔌 Copilot 來源 (Provider)
+                </label>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                  <button
+                    onClick={() => handleCopilotProviderChange('github')}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: copilotConfig.provider === 'github' ? '#2d4a2d' : '#2a2826',
+                      color: copilotConfig.provider === 'github' ? '#7bbda4' : '#888',
+                      border: `2px solid ${copilotConfig.provider === 'github' ? '#7bbda4' : '#3a3836'}`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '13px'
+                    }}
+                  >
+                    🐙 GitHub Copilot
+                  </button>
+                  <button
+                    onClick={() => handleCopilotProviderChange('m365')}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: copilotConfig.provider === 'm365' ? '#2d4a2d' : '#2a2826',
+                      color: copilotConfig.provider === 'm365' ? '#7bbda4' : '#888',
+                      border: `2px solid ${copilotConfig.provider === 'm365' ? '#7bbda4' : '#3a3836'}`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '13px'
+                    }}
+                  >
+                    🟦 M365 Copilot
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* GitHub Copilot Config */}
+            {copilotConfig.enabled && copilotConfig.provider === 'github' && copilotConfig.apiKey && !authLoading && (
               <div className="settings-group">
                 <div style={{
                   padding: '12px',
@@ -355,7 +412,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             )}
 
             {/* Show login button if not logged in */}
-            {!copilotConfig.apiKey && !authLoading && (
+            {copilotConfig.enabled && copilotConfig.provider === 'github' && !copilotConfig.apiKey && !authLoading && (
               <div className="settings-group">
                 <button 
                   onClick={handleGitHubLogin}
@@ -379,7 +436,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             )}
 
             {/* Display User Code prominently */}
-            {userCode && (
+            {copilotConfig.provider === 'github' && userCode && (
               <div className="settings-group">
                 <div style={{
                   padding: '20px',
@@ -445,7 +502,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {copilotConfig.enabled && (
+            {copilotConfig.enabled && copilotConfig.provider === 'github' && (
               <>
                 <div className="settings-group">
                   <label>GitHub Token (PAT) - 可選</label>
@@ -475,6 +532,219 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </small>
                 </div>
               </>
+            )}
+
+            {/* M365 Copilot Configuration */}
+            {copilotConfig.enabled && copilotConfig.provider === 'm365' && (
+              <div className="settings-group">
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#2a2826',
+                  borderRadius: '8px',
+                  border: '2px solid #3a3836'
+                }}>
+                  <h4 style={{ color: '#7bbda4', marginBottom: '15px', fontSize: '16px' }}>
+                    🟦 M365 Copilot 設定
+                  </h4>
+                  
+                  {/* Tenant ID */}
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
+                      Tenant ID (租戶ID)
+                    </label>
+                    <input
+                      type="text"
+                      value={copilotConfig.m365Config?.tenantId || ''}
+                      onChange={e => {
+                        const newConfig = {
+                          ...copilotConfig,
+                          m365Config: {
+                            ...copilotConfig.m365Config,
+                            tenantId: e.target.value,
+                            clientId: copilotConfig.m365Config?.clientId || '',
+                          }
+                        }
+                        setCopilotConfig(newConfig)
+                        settingsStore.setCopilotConfig(newConfig)
+                      }}
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        backgroundColor: '#1f1d1a',
+                        color: '#dfdbc3',
+                        border: '1px solid #3a3836',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                    <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
+                      從 Azure Portal 獲取
+                    </small>
+                  </div>
+
+                  {/* Client ID */}
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
+                      Client ID (應用程式ID)
+                    </label>
+                    <input
+                      type="text"
+                      value={copilotConfig.m365Config?.clientId || ''}
+                      onChange={e => {
+                        const newConfig = {
+                          ...copilotConfig,
+                          m365Config: {
+                            ...copilotConfig.m365Config,
+                            tenantId: copilotConfig.m365Config?.tenantId || '',
+                            clientId: e.target.value,
+                          }
+                        }
+                        setCopilotConfig(newConfig)
+                        settingsStore.setCopilotConfig(newConfig)
+                      }}
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        backgroundColor: '#1f1d1a',
+                        color: '#dfdbc3',
+                        border: '1px solid #3a3836',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                    <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
+                      從 Azure AD App Registration 獲取
+                    </small>
+                  </div>
+
+                  {/* Login Status or Login Button */}
+                  {copilotConfig.m365Config?.accessToken ? (
+                    <div style={{
+                      padding: '15px',
+                      backgroundColor: '#2d4a2d',
+                      borderRadius: '6px',
+                      marginBottom: '10px'
+                    }}>
+                      <div style={{ color: '#7bbda4', fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
+                        ✅ 已登入 M365 Copilot
+                      </div>
+                      <small style={{ color: '#888' }}>
+                        Token 有效期至: {copilotConfig.m365Config.tokenExpiry 
+                          ? new Date(copilotConfig.m365Config.tokenExpiry).toLocaleString('zh-TW')
+                          : '未知'}
+                      </small>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        const tenantId = copilotConfig.m365Config?.tenantId
+                        const clientId = copilotConfig.m365Config?.clientId
+                        
+                        if (!tenantId || !clientId) {
+                          setAuthMessage('❌ 請先填寫 Tenant ID 和 Client ID')
+                          return
+                        }
+                        
+                        setAuthLoading(true)
+                        setAuthMessage('🔄 正在開啟 Microsoft 登入視窗...')
+                        
+                        try {
+                          // TODO: 實作 M365 OAuth
+                          // await window.electronAPI.copilot.startM365OAuth(tenantId, clientId)
+                          setAuthMessage('⚠️ M365 OAuth 功能開發中...')
+                          
+                          // 暫時的模擬登入（供測試UI用）
+                          // const newConfig = {
+                          //   ...copilotConfig,
+                          //   m365Config: {
+                          //     ...copilotConfig.m365Config,
+                          //     accessToken: 'test_token',
+                          //     tokenExpiry: Date.now() + 3600000
+                          //   }
+                          // }
+                          // setCopilotConfig(newConfig)
+                          // settingsStore.setCopilotConfig(newConfig)
+                          // setAuthMessage('✅ M365 Copilot 已啟用')
+                        } catch (error) {
+                          setAuthMessage(`❌ 登入失敗: ${(error as Error).message}`)
+                        } finally {
+                          setAuthLoading(false)
+                        }
+                      }}
+                      disabled={authLoading}
+                      style={{
+                        width: '100%',
+                        padding: '12px 20px',
+                        backgroundColor: authLoading ? '#555' : '#0078d4',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: authLoading ? 'not-allowed' : 'pointer',
+                        fontWeight: 'bold',
+                        fontSize: '14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      {authLoading ? '⏳ 處理中...' : '🔐 使用 Microsoft 帳號登入'}
+                    </button>
+                  )}
+
+                  {/* Logout Button */}
+                  {copilotConfig.m365Config?.accessToken && (
+                    <button
+                      onClick={() => {
+                        const newConfig = {
+                          ...copilotConfig,
+                          m365Config: {
+                            tenantId: copilotConfig.m365Config?.tenantId || '',
+                            clientId: copilotConfig.m365Config?.clientId || '',
+                          }
+                        }
+                        setCopilotConfig(newConfig)
+                        settingsStore.setCopilotConfig(newConfig)
+                        setAuthMessage('✅ 已登出 M365 Copilot')
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 20px',
+                        backgroundColor: '#cb6077',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        marginTop: '10px'
+                      }}
+                    >
+                      🚪 登出
+                    </button>
+                  )}
+
+                  <div style={{ 
+                    marginTop: '15px', 
+                    padding: '10px', 
+                    backgroundColor: '#3a3836', 
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    color: '#888'
+                  }}>
+                    <strong style={{ color: '#dfdbc3' }}>📝 設定說明：</strong>
+                    <ol style={{ marginTop: '8px', marginBottom: '0', paddingLeft: '20px' }}>
+                      <li>在 Azure Portal 註冊應用程式</li>
+                      <li>獲取 Tenant ID 和 Client ID</li>
+                      <li>配置重定向 URI: http://localhost:3000/callback</li>
+                      <li>點擊登入按鈕完成 OAuth 授權</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
@@ -734,6 +1004,70 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         </div>
 
         <div className="settings-footer">
+          {/* Data Location Info */}
+          <div style={{
+            padding: '12px',
+            backgroundColor: '#2a2826',
+            borderRadius: '6px',
+            marginBottom: '12px',
+            border: '1px solid #3a3836'
+          }}>
+            <div style={{ fontSize: '13px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>
+              📁 資料存放位置
+            </div>
+            <div style={{ fontSize: '12px', color: '#dfdbc3', marginBottom: '4px' }}>
+              <strong>配置檔案：</strong>
+              <code style={{ 
+                backgroundColor: '#1f1d1a', 
+                padding: '2px 6px', 
+                borderRadius: '3px',
+                marginLeft: '8px',
+                fontSize: '11px',
+                fontFamily: 'monospace'
+              }}>
+                {process.platform === 'win32' 
+                  ? `%APPDATA%\\better-agent-terminal` 
+                  : process.platform === 'darwin'
+                  ? `~/Library/Application Support/better-agent-terminal`
+                  : `~/.config/better-agent-terminal`}
+              </code>
+            </div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
+              包含：workspaces.json、settings.json、copilot-config.json、snippets.json
+            </div>
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+              <strong>瀏覽器儲存：</strong> localStorage (Copilot 聊天記錄、面板位置)
+            </div>
+            <button
+              onClick={async () => {
+                const path = process.platform === 'win32' 
+                  ? `${process.env.APPDATA}\\better-agent-terminal`
+                  : process.platform === 'darwin'
+                  ? `${process.env.HOME}/Library/Application Support/better-agent-terminal`
+                  : `${process.env.HOME}/.config/better-agent-terminal`
+                
+                if (process.platform === 'win32') {
+                  await window.electronAPI.openExternal(`file:///${path}`)
+                } else {
+                  await window.electronAPI.openExternal(`file://${path}`)
+                }
+              }}
+              style={{
+                marginTop: '8px',
+                padding: '6px 12px',
+                backgroundColor: '#3a3836',
+                color: '#7bbda4',
+                border: '1px solid #3a3836',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}
+            >
+              📂 開啟資料夾
+            </button>
+          </div>
+
           <p className="settings-note">Changes are saved automatically. Font changes apply immediately to all terminals.</p>
           <button
             onClick={onClose}
