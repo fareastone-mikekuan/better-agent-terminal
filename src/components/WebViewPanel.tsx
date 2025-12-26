@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 
 interface WebViewPanelProps {
   height: string
@@ -6,9 +6,15 @@ interface WebViewPanelProps {
   isFloating?: boolean
   onToggleFloat?: () => void
   onClose?: () => void
+  onContentChange?: (content: string) => void
 }
 
-export function WebViewPanel({ height, url, isFloating = false, onToggleFloat, onClose }: WebViewPanelProps) {
+export interface WebViewPanelRef {
+  fetchContent: () => Promise<string | null>
+}
+
+export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
+  function WebViewPanel({ height, url, isFloating = false, onToggleFloat, onClose, onContentChange }, ref) {
   const [zoom, setZoom] = useState(40)
 
   // Dragging and resizing state
@@ -24,6 +30,74 @@ export function WebViewPanel({ height, url, isFloating = false, onToggleFloat, o
   const [isResizing, setIsResizing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Expose fetchContent method to parent
+  useImperativeHandle(ref, () => ({
+    fetchContent: async () => {
+      const webview = containerRef.current?.querySelector('webview') as any
+      if (!webview) {
+        console.error('WebView element not found')
+        return null
+      }
+      
+      try {
+        // Wait a bit to ensure webview is ready
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
+        const content = await webview.executeJavaScript(`
+          (function() {
+            try {
+              // Try multiple ways to get content
+              let text = '';
+              
+              // Method 1: innerText
+              if (document.body.innerText) {
+                text = document.body.innerText;
+              }
+              // Method 2: textContent
+              else if (document.body.textContent) {
+                text = document.body.textContent;
+              }
+              // Method 3: Get all text nodes
+              else {
+                const walker = document.createTreeWalker(
+                  document.body,
+                  NodeFilter.SHOW_TEXT,
+                  null
+                );
+                const textNodes = [];
+                while(walker.nextNode()) {
+                  textNodes.push(walker.currentNode.textContent);
+                }
+                text = textNodes.join(' ');
+              }
+              
+              // Clean up whitespace
+              text = text.replace(/\\s+/g, ' ').trim();
+              
+              // Limit size
+              return text.substring(0, 50000);
+            } catch (e) {
+              return 'Error: ' + e.message;
+            }
+          })();
+        `)
+        
+        if (content && content.length > 10 && !content.startsWith('Error:')) {
+          if (onContentChange) {
+            onContentChange(content)
+          }
+          return content
+        } else {
+          console.warn('Content is empty or error:', content)
+          return null
+        }
+      } catch (e) {
+        console.error('Failed to extract content:', e)
+        return null
+      }
+    }
+  }), [onContentChange])
 
   // Save position and size to localStorage
   useEffect(() => {
@@ -273,4 +347,4 @@ export function WebViewPanel({ height, url, isFloating = false, onToggleFloat, o
       )}
     </div>
   )
-}
+})

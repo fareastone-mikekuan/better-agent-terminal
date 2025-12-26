@@ -16,7 +16,17 @@ interface SidebarProps {
   onOpenEnvVars: (workspaceId: string) => void
   onOpenSettings: () => void
   onOpenAbout: () => void
-  onAddCopilotChat?: (workspaceId: string) => void
+  showCopilot?: boolean
+  onToggleCopilot?: () => void
+  showApiTester?: boolean
+  onToggleApiTester?: () => void
+  showSnippets?: boolean
+  onToggleSnippets?: () => void
+  showOracle?: boolean
+  onToggleOracle?: () => void
+  showWebView?: boolean
+  onToggleWebView?: () => void
+  hasWebViewUrl?: boolean
 }
 
 function getRoleColor(role?: string): string {
@@ -38,7 +48,17 @@ export function Sidebar({
   onOpenEnvVars,
   onOpenSettings,
   onOpenAbout,
-  onAddCopilotChat
+  showCopilot = false,
+  onToggleCopilot,
+  showApiTester = false,
+  onToggleApiTester,
+  showSnippets = true,
+  onToggleSnippets,
+  showOracle = true,
+  onToggleOracle,
+  showWebView = true,
+  onToggleWebView,
+  hasWebViewUrl = false
 }: Readonly<SidebarProps>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -324,19 +344,36 @@ export function Sidebar({
         )}
       </div>
       <div className="sidebar-footer">
-        <button className="add-workspace-btn" onClick={onAddWorkspace}>
-          + 新增工作區
+        <button 
+          className="add-workspace-btn" 
+          onClick={onAddWorkspace}
+          style={{
+            padding: '10px',
+            backgroundColor: '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          ➕ 新增工作區
         </button>
-        {onAddCopilotChat && activeWorkspaceId && (
+        {onToggleCopilot && (
           <button
-            className="copilot-chat-btn"
-            onClick={() => onAddCopilotChat(activeWorkspaceId)}
-            title="開啟 Copilot 聊天"
+            onClick={onToggleCopilot}
+            title={showCopilot ? '隱藏 Copilot' : '顯示 Copilot'}
             style={{
               padding: '10px',
-              backgroundColor: '#6e40c9',
+              backgroundColor: '#78716c',
               color: 'white',
-              border: 'none',
+              border: `2px solid ${showCopilot ? '#22c55e' : '#ef4444'}`,
               borderRadius: '4px',
               cursor: 'pointer',
               fontWeight: 'bold',
@@ -348,8 +385,99 @@ export function Sidebar({
               gap: '8px'
             }}
           >
-            <span>⚡</span>
-            <span>Copilot 聊天</span>
+            ⚡ Copilot
+          </button>
+        )}
+        {onToggleApiTester && (
+          <button
+            onClick={onToggleApiTester}
+            title={showApiTester ? '隱藏 API' : '顯示 API'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showApiTester ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            🌐 API
+          </button>
+        )}
+        {onToggleSnippets && (
+          <button
+            onClick={onToggleSnippets}
+            title={showSnippets ? '隱藏筆記' : '顯示筆記'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showSnippets ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            📋 筆記
+          </button>
+        )}
+        {onToggleOracle && (
+          <button
+            onClick={onToggleOracle}
+            title={showOracle ? '隱藏資料庫連線' : '顯示資料庫連線'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showOracle ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            🗄️ 資料庫連線
+          </button>
+        )}
+        {onToggleWebView && hasWebViewUrl && (
+          <button
+            onClick={onToggleWebView}
+            title={showWebView ? '隱藏網頁視窗' : '顯示網頁視窗'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showWebView ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            🌐 網頁視窗
           </button>
         )}
         <div className="sidebar-footer-buttons">

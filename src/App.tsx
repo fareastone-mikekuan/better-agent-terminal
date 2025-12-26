@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { workspaceStore } from './stores/workspace-store'
 import { settingsStore } from './stores/settings-store'
 import { Sidebar } from './components/Sidebar'
@@ -10,6 +10,8 @@ import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { ResizeHandle } from './components/ResizeHandle'
 import { WebViewPanel } from './components/WebViewPanel'
 import { OraclePanel } from './components/OraclePanel'
+import { ApiTesterPanel } from './components/ApiTesterPanel'
+import { CopilotChatPanel } from './components/CopilotChatPanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -65,6 +67,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
+  const webViewRef = useRef<{ fetchContent: () => Promise<string | null> }>(null)
   // Panel visibility and floating states
   const [showSnippetSidebar, setShowSnippetSidebar] = useState(true)
   const [isSnippetFloating, setIsSnippetFloating] = useState(false)
@@ -73,6 +76,17 @@ export default function App() {
   const [showOracle, setShowOracle] = useState(true)
   const [isOracleFloating, setIsOracleFloating] = useState(false)
   const [oracleQueryResult, setOracleQueryResult] = useState<string | null>(null)
+  const [webPageContent, setWebPageContent] = useState<string | null>(null)
+  const [showApiTester, setShowApiTester] = useState(false)
+  const [apiTesterHeight, setApiTesterHeight] = useState(() => {
+    const saved = localStorage.getItem('api-tester-height')
+    return saved ? parseInt(saved) : 300
+  })
+  const [showCopilot, setShowCopilot] = useState(false)
+  const [copilotWidth, setCopilotWidth] = useState(() => {
+    const saved = localStorage.getItem('copilot-width')
+    return saved ? parseInt(saved) : 400
+  })
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
   const [rightPanelHeights, setRightPanelHeights] = useState({
@@ -136,6 +150,17 @@ export default function App() {
     })
   }, [])
 
+  // Request webpage content from WebView
+  const handleRequestWebPageContent = useCallback(async () => {
+    if (webViewRef.current?.fetchContent) {
+      const content = await webViewRef.current.fetchContent()
+      if (content) {
+        setWebPageContent(content)
+      }
+    }
+  }, [])
+
+
   // Handle snippet height resize (vertical)
   const handleSnippetHeightResize = useCallback((delta: number) => {
     setRightPanelHeights(prev => {
@@ -150,6 +175,15 @@ export default function App() {
         snippet: newSnippetHeight,
         oracle: newOracleHeight
       }
+    })
+  }, [])
+
+  // Handle API tester height resize
+  const handleApiTesterResize = useCallback((delta: number) => {
+    setApiTesterHeight(prev => {
+      const newHeight = Math.min(600, Math.max(200, prev + delta))
+      localStorage.setItem('api-tester-height', newHeight.toString())
+      return newHeight
     })
   }, [])
 
@@ -289,13 +323,77 @@ export default function App() {
         onOpenEnvVars={(workspaceId) => setEnvDialogWorkspaceId(workspaceId)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
-        onAddCopilotChat={handleAddCopilotChat}
+        showCopilot={showCopilot}
+        onToggleCopilot={() => setShowCopilot(!showCopilot)}
+        showApiTester={showApiTester}
+        onToggleApiTester={() => setShowApiTester(!showApiTester)}
+        showSnippets={showSnippetSidebar}
+        onToggleSnippets={() => setShowSnippetSidebar(!showSnippetSidebar)}
+        showOracle={showOracle}
+        onToggleOracle={() => setShowOracle(!showOracle)}
+        showWebView={showWebView}
+        onToggleWebView={() => setShowWebView(!showWebView)}
+        hasWebViewUrl={!!settings.webViewUrl}
       />
       <ResizeHandle
         direction="horizontal"
         onResize={handleSidebarResize}
         onDoubleClick={handleSidebarResetWidth}
       />
+      {/* API Tester Panel - between sidebar and main content */}
+      {showApiTester && (
+        <>
+          <ApiTesterPanel 
+            isVisible={showApiTester}
+            onClose={() => setShowApiTester(false)}
+            height={apiTesterHeight}
+            onResize={handleApiTesterResize}
+          />
+          <ResizeHandle
+            direction="horizontal"
+            onResize={(delta) => {
+              setApiTesterHeight(prev => {
+                const newHeight = Math.min(600, Math.max(200, prev + delta))
+                localStorage.setItem('api-tester-height', newHeight.toString())
+                return newHeight
+              })
+            }}
+            onDoubleClick={() => {
+              setApiTesterHeight(300)
+              localStorage.setItem('api-tester-height', '300')
+            }}
+          />
+        </>
+      )}
+      {/* Copilot Chat Panel - between sidebar/api and main content */}
+      {showCopilot && (
+        <>
+          <CopilotChatPanel 
+            isVisible={showCopilot}
+            onClose={() => setShowCopilot(false)}
+            width={copilotWidth}
+            oracleQueryResult={oracleQueryResult}
+            webPageContent={webPageContent}
+            onRequestWebPageContent={handleRequestWebPageContent}
+            onOpenWebView={() => setShowWebView(true)}
+            isWebViewOpen={showWebView}
+          />
+          <ResizeHandle
+            direction="horizontal"
+            onResize={(delta) => {
+              setCopilotWidth(prev => {
+                const newWidth = Math.min(700, Math.max(300, prev + delta))
+                localStorage.setItem('copilot-width', newWidth.toString())
+                return newWidth
+              })
+            }}
+            onDoubleClick={() => {
+              setCopilotWidth(400)
+              localStorage.setItem('copilot-width', '400')
+            }}
+          />
+        </>
+      )}
       <main className="main-content">
         {state.workspaces.length > 0 ? (
           // Render ALL workspaces, hide inactive ones with CSS to preserve terminal state
@@ -328,8 +426,8 @@ export default function App() {
           onDoubleClick={handleSnippetResetWidth}
         />
       )}
-      {/* Right panel container - only show if at least one panel is docked */}
-      {(!isSnippetFloating || !isOracleFloating || !isWebViewFloating) && (
+      {/* Right panel container - only show if at least one panel is visible and docked */}
+      {((showSnippetSidebar && !isSnippetFloating) || (showOracle && !isOracleFloating) || (showWebView && !isWebViewFloating && settings.webViewUrl)) && (
         <div className="right-panel-container" style={{ 
           width: panelSettings.snippetSidebar.width, 
           display: 'flex',
@@ -373,11 +471,13 @@ export default function App() {
           {showWebView && !isWebViewFloating && settings.webViewUrl && (
             <div style={{ height: `${rightPanelHeights.webview}%`, minHeight: '100px' }}>
               <WebViewPanel 
+                ref={webViewRef}
                 height="100%" 
                 url={settings.webViewUrl}
                 isFloating={false}
                 onToggleFloat={() => setIsWebViewFloating(true)}
                 onClose={() => setShowWebView(false)}
+                onContentChange={setWebPageContent}
               />
             </div>
           )}
@@ -466,11 +566,13 @@ export default function App() {
       
       {showWebView && isWebViewFloating && settings.webViewUrl && (
         <WebViewPanel 
+          ref={webViewRef}
           height="100%" 
           url={settings.webViewUrl}
           isFloating={true}
           onToggleFloat={() => setIsWebViewFloating(false)}
           onClose={() => setShowWebView(false)}
+          onContentChange={setWebPageContent}
         />
       )}
       
@@ -500,42 +602,6 @@ export default function App() {
             title="显示 Snippets"
           >
             📋 Snippets
-          </button>
-        )}
-        {!showOracle && (
-          <button
-            onClick={() => setShowOracle(true)}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#dc2626',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-            title="显示 Oracle"
-          >
-            🗄️ Oracle
-          </button>
-        )}
-        {!showWebView && settings.webViewUrl && (
-          <button
-            onClick={() => setShowWebView(true)}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#2563eb',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-            title="显示网页视窗"
-          >
-            🌐 网页
           </button>
         )}
       </div>

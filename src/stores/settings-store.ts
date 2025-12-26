@@ -244,6 +244,7 @@ class SettingsStore {
   async setCopilotConfig(config: CopilotConfig): Promise<void> {
     this.copilotConfig = config
     await window.electronAPI.copilot.setConfig(config)
+    this.notify()
   }
 
   getCopilotConfig(): CopilotConfig | null {
