@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import https from 'https'
 
-const GITHUB_REPO = 'tony1223/better-agent-terminal'
+const GITHUB_REPO = 'fareastone-mikekuan/better-agent-terminal'
 
 export interface ReleaseInfo {
   version: string
