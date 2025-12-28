@@ -98,7 +98,7 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
       const deltaX = e.clientX - dragStart.x
       const deltaY = e.clientY - dragStart.y
       
-      setPosition(prev => ({
+      setPosition((prev: { x: number; y: number }) => ({
         x: Math.max(0, Math.min(window.innerWidth - size.width, prev.x + deltaX)),
         y: Math.max(0, Math.min(window.innerHeight - 100, prev.y + deltaY))
       }))
