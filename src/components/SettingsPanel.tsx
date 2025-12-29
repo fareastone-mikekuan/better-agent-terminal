@@ -268,7 +268,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={e => e.stopPropagation()}>
         <div className="settings-header">
-          <h2>Settings</h2>
+          <h2>設定</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
@@ -755,7 +755,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               設定各功能面板是「所有工作區共用」還是「每個工作區獨立」
             </p>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* 三列兩欄的網格布局 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+              {/* Copilot 面板 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -771,7 +773,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.copilot !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.copilot !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -790,6 +792,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </label>
 
+              {/* FILE 面板 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -805,7 +808,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.fileExplorer !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.fileExplorer !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -824,6 +827,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </label>
 
+              {/* API 測試器 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -839,7 +843,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.apiTester !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.apiTester !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -858,6 +862,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </label>
 
+              {/* 資料庫連線 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -873,7 +878,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.oracle !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.oracle !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -892,6 +897,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </label>
 
+              {/* 網頁視窗 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -907,7 +913,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.webView !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.webView !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -926,6 +932,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </label>
 
+              {/* 筆記面板 */}
               <label style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -941,7 +948,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', color: '#888' }}>
-                    {settings.sharedPanels?.snippets !== false ? '所有工作區共用' : '每個工作區獨立'}
+                    {settings.sharedPanels?.snippets !== false ? '共用' : '獨立'}
                   </span>
                   <input
                     type="checkbox"
@@ -1001,97 +1008,112 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           <div className="settings-section">
             <h3>Shell</h3>
-            <div className="settings-group">
-              <label>Default Shell</label>
-              <select
-                value={settings.shell}
-                onChange={e => handleShellChange(e.target.value as ShellType)}
-              >
-                <option value="auto">Auto (prefer pwsh)</option>
-                <option value="pwsh">PowerShell 7 (pwsh)</option>
-                <option value="powershell">Windows PowerShell</option>
-                <option value="cmd">Command Prompt (cmd)</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
+            
+            {/* Shell 設定：Default Shell + Custom Path + Default Terminals per Workspace 排成一列 */}
+            <div style={{ display: 'grid', gridTemplateColumns: settings.shell === 'custom' ? '1fr 1fr 1fr' : '1fr 1fr', gap: '16px', marginBottom: '8px' }}>
+              <div className="settings-group" style={{ marginBottom: 0 }}>
+                <label>預設 Shell</label>
+                <select
+                  value={settings.shell}
+                  onChange={e => handleShellChange(e.target.value as ShellType)}
+                >
+                  <option value="auto">Auto (prefer pwsh)</option>
+                  <option value="pwsh">PowerShell 7 (pwsh)</option>
+                  <option value="powershell">Windows PowerShell</option>
+                  <option value="cmd">Command Prompt (cmd)</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
 
-            {settings.shell === 'custom' && (
-              <div className="settings-group">
-                <label>Custom Shell Path</label>
+              {settings.shell === 'custom' && (
+                <div className="settings-group" style={{ marginBottom: 0 }}>
+                  <label>自訂 Shell 路徑</label>
+                  <input
+                    type="text"
+                    value={settings.customShellPath}
+                    onChange={e => handleCustomPathChange(e.target.value)}
+                    placeholder="C:\path\to\shell.exe"
+                  />
+                </div>
+              )}
+
+              <div className="settings-group" style={{ marginBottom: 0 }}>
+                <label>每個工作區的預設終端機數量: {settings.defaultTerminalCount || 1}</label>
                 <input
-                  type="text"
-                  value={settings.customShellPath}
-                  onChange={e => handleCustomPathChange(e.target.value)}
-                  placeholder="C:\path\to\shell.exe"
+                  type="range"
+                  min="1"
+                  max="5"
+                  value={settings.defaultTerminalCount || 1}
+                  onChange={e => settingsStore.setDefaultTerminalCount(Number(e.target.value))}
                 />
               </div>
-            )}
-
-            <div className="settings-group">
-              <label>Default Terminals per Workspace: {settings.defaultTerminalCount || 1}</label>
-              <input
-                type="range"
-                min="1"
-                max="5"
-                value={settings.defaultTerminalCount || 1}
-                onChange={e => settingsStore.setDefaultTerminalCount(Number(e.target.value))}
-              />
             </div>
 
-            <div className="settings-group checkbox-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={settings.createDefaultAgentTerminal === true}
-                  onChange={e => settingsStore.setCreateDefaultAgentTerminal(e.target.checked)}
-                />
-                Create Agent Terminal by default
-              </label>
-              <p className="settings-hint">When enabled, new workspaces will include an Agent Terminal.</p>
-            </div>
+            {/* Agent 設定：預設建立 + Agent 選擇 + 自動執行 排成一列 */}
+            <div style={{ display: 'grid', gridTemplateColumns: settings.createDefaultAgentTerminal ? '1fr 1fr 1fr' : '1fr', gap: '16px', marginBottom: '8px', marginTop: '16px' }}>
+              <div className="settings-group checkbox-group" style={{ marginBottom: 0 }}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.createDefaultAgentTerminal === true}
+                    onChange={e => settingsStore.setCreateDefaultAgentTerminal(e.target.checked)}
+                  />
+                  預設建立 Agent 終端機
+                </label>
+              </div>
 
-            {settings.createDefaultAgentTerminal && (
-              <>
-                <div className="settings-group">
-                  <label>Default Agent</label>
-                  <select
-                    value={settings.defaultAgent || 'claude-code'}
-                    onChange={e => settingsStore.setDefaultAgent(e.target.value as AgentPresetId)}
-                  >
-                    {AGENT_PRESETS.filter(p => p.id !== 'none').map(preset => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.icon} {preset.name}
+              {settings.createDefaultAgentTerminal && (
+                <>
+                  <div className="settings-group" style={{ marginBottom: 0 }}>
+                    <label>Agent</label>
+                    <select
+                      value={settings.defaultAgent || 'copilot'}
+                      onChange={e => settingsStore.setDefaultAgent(e.target.value as AgentPresetId)}
+                    >
+                      <option value="copilot">
+                        🐙 GitHub Copilot
                       </option>
-                    ))}
-                  </select>
-                </div>
+                    </select>
+                  </div>
 
-                <div className="settings-group checkbox-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={settings.agentAutoCommand === true}
-                      onChange={e => settingsStore.setAgentAutoCommand(e.target.checked)}
-                    />
-                    Auto-run agent command
-                  </label>
-                  <p className="settings-hint">Automatically execute the agent command (e.g., `claude`) when creating an Agent Terminal.</p>
-                </div>
-              </>
-            )}
+                  <div className="settings-group checkbox-group" style={{ marginBottom: 0 }}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.agentAutoCommand === true}
+                        onChange={e => settingsStore.setAgentAutoCommand(e.target.checked)}
+                      />
+                      自動執行 Agent 命令
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 說明文字放在下方 */}
+            <div style={{ marginTop: '12px' }}>
+              <p className="settings-hint" style={{ marginBottom: '8px' }}>
+                <strong>預設建立 Agent 終端機：</strong>啟用後，新工作區會自動包含一個 Agent 終端機。
+              </p>
+              {settings.createDefaultAgentTerminal && (
+                <p className="settings-hint">
+                  <strong>自動執行 Agent 命令：</strong>建立 Agent 終端機時自動執行 Agent 命令（例如：`gh copilot`）。
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="settings-section">
-            <h3>🌐 WebView Settings</h3>
+            <h3>🌐 網頁視窗設定</h3>
             <div className="settings-group">
-              <label>Embedded WebView URL</label>
+              <label>嵌入網頁 URL</label>
               <input
                 type="text"
                 value={settings.webViewUrl || ''}
                 onChange={e => settingsStore.setWebViewUrl(e.target.value)}
                 placeholder="http://example.com"
               />
-              <p className="settings-hint">URL for the embedded webpage in the right panel. Leave empty to hide WebView.</p>
+              <p className="settings-hint">右側面板嵌入網頁的 URL。留空則隱藏 WebView。</p>
             </div>
           </div>
 
@@ -1108,50 +1130,68 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               />
             </div>
 
-            <div className="settings-group">
-              <label>Font Family</label>
-              <select
-                value={settings.fontFamily}
-                onChange={e => handleFontFamilyChange(e.target.value as FontType)}
-              >
-                {FONT_OPTIONS.map(font => (
-                  <option key={font.id} value={font.id} disabled={!availableFonts.has(font.id) && font.id !== 'custom'}>
-                    {font.name} {availableFonts.has(font.id) ? '✓' : '(not installed)'}
-                  </option>
-                ))}
-              </select>
+            {/* Font Family, Color Theme, Preview in one row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="settings-group" style={{ marginBottom: 0 }}>
+                <label>字型</label>
+                <select
+                  value={settings.fontFamily}
+                  onChange={e => handleFontFamilyChange(e.target.value as FontType)}
+                >
+                  {FONT_OPTIONS.map(font => (
+                    <option key={font.id} value={font.id} disabled={!availableFonts.has(font.id) && font.id !== 'custom'}>
+                      {font.name} {availableFonts.has(font.id) ? '✓' : '(not installed)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="settings-group" style={{ marginBottom: 0 }}>
+                <label>配色主題</label>
+                <select
+                  value={settings.colorPreset}
+                  onChange={e => handleColorPresetChange(e.target.value as ColorPresetId)}
+                >
+                  {COLOR_PRESETS.map(preset => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="settings-group font-preview" style={{ marginBottom: 0 }}>
+                <label>預覽</label>
+                <div
+                  className="font-preview-box"
+                  style={{
+                    fontFamily: settingsStore.getFontFamilyString(),
+                    fontSize: settings.fontSize,
+                    backgroundColor: terminalColors.background,
+                    color: terminalColors.foreground
+                  }}
+                >
+                  $ echo "Hello World" 你好世界 0123456789
+                </div>
+              </div>
             </div>
 
             {settings.fontFamily === 'custom' && (
               <div className="settings-group">
-                <label>Custom Font Name</label>
+                <label>自訂字型名稱</label>
                 <input
                   type="text"
                   value={settings.customFontFamily}
                   onChange={e => handleCustomFontFamilyChange(e.target.value)}
-                  placeholder="e.g., Fira Code, JetBrains Mono"
+                  placeholder="例如：Fira Code, JetBrains Mono"
                 />
               </div>
             )}
 
-            <div className="settings-group">
-              <label>Color Theme</label>
-              <select
-                value={settings.colorPreset}
-                onChange={e => handleColorPresetChange(e.target.value as ColorPresetId)}
-              >
-                {COLOR_PRESETS.map(preset => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {settings.colorPreset === 'custom' && (
               <>
                 <div className="settings-group color-picker-group">
-                  <label>Background Color</label>
+                  <label>背景顏色</label>
                   <div className="color-input-wrapper">
                     <input
                       type="color"
@@ -1168,7 +1208,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
 
                 <div className="settings-group color-picker-group">
-                  <label>Text Color</label>
+                  <label>文字顏色</label>
                   <div className="color-input-wrapper">
                     <input
                       type="color"
@@ -1185,7 +1225,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
 
                 <div className="settings-group color-picker-group">
-                  <label>Cursor Color</label>
+                  <label>游標顏色</label>
                   <div className="color-input-wrapper">
                     <input
                       type="color"
@@ -1202,27 +1242,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </>
             )}
-
-            <div className="settings-group font-preview">
-              <label>Preview</label>
-              <div
-                className="font-preview-box"
-                style={{
-                  fontFamily: settingsStore.getFontFamilyString(),
-                  fontSize: settings.fontSize,
-                  backgroundColor: terminalColors.background,
-                  color: terminalColors.foreground
-                }}
-              >
-                $ echo "Hello World" 你好世界 0123456789
-              </div>
-            </div>
           </div>
 
           <div className="settings-section">
-            <h3>Environment Variables</h3>
+            <h3>🌍 環境變數</h3>
             <p className="settings-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              Global environment variables applied to ALL workspaces. Workspace-specific variables (⚙ button) will override these.
+              全域環境變數套用到所有工作區。工作區特定變數（⚙ 按鈕）會覆蓋這些設定。
             </p>
             <EnvVarEditor
               envVars={settings.globalEnvVars || []}
@@ -1264,51 +1289,27 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
               <strong>瀏覽器儲存：</strong> localStorage (Copilot 聊天記錄、面板位置)
             </div>
-            <button
-              onClick={async () => {
-                // Use Electron API to get app path
-                try {
-                  const appPath = await window.electronAPI.getAppPath?.()
-                  if (appPath) {
-                    await window.electronAPI.openExternal(`file:///${appPath}`)
-                  }
-                } catch (error) {
-                  console.error('Failed to open app folder:', error)
-                }
-              }}
-              style={{
-                marginTop: '8px',
-                padding: '6px 12px',
-                backgroundColor: '#3a3836',
-                color: '#7bbda4',
-                border: '1px solid #3a3836',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 'bold'
-              }}
-            >
-              📂 開啟資料夾
-            </button>
           </div>
 
-          <p className="settings-note">Changes are saved automatically. Font changes apply immediately to all terminals.</p>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '10px 24px',
-              backgroundColor: '#7bbda4',
-              color: '#1f1d1a',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '14px',
-              marginTop: '12px'
-            }}
-          >
-            ✓ 完成
-          </button>
+          <p className="settings-note">所有變更會自動儲存。字型變更會立即套用到所有終端機。</p>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: '10px 24px',
+                backgroundColor: '#7bbda4',
+                color: '#1f1d1a',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                marginTop: '12px'
+              }}
+            >
+              ✓ 完成
+            </button>
+          </div>
         </div>
       </div>
     </div>

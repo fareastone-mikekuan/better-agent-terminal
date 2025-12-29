@@ -381,6 +381,22 @@ export default function App() {
           />
         </>
       )}
+
+      {/* File Explorer Panel - floating mode */}
+      {showFileExplorer && isFileExplorerFloating && (
+        <FileExplorerPanel 
+          isVisible={true}
+          onClose={() => setShowFileExplorer(false)}
+          width={450}
+          isFloating={true}
+          onToggleFloat={() => setIsFileExplorerFloating(false)}
+          onAnalyzeFile={(fileName, content) => {
+            setFileContentForAI({ fileName, content })
+            setShowCopilot(true)
+          }}
+          workspaceId={state.activeWorkspaceId}
+        />
+      )}
       {/* API Tester Panel - between file explorer and main content */}
       {showApiTester && (
         <>
@@ -617,80 +633,6 @@ export default function App() {
           onClose={() => setShowWebView(false)}
           onContentChange={setWebPageContent}
         />
-      )}
-      
-      {showFileExplorer && isFileExplorerFloating && (
-        <div style={{
-          position: 'fixed',
-          top: '80px',
-          right: showCopilot ? '440px' : '20px',
-          width: '450px',
-          height: '70vh',
-          backgroundColor: '#1e1e1e',
-          border: '1px solid #3a3836',
-          borderRadius: '6px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-          zIndex: 1002,
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          <div style={{ 
-            padding: '8px 12px',
-            backgroundColor: '#2a2826',
-            borderBottom: '1px solid #3a3836',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500 }}>📁 FILE</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button
-                onClick={() => setIsFileExplorerFloating(false)}
-                style={{
-                  background: 'none',
-                  border: '1px solid #3a3836',
-                  color: '#dfdbc3',
-                  cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  borderRadius: '4px'
-                }}
-                title="固定"
-              >
-                📌
-              </button>
-              <button
-                onClick={() => setShowFileExplorer(false)}
-                style={{
-                  background: 'none',
-                  border: '1px solid #3a3836',
-                  color: '#dfdbc3',
-                  cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  borderRadius: '4px'
-                }}
-                title="关闭"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <FileExplorerPanel 
-              isVisible={true}
-              onClose={() => setShowFileExplorer(false)}
-              width={450}
-              isFloating={true}
-              onToggleFloat={() => setIsFileExplorerFloating(false)}
-              onAnalyzeFile={(fileName, content) => {
-                setFileContentForAI({ fileName, content })
-                setShowCopilot(true)
-              }}
-              workspaceId={state.activeWorkspaceId}
-            />
-          </div>
-        </div>
       )}
       
       {/* Panel Control Menu */}

@@ -775,9 +775,9 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  width: 450px;
-  max-width: 90vw;
-  max-height: 80vh;
+  width: 800px;
+  max-width: 95vw;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;

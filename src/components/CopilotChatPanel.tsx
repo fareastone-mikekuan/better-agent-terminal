@@ -67,6 +67,111 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   const dragOffset = useRef({ x: 0, y: 0 })
   const isLoadingMessages = useRef(false)
 
+  // 匯出對話為 JSON 檔案
+  const exportMessages = () => {
+    const dataStr = JSON.stringify({
+      storageKey,
+      workspaceId,
+      workspaceName: workspaceStore.getState().workspaces.find(w => w.id === workspaceId)?.name || 'unknown',
+      exportTime: new Date().toISOString(),
+      messages
+    }, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `copilot-chat-${workspaceId || 'shared'}-${Date.now()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // 匯出為 Markdown 檔案
+  const exportAsMarkdown = () => {
+    const workspaceName = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)?.name || 'unknown'
+    let markdown = `# Copilot Chat History\n\n`
+    markdown += `**Workspace**: ${workspaceName}\n`
+    markdown += `**Storage Key**: ${storageKey}\n`
+    markdown += `**Export Time**: ${new Date().toLocaleString()}\n`
+    markdown += `**Messages**: ${messages.length}\n\n---\n\n`
+    
+    messages.forEach((msg, idx) => {
+      const time = new Date(msg.timestamp).toLocaleString()
+      markdown += `## Message ${idx + 1} - ${msg.role}\n\n`
+      markdown += `*${time}*\n\n`
+      markdown += `${msg.content}\n\n---\n\n`
+    })
+    
+    const dataBlob = new Blob([markdown], { type: 'text/markdown' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `copilot-chat-${workspaceId || 'shared'}-${Date.now()}.md`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // 匯入對話
+  const importMessages = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target?.result as string)
+          if (data.messages && Array.isArray(data.messages)) {
+            if (confirm(`確定要匯入 ${data.messages.length} 筆訊息嗎？\n\n來源: ${data.workspaceName || 'unknown'}\n時間: ${data.exportTime || 'unknown'}\n\n當前訊息將被取代！`)) {
+              setMessages(data.messages)
+            }
+          } else {
+            alert('無效的檔案格式！')
+          }
+        } catch (error) {
+          alert('讀取檔案失敗！')
+          console.error('Import error:', error)
+        }
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }
+
+  // 查看所有工作區的對話
+  const viewAllMessages = () => {
+    const allKeys = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('copilot-messages')) {
+        allKeys.push(key)
+      }
+    }
+    
+    let info = `📊 所有 Copilot 對話記錄\n\n`
+    info += `當前使用: ${storageKey}\n`
+    info += `當前訊息數: ${messages.length}\n\n`
+    info += `──────────\n\n`
+    
+    allKeys.forEach(key => {
+      const data = localStorage.getItem(key)
+      if (data) {
+        try {
+          const msgs = JSON.parse(data)
+          const isCurrent = key === storageKey
+          info += `${isCurrent ? '➡️ ' : '▫️ '} ${key}\n`
+          info += `   訊息數: ${msgs.length}\n\n`
+        } catch (e) {
+          // ignore
+        }
+      }
+    })
+    
+    alert(info)
+  }
+
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent) => {
     if (!isFloating) return
@@ -393,7 +498,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
     <aside className={panelClass} style={panelStyle}>
       <div className="copilot-chat-header" onMouseDown={handleDragStart}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h3>⚡ Copilot Chat</h3>
+          <h3>⚡ AI</h3>
           <span style={{ 
             fontSize: '11px', 
             color: isShared ? '#7bbda4' : '#f59e0b',
@@ -407,10 +512,42 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
         </div>
         <div className="copilot-chat-controls">
           {messages.length > 0 && (
+            <>
+              <button
+                className="copilot-toggle-btn"
+                onClick={exportAsMarkdown}
+                title="匯出為 Markdown"
+              >
+                📝
+              </button>
+              <button
+                className="copilot-toggle-btn"
+                onClick={exportMessages}
+                title="匯出對話 (JSON)"
+              >
+                💾
+              </button>
+            </>
+          )}
+          <button
+            className="copilot-toggle-btn"
+            onClick={importMessages}
+            title="匯入對話"
+          >
+            📂
+          </button>
+          <button
+            className="copilot-toggle-btn"
+            onClick={viewAllMessages}
+            title="查看所有對話"
+          >
+            📊
+          </button>
+          {messages.length > 0 && (
             <button
               className="copilot-toggle-btn"
               onClick={() => {
-                if (confirm('確定要清除所有聊天記錄嗎？')) {
+                if (confirm('確定要清除所有聊天記錄嗎？\n\n建議先匯出保存！')) {
                   setMessages([])
                   localStorage.removeItem(storageKey)
                 }
@@ -425,7 +562,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
             onClick={() => setIsFloating(!isFloating)}
             title={isFloating ? '固定面板' : '浮動面板'}
           >
-            {isFloating ? '📌' : '🔓'}
+            {isFloating ? '📌' : '🔗'}
           </button>
           <button className="copilot-close-btn" onClick={onClose}>×</button>
         </div>
@@ -433,7 +570,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
 
       {!isEnabled ? (
         <div className="copilot-chat-disabled">
-          <p>❌ Copilot 未配置</p>
+          <p>❌ AI 未配置</p>
           <p>請在設定中配置 API Key 和模型</p>
         </div>
       ) : (
@@ -441,7 +578,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
           <div className="copilot-chat-messages">
             {messages.length === 0 && (
               <div className="copilot-chat-empty">
-                <p>👋 嗨！我是 Copilot</p>
+                <p>👋 嗨！我是 AI 助手</p>
                 <p>有什麼可以幫助你的嗎？</p>
               </div>
             )}

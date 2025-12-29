@@ -46,11 +46,24 @@ export function FileExplorerPanel({
   onAnalyzeFile,
   workspaceId
 }: Readonly<FileExplorerPanelProps>) {
-  // 連接列表永遠共用，但當前連接狀態根據設定決定是否獨立
+  // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
   const isShared = settings.sharedPanels?.fileExplorer !== false
   const connectionsStorageKey = 'file-explorer-connections'  // 連接列表永遠共用
   const stateStorageKey = isShared ? 'file-explorer-state' : `file-explorer-state-${workspaceId || 'default'}`  // 連接狀態按設定
+  
+  // 浮動模式的位置和大小（只在浮動時使用）
+  const [position, setPosition] = useState(() => {
+    const saved = localStorage.getItem('file-explorer-position')
+    return saved ? JSON.parse(saved) : { x: 100, y: 100 }
+  })
+  
+  const [size, setSize] = useState(() => {
+    const saved = localStorage.getItem('file-explorer-size')
+    return saved ? JSON.parse(saved) : { width: 500, height: 700 }
+  })
+
+  const [zIndex, setZIndex] = useState(1000)
   
   // 訂閱設定變更
   useEffect(() => {
@@ -87,6 +100,75 @@ export function FileExplorerPanel({
 
   const isLoadingConnections = useRef(false)
   const isLoadingState = useRef(false)
+  const isDragging = useRef(false)
+  const dragOffset = useRef({ x: 0, y: 0 })
+  const isResizing = useRef(false)
+  const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0 })
+
+  // Handle drag start
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (!isFloating) return
+    setZIndex(1001) // 置頂
+    isDragging.current = true
+    dragOffset.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    }
+  }
+
+  // Handle drag move
+  useEffect(() => {
+    const handleDragMove = (e: MouseEvent) => {
+      if (isDragging.current) {
+        setPosition({
+          x: e.clientX - dragOffset.current.x,
+          y: e.clientY - dragOffset.current.y
+        })
+      }
+      if (isResizing.current) {
+        const deltaX = e.clientX - resizeStart.current.x
+        const deltaY = e.clientY - resizeStart.current.y
+        setSize({
+          width: Math.max(400, resizeStart.current.width + deltaX),
+          height: Math.max(500, resizeStart.current.height + deltaY)
+        })
+      }
+    }
+
+    const handleDragEnd = () => {
+      isDragging.current = false
+      isResizing.current = false
+    }
+
+    if (isFloating) {
+      document.addEventListener('mousemove', handleDragMove)
+      document.addEventListener('mouseup', handleDragEnd)
+      return () => {
+        document.removeEventListener('mousemove', handleDragMove)
+        document.removeEventListener('mouseup', handleDragEnd)
+      }
+    }
+  }, [isFloating])
+
+  // Handle resize start
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    isResizing.current = true
+    resizeStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height
+    }
+  }
+
+  useEffect(() => {
+    localStorage.setItem('file-explorer-position', JSON.stringify(position))
+  }, [position])
+
+  useEffect(() => {
+    localStorage.setItem('file-explorer-size', JSON.stringify(size))
+  }, [size])
 
   // 載入共用的連接列表（只在首次載入）
   useEffect(() => {
@@ -529,25 +611,48 @@ export function FileExplorerPanel({
   const workspaceName = currentWorkspace?.alias || currentWorkspace?.name || '未知工作區'
   const modeLabel = isShared ? '🌐 共用' : `🔒 ${workspaceName}`
 
-  return (
-    <aside className="file-explorer-panel" style={{ 
-      width: isFloating ? '100%' : width,
-      height: isFloating ? '100%' : '100%',
-      backgroundColor: '#1f1d1a',
-      borderRight: isFloating ? 'none' : '1px solid #3a3836',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden'
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: '12px 16px',
-        backgroundColor: '#2a2826',
-        borderBottom: '1px solid #3a3836',
+  const panelClass = isFloating ? 'file-explorer-panel floating' : 'file-explorer-panel docked'
+  const panelStyle = isFloating 
+    ? { 
+        position: 'fixed' as const,
+        left: position.x, 
+        top: position.y, 
+        width: size.width, 
+        height: size.height, 
+        zIndex,
+        backgroundColor: '#1f1d1a',
+        border: '1px solid #3a3836',
+        borderRadius: '6px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+        flexDirection: 'column' as const,
+        overflow: 'hidden'
+      }
+    : { 
+        width: isFloating ? '100%' : width,
+        height: isFloating ? '100%' : '100%',
+        backgroundColor: '#1f1d1a',
+        borderRight: isFloating ? 'none' : '1px solid #3a3836',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        overflow: 'hidden'
+      }
+
+  return (
+    <aside className={panelClass} style={panelStyle}>
+      {/* Header */}
+      <div 
+        style={{
+          padding: '12px 16px',
+          backgroundColor: '#2a2826',
+          borderBottom: '1px solid #3a3836',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          cursor: isFloating ? 'move' : 'default'
+        }}
+        onMouseDown={isFloating ? handleDragStart : undefined}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <h3 style={{ margin: 0, color: '#dfdbc3', fontSize: '14px', fontWeight: 'bold' }}>
             📁 FILE
@@ -564,7 +669,7 @@ export function FileExplorerPanel({
           </span>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {!isFloating && onToggleFloat && (
+          {onToggleFloat && (
             <button 
               onClick={onToggleFloat}
               style={{
@@ -576,9 +681,9 @@ export function FileExplorerPanel({
                 padding: '2px 6px',
                 borderRadius: '3px'
               }}
-              title="浮動視窗"
+              title={isFloating ? '固定面板' : '浮動視窗'}
             >
-              🔗
+              {isFloating ? '📌' : '🔗'}
             </button>
           )}
           <button onClick={onClose} style={{
@@ -1403,6 +1508,24 @@ export function FileExplorerPanel({
         }}>
           {error}
         </div>
+      )}
+      
+      {/* Resize Handle for floating mode */}
+      {isFloating && (
+        <div
+          onMouseDown={handleResizeStart}
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: '20px',
+            height: '20px',
+            cursor: 'nwse-resize',
+            background: 'linear-gradient(135deg, transparent 50%, #3a3836 50%)',
+            borderBottomRightRadius: '6px'
+          }}
+          title="調整大小"
+        />
       )}
     </aside>
   )

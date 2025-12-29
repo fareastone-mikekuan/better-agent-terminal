@@ -218,14 +218,14 @@ export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: R
         <aside className={panelClass} style={panelStyle}>
             {/* Resize handle for docked mode - not needed as it's handled by parent ResizeHandle */}
             <div className="api-tester-header" onMouseDown={handleDragStart}>
-                <h3>🌐 API 測試工具</h3>
+                <h3>🌐 API</h3>
                 <div className="api-tester-controls">
                     <button
                         className="api-tester-toggle-btn"
                         onClick={() => setIsFloating(!isFloating)}
                         title={isFloating ? '固定面板' : '浮動面板'}
                     >
-                        {isFloating ? '📌' : '🔓'}
+                        {isFloating ? '📌' : '🔗'}
                     </button>
                     <button className="api-tester-close-btn" onClick={onClose}>×</button>
                 </div>

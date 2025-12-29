@@ -372,7 +372,7 @@ export function Sidebar({
         {onToggleCopilot && (
           <button
             onClick={onToggleCopilot}
-            title={showCopilot ? '隱藏 Copilot' : '顯示 Copilot'}
+            title={showCopilot ? '隱藏 AI' : '顯示 AI'}
             style={{
               padding: '10px',
               backgroundColor: '#78716c',
@@ -389,7 +389,7 @@ export function Sidebar({
               gap: '8px'
             }}
           >
-            ⚡ Copilot
+            ⚡ AI
           </button>
         )}
         {onToggleFileExplorer && (
@@ -510,9 +510,6 @@ export function Sidebar({
         <div className="sidebar-footer-buttons">
           <button className="settings-btn" onClick={onOpenSettings}>
             設定
-          </button>
-          <button className="settings-btn" onClick={onOpenAbout}>
-            關於
           </button>
         </div>
       </div>

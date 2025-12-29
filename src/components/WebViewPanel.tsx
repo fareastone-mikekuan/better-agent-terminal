@@ -287,7 +287,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
             }}
             title={isFloating ? '固定' : '浮動'}
           >
-            {isFloating ? '📌' : '🎈'}
+            {isFloating ? '📌' : '🔗'}
           </button>
         )}
         {onClose && (

@@ -402,7 +402,7 @@ Value7       Value8       Value9
               }}
               title={isFloating ? '固定' : '浮動'}
             >
-              {isFloating ? '📌' : '🎈'}
+              {isFloating ? '📌' : '🔗'}
             </button>
           )}
           {onClose && (
