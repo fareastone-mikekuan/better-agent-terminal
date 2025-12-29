@@ -17,9 +17,11 @@
     "@xterm/addon-unicode11": "^0.8.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "basic-ftp": "^5.1.0",
     "better-sqlite3": "^12.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "ssh2-sftp-client": "^12.0.1",
     "uuid": "^9.0.0"
   },
   "optionalDependencies": {
@@ -52,7 +54,10 @@
       "output": "release"
     },
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "signAndEditExecutable": false,
       "icon": "assets/icon.ico"
     },

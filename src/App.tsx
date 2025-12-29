@@ -12,6 +12,7 @@ import { WebViewPanel } from './components/WebViewPanel'
 import { OraclePanel } from './components/OraclePanel'
 import { ApiTesterPanel } from './components/ApiTesterPanel'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
+import { FileExplorerPanel } from './components/FileExplorerPanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -87,6 +88,13 @@ export default function App() {
     const saved = localStorage.getItem('copilot-width')
     return saved ? parseInt(saved) : 400
   })
+  const [showFileExplorer, setShowFileExplorer] = useState(false)
+  const [isFileExplorerFloating, setIsFileExplorerFloating] = useState(false)
+  const [fileExplorerWidth, setFileExplorerWidth] = useState(() => {
+    const saved = localStorage.getItem('file-explorer-width')
+    return saved ? parseInt(saved) : 400
+  })
+  const [fileContentForAI, setFileContentForAI] = useState<{ fileName: string; content: string } | null>(null)
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
   const [rightPanelHeights, setRightPanelHeights] = useState({
@@ -334,13 +342,46 @@ export default function App() {
         showWebView={showWebView}
         onToggleWebView={() => setShowWebView(!showWebView)}
         hasWebViewUrl={!!settings.webViewUrl}
+        showFileExplorer={showFileExplorer}
+        onToggleFileExplorer={() => setShowFileExplorer(!showFileExplorer)}
       />
       <ResizeHandle
         direction="horizontal"
         onResize={handleSidebarResize}
         onDoubleClick={handleSidebarResetWidth}
       />
-      {/* API Tester Panel - between sidebar and main content */}
+      {/* File Explorer Panel - between sidebar and main content */}
+      {showFileExplorer && !isFileExplorerFloating && (
+        <>
+          <FileExplorerPanel 
+            isVisible={showFileExplorer}
+            onClose={() => setShowFileExplorer(false)}
+            width={fileExplorerWidth}
+            isFloating={false}
+            onToggleFloat={() => setIsFileExplorerFloating(true)}
+            onAnalyzeFile={(fileName, content) => {
+              setFileContentForAI({ fileName, content })
+              setShowCopilot(true)
+            }}
+            workspaceId={state.activeWorkspaceId}
+          />
+          <ResizeHandle
+            direction="horizontal"
+            onResize={(delta) => {
+              setFileExplorerWidth(prev => {
+                const newWidth = Math.min(700, Math.max(300, prev + delta))
+                localStorage.setItem('file-explorer-width', newWidth.toString())
+                return newWidth
+              })
+            }}
+            onDoubleClick={() => {
+              setFileExplorerWidth(400)
+              localStorage.setItem('file-explorer-width', '400')
+            }}
+          />
+        </>
+      )}
+      {/* API Tester Panel - between file explorer and main content */}
       {showApiTester && (
         <>
           <ApiTesterPanel 
@@ -365,7 +406,7 @@ export default function App() {
           />
         </>
       )}
-      {/* Copilot Chat Panel - between sidebar/api and main content */}
+      {/* Copilot Chat Panel - between api and main content */}
       {showCopilot && (
         <>
           <CopilotChatPanel 
@@ -374,9 +415,11 @@ export default function App() {
             width={copilotWidth}
             oracleQueryResult={oracleQueryResult}
             webPageContent={webPageContent}
+            fileContent={fileContentForAI}
             onRequestWebPageContent={handleRequestWebPageContent}
             onOpenWebView={() => setShowWebView(true)}
             isWebViewOpen={showWebView}
+            workspaceId={state.activeWorkspaceId}
           />
           <ResizeHandle
             direction="horizontal"
@@ -574,6 +617,80 @@ export default function App() {
           onClose={() => setShowWebView(false)}
           onContentChange={setWebPageContent}
         />
+      )}
+      
+      {showFileExplorer && isFileExplorerFloating && (
+        <div style={{
+          position: 'fixed',
+          top: '80px',
+          right: showCopilot ? '440px' : '20px',
+          width: '450px',
+          height: '70vh',
+          backgroundColor: '#1e1e1e',
+          border: '1px solid #3a3836',
+          borderRadius: '6px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+          zIndex: 1002,
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ 
+            padding: '8px 12px',
+            backgroundColor: '#2a2826',
+            borderBottom: '1px solid #3a3836',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500 }}>📁 FILE</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                onClick={() => setIsFileExplorerFloating(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="固定"
+              >
+                📌
+              </button>
+              <button
+                onClick={() => setShowFileExplorer(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid #3a3836',
+                  color: '#dfdbc3',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '4px'
+                }}
+                title="关闭"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <FileExplorerPanel 
+              isVisible={true}
+              onClose={() => setShowFileExplorer(false)}
+              width={450}
+              isFloating={true}
+              onToggleFloat={() => setIsFileExplorerFloating(false)}
+              onAnalyzeFile={(fileName, content) => {
+                setFileContentForAI({ fileName, content })
+                setShowCopilot(true)
+              }}
+              workspaceId={state.activeWorkspaceId}
+            />
+          </div>
+        </div>
       )}
       
       {/* Panel Control Menu */}

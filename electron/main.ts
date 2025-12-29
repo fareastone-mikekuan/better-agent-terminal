@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
 import { PtyManager } from './pty-manager'
 import { CopilotManager } from './copilot-manager'
+import { FtpManager } from './ftp-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
 import { snippetDb, CreateSnippetInput } from './snippet-db'
 
@@ -14,6 +15,7 @@ app.name = '3101出帳整合平台'
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
 let copilotManager: CopilotManager | null = null
+let ftpManager: FtpManager | null = null
 let updateCheckResult: UpdateCheckResult | null = null
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
@@ -470,4 +472,72 @@ ipcMain.handle('copilot:complete-device-flow', async (_event, deviceCode: string
     const errorMessage = error instanceof Error ? error.message : String(error)
     throw new Error(errorMessage)
   }
+})
+
+// FTP/SFTP handlers
+ipcMain.handle('ftp:connect', async (_event, config) => {
+  try {
+    if (!ftpManager) {
+      ftpManager = new FtpManager()
+    }
+    await ftpManager.connect(config)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('ftp:disconnect', async () => {
+  try {
+    await ftpManager?.disconnect()
+    ftpManager = null
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('ftp:list', async (_event, path: string) => {
+  try {
+    if (!ftpManager) {
+      throw new Error('未連接到 FTP/SFTP 伺服器')
+    }
+    const files = await ftpManager.listFiles(path)
+    return { success: true, files }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('ftp:read', async (_event, path: string) => {
+  try {
+    if (!ftpManager) {
+      throw new Error('未連接到 FTP/SFTP 伺服器')
+    }
+    const content = await ftpManager.readFile(path)
+    return { success: true, content }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('ftp:download', async (_event, remotePath: string, localPath: string) => {
+  try {
+    if (!ftpManager) {
+      throw new Error('未連接到 FTP/SFTP 伺服器')
+    }
+    await ftpManager.downloadFile(remotePath, localPath)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('ftp:is-connected', async () => {
+  return ftpManager?.isConnected() || false
 })

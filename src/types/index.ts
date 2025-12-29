@@ -16,6 +16,14 @@ export interface Workspace {
   createdAt: number;
   defaultAgent?: AgentPresetId;  // Workspace 預設 Agent
   envVars?: EnvVariable[];       // Workspace 專屬環境變數
+  // 工作區獨立的面板狀態（當 sharedPanels 對應項為 false 時使用）
+  panelStates?: {
+    copilotMessages?: any[];      // Copilot 聊天記錄
+    fileExplorerConnections?: any[]; // FILE 連線列表
+    apiTesterHistory?: any[];     // API 測試器歷史
+    oracleConnections?: any[];    // 資料庫連線
+    snippets?: any[];             // 筆記內容
+  };
 }
 
 // Preset roles for quick selection
@@ -165,6 +173,15 @@ export interface AppSettings {
   defaultTerminalCount: number;   // 每個 workspace 預設的 terminal 數量
   createDefaultAgentTerminal: boolean;  // 是否預設建立 Agent Terminal
   webViewUrl?: string;            // 嵌入網頁的 URL
+  // 面板共用設定 - true 表示所有工作區共用，false 表示每個工作區獨立
+  sharedPanels?: {
+    copilot?: boolean;      // Copilot 面板是否共用（預設 true）
+    fileExplorer?: boolean; // FILE 面板是否共用（預設 true）
+    apiTester?: boolean;    // API 面板是否共用（預設 true）
+    oracle?: boolean;       // 資料庫連線是否共用（預設 true）
+    webView?: boolean;      // 網頁視窗是否共用（預設 true）
+    snippets?: boolean;     // 筆記面板是否共用（預設 true）
+  };
 }
 
 // GitHub Copilot Integration

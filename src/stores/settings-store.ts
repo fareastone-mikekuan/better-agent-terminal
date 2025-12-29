@@ -22,7 +22,15 @@ const defaultSettings: AppSettings = {
   agentCustomCommand: '',
   defaultTerminalCount: 1,
   createDefaultAgentTerminal: false,
-  webViewUrl: 'http://10.68.52.50:8080/vdsview/view?show=CCBS_Billing_Diagram.asp'
+  webViewUrl: 'http://10.68.52.50:8080/vdsview/view?show=CCBS_Billing_Diagram.asp',
+  sharedPanels: {
+    copilot: true,
+    fileExplorer: true,
+    apiTester: true,
+    oracle: true,
+    webView: true,
+    snippets: true
+  }
 }
 
 class SettingsStore {
@@ -173,6 +181,13 @@ class SettingsStore {
 
   setDefaultAgent(agent: AgentPresetId): void {
     this.settings = { ...this.settings, defaultAgent: agent }
+    this.notify()
+    this.save()
+  }
+
+  // General settings setter
+  setSettings(settings: AppSettings): void {
+    this.settings = { ...settings }
     this.notify()
     this.save()
   }

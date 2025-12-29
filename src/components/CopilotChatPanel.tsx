@@ -10,12 +10,27 @@ interface CopilotChatPanelProps {
   onResize?: (delta: number) => void
   oracleQueryResult?: string | null
   webPageContent?: string | null
+  fileContent?: { fileName: string; content: string } | null
   onRequestWebPageContent?: () => Promise<void>
   onOpenWebView?: () => void
   isWebViewOpen?: boolean
+  workspaceId?: string | null  // 用於工作區獨立模式
 }
 
-export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryResult, webPageContent: webPageContentProp, onRequestWebPageContent, onOpenWebView, isWebViewOpen }: Readonly<CopilotChatPanelProps>) {
+export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryResult, webPageContent: webPageContentProp, fileContent: fileContentProp, onRequestWebPageContent, onOpenWebView, isWebViewOpen, workspaceId }: Readonly<CopilotChatPanelProps>) {
+  // 根據設定決定使用共用或獨立的 localStorage 鍵
+  const [settings, setSettings] = useState(() => settingsStore.getSettings())
+  const isShared = settings.sharedPanels?.copilot !== false
+  const storageKey = isShared ? 'copilot-messages' : `copilot-messages-${workspaceId || 'default'}`
+  
+  // 訂閱設定變更
+  useEffect(() => {
+    const unsubscribe = settingsStore.subscribe(() => {
+      setSettings(settingsStore.getSettings())
+    })
+    return unsubscribe
+  }, [])
+  
   const [isFloating, setIsFloating] = useState(() => {
     const saved = localStorage.getItem('copilot-floating')
     return saved ? JSON.parse(saved) : false
@@ -34,23 +49,23 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   const [zIndex, setZIndex] = useState(1000)
 
   const [isEnabled, setIsEnabled] = useState(false)
-  const [messages, setMessages] = useState<CopilotMessage[]>(() => {
-    const saved = localStorage.getItem('copilot-messages')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [messages, setMessages] = useState<CopilotMessage[]>([])  // 初始化為空陣列，在 useEffect 中載入
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [targetTerminalId, setTargetTerminalId] = useState<string>('')
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   const [webPageContent, setWebPageContent] = useState<string | null>(webPageContentProp || null)
+  const [fileContent, setFileContent] = useState<{ fileName: string; content: string } | null>(fileContentProp || null)
   const [oracleContent, setOracleContent] = useState<string | null>(oracleQueryResult || null)
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
+  const [loadedFileData, setLoadedFileData] = useState(false)
   const terminalOutputBuffer = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const dragOffset = useRef({ x: 0, y: 0 })
+  const isLoadingMessages = useRef(false)
 
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent) => {
@@ -97,6 +112,22 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   }, [webPageContentProp])
 
   useEffect(() => {
+    setFileContent(fileContentProp || null)
+    if (fileContentProp) {
+      setLoadedFileData(true)
+      // 添加系統訊息提示
+      const systemMessage: CopilotMessage = {
+        role: 'system',
+        content: `📁 已載入檔案：${fileContentProp.fileName}\n檔案大小：${(fileContentProp.content.length / 1024).toFixed(2)} KB\n\n請在下方輸入您的問題，AI 會根據檔案內容回答。`,
+        timestamp: Date.now()
+      }
+      setMessages(prev => [...prev, systemMessage])
+      // 預填輸入提示
+      setInput('請分析這個檔案')
+    }
+  }, [fileContentProp])
+
+  useEffect(() => {
     localStorage.setItem('copilot-floating', JSON.stringify(isFloating))
   }, [isFloating])
 
@@ -108,9 +139,27 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     localStorage.setItem('copilot-size', JSON.stringify(size))
   }, [size])
 
+  // Reload messages when workspace or storage key changes (must be BEFORE save effect)
   useEffect(() => {
-    localStorage.setItem('copilot-messages', JSON.stringify(messages))
-  }, [messages])
+    console.log('[Copilot] Loading messages for storageKey:', storageKey, 'workspaceId:', workspaceId)
+    isLoadingMessages.current = true
+    const saved = localStorage.getItem(storageKey)
+    const loadedMessages = saved ? JSON.parse(saved) : []
+    console.log('[Copilot] Loaded', loadedMessages.length, 'messages')
+    setMessages(loadedMessages)
+    // Use setTimeout to ensure the state update is processed before we allow saving again
+    setTimeout(() => {
+      isLoadingMessages.current = false
+    }, 0)
+  }, [storageKey, workspaceId])
+
+  // Save messages to localStorage (but not when loading)
+  useEffect(() => {
+    if (!isLoadingMessages.current) {
+      console.log('[Copilot] Saving', messages.length, 'messages to storageKey:', storageKey)
+      localStorage.setItem(storageKey, JSON.stringify(messages))
+    }
+  }, [messages, storageKey])
 
   // Check if Copilot is configured and subscribe to settings changes
   useEffect(() => {
@@ -128,16 +177,32 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   useEffect(() => {
     const updateTerminals = () => {
       const state = workspaceStore.getState()
-      const terminals = state.terminals.filter(t => t.type === 'terminal')
+      const currentSettings = settingsStore.getSettings()
+      const isShared = currentSettings.sharedPanels?.copilot !== false
+      
+      // If shared, show all terminals; if not shared, only show current workspace's terminals
+      let terminals = state.terminals.filter(t => t.type === 'terminal')
+      
+      if (!isShared && workspaceId) {
+        terminals = terminals.filter(t => t.workspaceId === workspaceId)
+        console.log('[Copilot] Filtered terminals for workspace:', workspaceId, 'count:', terminals.length)
+      } else {
+        console.log('[Copilot] Showing all terminals, count:', terminals.length)
+      }
+      
       setAvailableTerminals(terminals)
-      if (!targetTerminalId && terminals.length > 0) {
+      
+      // Reset target terminal if current one is not in the filtered list
+      if (targetTerminalId && !terminals.find(t => t.id === targetTerminalId)) {
+        setTargetTerminalId(terminals.length > 0 ? terminals[0].id : '')
+      } else if (!targetTerminalId && terminals.length > 0) {
         setTargetTerminalId(terminals[0].id)
       }
     }
     updateTerminals()
     const unsubscribe = workspaceStore.subscribe(updateTerminals)
     return unsubscribe
-  }, [targetTerminalId])
+  }, [targetTerminalId, workspaceId])
 
   // Listen to terminal output
   useEffect(() => {
@@ -219,54 +284,18 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     }
   }
 
-  // Auto-analyze command output
-  const analyzeOutput = async (output: string) => {
-    try {
-      const copilotConfig = settingsStore.getCopilotConfig()
-      if (!copilotConfig?.apiKey || !copilotConfig?.model) {
-        return
-      }
-
-      setIsLoading(true)
-
-      // Build message history with output included in context
-      const analysisMessages = [
-        ...messages,
-        {
-          role: 'user' as const,
-          content: `根據上面的命令執行輸出，請分析這些檔案或目錄的用途：\n${output.substring(0, 3000)}`
-        }
-      ]
-
-      const options: CopilotChatOptions = {
-        messages: analysisMessages
-      }
-
-      const chatId = `analysis-${Date.now()}`
-      const response = await window.electronAPI.copilot.chat(chatId, options)
-
-      if (response && response.content) {
-        const analysisMessage: CopilotMessage = {
-          role: 'assistant',
-          content: response.content
-        }
-        setMessages(prev => [...prev, analysisMessage])
-      }
-    } catch (error) {
-      console.error('Analysis error:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return
 
     let messageContent = input.trim()
-    const needsAnalysis = /分析|分析檔案|分析目錄|分析结果|analyze/i.test(messageContent)
+
     
     // 如果有已读取的分析数据，附加到消息中
-    if (loadedOracleData && oracleContent) {
+    if (loadedFileData && fileContent) {
+      messageContent = `請分析以下檔案內容：\n\n檔案名稱：${fileContent.fileName}\n\n內容：\n${fileContent.content}\n\n我的問題：${messageContent}`
+      setLoadedFileData(false)
+      setFileContent(null)
+    } else if (loadedOracleData && oracleContent) {
       messageContent = `請分析以下Oracle查詢結果：\n\n${oracleContent}\n\n我的問題：${messageContent}`
     } else if (loadedWebPageData && webPageContent) {
       messageContent = `請分析以下網頁內容：\n\n${webPageContent}\n\n我的問題：${messageContent}`
@@ -328,30 +357,16 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
       setLoadedOracleData(false)
       setLoadedWebPageData(false)
 
-      // Auto-execute commands if enabled
+      // Check if response contains commands (for user awareness)
       const commands = extractCommands(response.content)
-      console.log('Extracted commands:', commands)
-      console.log('Target terminal ID:', targetTerminalId)
-      console.log('Available terminals:', availableTerminals.length)
       
       if (commands.length > 0) {
-        if (!targetTerminalId) {
-          setError('已提取到命令，但未選擇終端。請在下方選擇一個終端。')
-        } else {
-          // Execute all commands
-          let allOutputs = ''
-          for (const cmd of commands) {
-            const result = await executeCommand(cmd)
-            if (result.success && result.output) {
-              allOutputs += `\n命令: ${cmd}\n輸出:\n${result.output}\n`
-            }
-          }
-          
-          // If user asked for analysis, automatically analyze the output
-          if (needsAnalysis && allOutputs.trim()) {
-            await analyzeOutput(allOutputs)
-          }
+        // Just show a warning message, don't auto-execute
+        const commandListMsg: CopilotMessage = {
+          role: 'system',
+          content: `ℹ️ **偵測到 ${commands.length} 個命令**\n\n如需執行這些命令，請手動複製到終端執行，或使用下方的執行按鈕。\n\n⚠️ **安全提示**：執行前請仔細檢查命令內容，確保安全。`
         }
+        setMessages(prev => [...prev, commandListMsg])
       }
     } catch (error) {
       console.error('Send message error:', error)
@@ -363,6 +378,12 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
 
   if (!isVisible) return null
 
+  // Get workspace name for display
+  const state = workspaceStore.getState()
+  const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
+  const workspaceName = currentWorkspace?.alias || currentWorkspace?.name || '未知工作區'
+  const modeLabel = isShared ? '🌐 共用' : `🔒 ${workspaceName}`
+
   const panelClass = isFloating ? 'copilot-chat-panel floating' : 'copilot-chat-panel docked'
   const panelStyle = isFloating 
     ? { left: position.x, top: position.y, width: size.width, height: size.height, zIndex }
@@ -371,7 +392,19 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
   return (
     <aside className={panelClass} style={panelStyle}>
       <div className="copilot-chat-header" onMouseDown={handleDragStart}>
-        <h3>⚡ Copilot Chat</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3>⚡ Copilot Chat</h3>
+          <span style={{ 
+            fontSize: '11px', 
+            color: isShared ? '#7bbda4' : '#f59e0b',
+            backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
+            padding: '2px 8px',
+            borderRadius: '10px',
+            fontWeight: 'bold'
+          }}>
+            {modeLabel}
+          </span>
+        </div>
         <div className="copilot-chat-controls">
           {messages.length > 0 && (
             <button
@@ -379,7 +412,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
               onClick={() => {
                 if (confirm('確定要清除所有聊天記錄嗎？')) {
                   setMessages([])
-                  localStorage.removeItem('copilot-messages')
+                  localStorage.removeItem(storageKey)
                 }
               }}
               title="清除聊天記錄"
@@ -412,13 +445,85 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
                 <p>有什麼可以幫助你的嗎？</p>
               </div>
             )}
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`copilot-message ${msg.role}`}>
-                <div className="copilot-message-content">
-                  {msg.content}
+            {messages.map((msg, idx) => {
+              const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
+              return (
+                <div key={idx} className={`copilot-message ${msg.role}`}>
+                  <div className="copilot-message-content">
+                    {msg.content}
+                  </div>
+                  {commands.length > 0 && (
+                    <div style={{ 
+                      marginTop: '8px', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      gap: '6px',
+                      padding: '8px',
+                      backgroundColor: '#2a2826',
+                      borderRadius: '4px',
+                      border: '1px solid #3a3836'
+                    }}>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        color: '#dfdbc3', 
+                        fontWeight: 'bold',
+                        marginBottom: '4px'
+                      }}>
+                        🔧 偵測到 {commands.length} 個命令：
+                      </div>
+                      {commands.map((cmd, cmdIdx) => (
+                        <div key={cmdIdx} style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '8px',
+                          fontSize: '11px'
+                        }}>
+                          <code style={{ 
+                            flex: 1, 
+                            padding: '4px 8px', 
+                            backgroundColor: '#1f1d1a',
+                            borderRadius: '3px',
+                            color: '#7bbda4',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {cmd}
+                          </code>
+                          <button
+                            onClick={() => executeCommand(cmd)}
+                            disabled={!targetTerminalId}
+                            style={{
+                              padding: '4px 12px',
+                              backgroundColor: targetTerminalId ? '#7bbda4' : '#555',
+                              color: targetTerminalId ? '#1f1d1a' : '#999',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: targetTerminalId ? 'pointer' : 'not-allowed',
+                              fontSize: '11px',
+                              fontWeight: 'bold',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={targetTerminalId ? '執行命令' : '請先選擇終端'}
+                          >
+                            ▶ 執行
+                          </button>
+                        </div>
+                      ))}
+                      {!targetTerminalId && (
+                        <div style={{ 
+                          fontSize: '11px', 
+                          color: '#f59e0b',
+                          marginTop: '4px'
+                        }}>
+                          ⚠️ 請在下方選擇目標終端
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {isLoading && (
               <div className="copilot-message assistant">
                 <div className="copilot-message-content">
@@ -481,6 +586,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
                 if (webPageContent) {
                   setLoadedWebPageData(true)
                   setLoadedOracleData(false)
+                  setLoadedFileData(false)
                 } else {
                   setError('網頁內容為空，請確認網頁已加載')
                 }
@@ -490,16 +596,30 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
             >
               🌐 分析網頁
             </button>
+            {fileContent && (
+              <button
+                onClick={() => {
+                  setLoadedFileData(true)
+                  setLoadedOracleData(false)
+                  setLoadedWebPageData(false)
+                }}
+                className={`copilot-action-btn ${loadedFileData ? 'active' : ''}`}
+                title="分析檔案內容"
+              >
+                📁 分析檔案
+              </button>
+            )}
           </div>
 
           <div className="copilot-chat-input-area">
-            {(loadedOracleData || loadedWebPageData) && (
+            {(loadedOracleData || loadedWebPageData || loadedFileData) && (
               <div className="copilot-data-loaded-hint">
-                ✅ 已讀取{loadedOracleData ? 'Oracle查詢結果' : '網頁內容'}，請輸入您的問題
+                ✅ 已讀取{loadedOracleData ? 'Oracle查詢結果' : loadedFileData ? `檔案：${fileContent?.fileName}` : '網頁內容'}，請輸入您的問題
                 <button
                   onClick={() => {
                     setLoadedOracleData(false)
                     setLoadedWebPageData(false)
+                    setLoadedFileData(false)
                   }}
                   className="copilot-clear-data-btn"
                   title="清除已讀取的資料"

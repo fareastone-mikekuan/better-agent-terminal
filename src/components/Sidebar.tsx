@@ -27,6 +27,8 @@ interface SidebarProps {
   showWebView?: boolean
   onToggleWebView?: () => void
   hasWebViewUrl?: boolean
+  showFileExplorer?: boolean
+  onToggleFileExplorer?: () => void
 }
 
 function getRoleColor(role?: string): string {
@@ -58,7 +60,9 @@ export function Sidebar({
   onToggleOracle,
   showWebView = true,
   onToggleWebView,
-  hasWebViewUrl = false
+  hasWebViewUrl = false,
+  showFileExplorer = false,
+  onToggleFileExplorer
 }: Readonly<SidebarProps>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -386,6 +390,29 @@ export function Sidebar({
             }}
           >
             ⚡ Copilot
+          </button>
+        )}
+        {onToggleFileExplorer && (
+          <button
+            onClick={onToggleFileExplorer}
+            title={showFileExplorer ? '隱藏 FILE' : '顯示 FILE'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showFileExplorer ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            📁 FILE
           </button>
         )}
         {onToggleApiTester && (

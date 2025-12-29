@@ -67,6 +67,14 @@ const electronAPI = {
   },
   webpage: {
     fetch: (url: string) => ipcRenderer.invoke('webpage:fetch', url) as Promise<string>
+  },
+  ftp: {
+    connect: (config: any) => ipcRenderer.invoke('ftp:connect', config),
+    disconnect: () => ipcRenderer.invoke('ftp:disconnect'),
+    list: (path: string) => ipcRenderer.invoke('ftp:list', path),
+    read: (path: string) => ipcRenderer.invoke('ftp:read', path),
+    download: (remotePath: string, localPath: string) => ipcRenderer.invoke('ftp:download', remotePath, localPath),
+    isConnected: () => ipcRenderer.invoke('ftp:is-connected')
   }
 }
 

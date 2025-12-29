@@ -748,6 +748,236 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             )}
           </div>
 
+          {/* Panel Sharing Settings */}
+          <div className="settings-section">
+            <h3>🔗 面板共用設定</h3>
+            <p style={{ color: '#888', fontSize: '13px', marginBottom: '15px' }}>
+              設定各功能面板是「所有工作區共用」還是「每個工作區獨立」
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>💬</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>Copilot 面板</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.copilot !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.copilot !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          copilot: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>📁</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>FILE 面板</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.fileExplorer !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.fileExplorer !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          fileExplorer: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>🌐</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>API 測試器</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.apiTester !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.apiTester !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          apiTester: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>🗄️</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>資料庫連線</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.oracle !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.oracle !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          oracle: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>🌐</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>網頁視窗</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.webView !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.webView !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          webView: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>📋</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>筆記面板</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.snippets !== false ? '所有工作區共用' : '每個工作區獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.snippets !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          snippets: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
+            </div>
+
+            <div style={{ 
+              marginTop: '12px', 
+              padding: '10px', 
+              backgroundColor: '#3a3836', 
+              borderRadius: '4px',
+              fontSize: '12px',
+              color: '#888'
+            }}>
+              <strong style={{ color: '#f59e0b' }}>⚠️ 注意：</strong>
+              <ul style={{ marginTop: '8px', marginBottom: '0', paddingLeft: '20px' }}>
+                <li>✅ <strong>共用</strong>：所有工作區看到相同的內容（例如 Copilot 聊天記錄、FILE 連線列表）</li>
+                <li>🔒 <strong>獨立</strong>：每個工作區有自己的獨立內容，切換工作區時內容不會混淆</li>
+                <li>💾 更改設定後會立即生效，現有內容會保留在共用模式中</li>
+              </ul>
+            </div>
+          </div>
+
           {/* Gist Token Section */}
           <div className="settings-section">
             <h3>📦 GitHub Gist</h3>
@@ -1025,11 +1255,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 fontSize: '11px',
                 fontFamily: 'monospace'
               }}>
-                {process.platform === 'win32' 
-                  ? `%APPDATA%\\better-agent-terminal` 
-                  : process.platform === 'darwin'
-                  ? `~/Library/Application Support/better-agent-terminal`
-                  : `~/.config/better-agent-terminal`}
+                Windows: %APPDATA%\better-agent-terminal | macOS: ~/Library/Application Support/better-agent-terminal | Linux: ~/.config/better-agent-terminal
               </code>
             </div>
             <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
@@ -1040,16 +1266,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
             <button
               onClick={async () => {
-                const path = process.platform === 'win32' 
-                  ? `${process.env.APPDATA}\\better-agent-terminal`
-                  : process.platform === 'darwin'
-                  ? `${process.env.HOME}/Library/Application Support/better-agent-terminal`
-                  : `${process.env.HOME}/.config/better-agent-terminal`
-                
-                if (process.platform === 'win32') {
-                  await window.electronAPI.openExternal(`file:///${path}`)
-                } else {
-                  await window.electronAPI.openExternal(`file://${path}`)
+                // Use Electron API to get app path
+                try {
+                  const appPath = await window.electronAPI.getAppPath?.()
+                  if (appPath) {
+                    await window.electronAPI.openExternal(`file:///${appPath}`)
+                  }
+                } catch (error) {
+                  console.error('Failed to open app folder:', error)
                 }
               }}
               style={{
