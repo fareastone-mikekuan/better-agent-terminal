@@ -5,6 +5,7 @@ interface OraclePanelProps {
   isFloating?: boolean
   onToggleFloat?: () => void
   onClose?: () => void
+  onCollapse?: () => void
 }
 
 interface ConnectionConfig {
@@ -26,7 +27,7 @@ interface DBTab {
   error: string
 }
 
-export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose }: OraclePanelProps) {
+export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose, onCollapse }: OraclePanelProps) {
   // Multi-tab state
   const [tabs, setTabs] = useState<DBTab[]>(() => {
     const saved = localStorage.getItem('oracle-tabs')
@@ -385,7 +386,7 @@ Value7       Value8       Value9
       >
         <span style={{ fontSize: '14px' }}>{isExpanded ? '▼' : '▶'}</span>
         <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500, flex: 1 }}>
-          🗄️ Oracle 資料庫 {activeTab?.isConnected && <span style={{ color: '#4ade80' }}>● 已連接</span>}
+          🗄️ 資料庫 {activeTab?.isConnected && <span style={{ color: '#4ade80' }}>● 已連接</span>}
         </span>
         <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
           {onToggleFloat && (
@@ -403,6 +404,23 @@ Value7       Value8       Value9
               title={isFloating ? '固定' : '浮動'}
             >
               {isFloating ? '📌' : '🔗'}
+            </button>
+          )}
+          {onCollapse && !isFloating && (
+            <button
+              onClick={onCollapse}
+              style={{
+                background: 'none',
+                border: '1px solid #3a3836',
+                color: '#dfdbc3',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                fontSize: '12px',
+                borderRadius: '4px'
+              }}
+              title="收合面板"
+            >
+              ▼
             </button>
           )}
           {onClose && (

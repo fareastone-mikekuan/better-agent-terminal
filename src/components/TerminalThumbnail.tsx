@@ -93,6 +93,19 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
         <div className={`thumbnail-title ${isAgent ? 'agent-terminal' : ''}`}>
           {isAgent && <span>{agentConfig?.icon}</span>}
           <span>{terminal.title}</span>
+          {isActive && (
+            <span style={{ 
+              marginLeft: '6px', 
+              fontSize: '10px', 
+              color: '#7bbda4', 
+              backgroundColor: '#2d4a2d',
+              padding: '2px 6px',
+              borderRadius: '8px',
+              fontWeight: 'bold'
+            }}>
+              使用中
+            </span>
+          )}
         </div>
         <ActivityIndicator terminalId={terminal.id} size="small" />
       </div>

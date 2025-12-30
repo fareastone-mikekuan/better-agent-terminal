@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { workspaceStore } from './stores/workspace-store'
 import { settingsStore } from './stores/settings-store'
 import { Sidebar } from './components/Sidebar'
@@ -8,11 +8,7 @@ import { AboutPanel } from './components/AboutPanel'
 import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { ResizeHandle } from './components/ResizeHandle'
-import { WebViewPanel } from './components/WebViewPanel'
-import { OraclePanel } from './components/OraclePanel'
-import { ApiTesterPanel } from './components/ApiTesterPanel'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
-import { FileExplorerPanel } from './components/FileExplorerPanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -22,6 +18,9 @@ interface PanelSettings {
   }
   snippetSidebar: {
     width: number
+    collapsed: boolean
+  }
+  copilot: {
     collapsed: boolean
   }
 }
@@ -42,7 +41,8 @@ function loadPanelSettings(): PanelSettings {
       // Ensure sidebar settings exist (migration from old format)
       return {
         sidebar: parsed.sidebar || { width: DEFAULT_SIDEBAR_WIDTH },
-        snippetSidebar: parsed.snippetSidebar || { width: DEFAULT_SNIPPET_WIDTH, collapsed: false }
+        snippetSidebar: parsed.snippetSidebar || { width: DEFAULT_SNIPPET_WIDTH, collapsed: false },
+        copilot: parsed.copilot || { collapsed: false }
       }
     }
   } catch (e) {
@@ -50,7 +50,8 @@ function loadPanelSettings(): PanelSettings {
   }
   return {
     sidebar: { width: DEFAULT_SIDEBAR_WIDTH },
-    snippetSidebar: { width: DEFAULT_SNIPPET_WIDTH, collapsed: false }
+    snippetSidebar: { width: DEFAULT_SNIPPET_WIDTH, collapsed: false },
+    copilot: { collapsed: false }
   }
 }
 
@@ -64,44 +65,19 @@ function savePanelSettings(settings: PanelSettings): void {
 
 export default function App() {
   const [state, setState] = useState<AppState>(workspaceStore.getState())
-  const [settings, setSettings] = useState(settingsStore.getSettings())
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
-  const webViewRef = useRef<{ fetchContent: () => Promise<string | null> }>(null)
   // Panel visibility and floating states
   const [showSnippetSidebar, setShowSnippetSidebar] = useState(true)
   const [isSnippetFloating, setIsSnippetFloating] = useState(false)
-  const [showWebView, setShowWebView] = useState(true)
-  const [isWebViewFloating, setIsWebViewFloating] = useState(false)
-  const [showOracle, setShowOracle] = useState(true)
-  const [isOracleFloating, setIsOracleFloating] = useState(false)
-  const [oracleQueryResult, setOracleQueryResult] = useState<string | null>(null)
-  const [webPageContent, setWebPageContent] = useState<string | null>(null)
-  const [showApiTester, setShowApiTester] = useState(false)
-  const [apiTesterHeight, setApiTesterHeight] = useState(() => {
-    const saved = localStorage.getItem('api-tester-height')
-    return saved ? parseInt(saved) : 300
-  })
   const [showCopilot, setShowCopilot] = useState(false)
   const [copilotWidth, setCopilotWidth] = useState(() => {
     const saved = localStorage.getItem('copilot-width')
     return saved ? parseInt(saved) : 400
   })
-  const [showFileExplorer, setShowFileExplorer] = useState(false)
-  const [isFileExplorerFloating, setIsFileExplorerFloating] = useState(false)
-  const [fileExplorerWidth, setFileExplorerWidth] = useState(() => {
-    const saved = localStorage.getItem('file-explorer-width')
-    return saved ? parseInt(saved) : 400
-  })
-  const [fileContentForAI, setFileContentForAI] = useState<{ fileName: string; content: string } | null>(null)
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
-  const [rightPanelHeights, setRightPanelHeights] = useState({
-    snippet: 33,
-    oracle: 33,
-    webview: 34
-  })
 
   // Debug: log state on mount
   useEffect(() => {
@@ -129,6 +105,21 @@ export default function App() {
     })
   }, [])
 
+  // Handle file analysis request from FILE panel
+  const handleFileAnalysis = useCallback((fileContent: string, fileName: string) => {
+    // 打开 CHAT 面板
+    setShowCopilot(true)
+    
+    // 通过自定义事件通知 CHAT 面板
+    const event = new CustomEvent('file-analysis-request', {
+      detail: {
+        fileContent,
+        fileName
+      }
+    })
+    window.dispatchEvent(event)
+  }, [])
+
   // Handle snippet sidebar resize
   const handleSnippetResize = useCallback((delta: number) => {
     setPanelSettings(prev => {
@@ -149,6 +140,15 @@ export default function App() {
     })
   }, [])
 
+  // Toggle copilot collapse
+  const handleCopilotCollapse = useCallback(() => {
+    setPanelSettings(prev => {
+      const updated = { ...prev, copilot: { collapsed: !prev.copilot.collapsed } }
+      savePanelSettings(updated)
+      return updated
+    })
+  }, [])
+
   // Reset snippet sidebar to default width
   const handleSnippetResetWidth = useCallback(() => {
     setPanelSettings(prev => {
@@ -158,67 +158,9 @@ export default function App() {
     })
   }, [])
 
-  // Request webpage content from WebView
-  const handleRequestWebPageContent = useCallback(async () => {
-    if (webViewRef.current?.fetchContent) {
-      const content = await webViewRef.current.fetchContent()
-      if (content) {
-        setWebPageContent(content)
-      }
-    }
-  }, [])
-
-
-  // Handle snippet height resize (vertical)
-  const handleSnippetHeightResize = useCallback((delta: number) => {
-    setRightPanelHeights(prev => {
-      const container = document.querySelector('.right-panel-container')
-      if (!container) return prev
-      const containerHeight = container.clientHeight
-      const deltaPercent = (delta / containerHeight) * 100
-      const newSnippetHeight = Math.min(80, Math.max(10, prev.snippet + deltaPercent))
-      const newOracleHeight = Math.max(10, prev.oracle - deltaPercent)
-      return {
-        ...prev,
-        snippet: newSnippetHeight,
-        oracle: newOracleHeight
-      }
-    })
-  }, [])
-
-  // Handle API tester height resize
-  const handleApiTesterResize = useCallback((delta: number) => {
-    setApiTesterHeight(prev => {
-      const newHeight = Math.min(600, Math.max(200, prev + delta))
-      localStorage.setItem('api-tester-height', newHeight.toString())
-      return newHeight
-    })
-  }, [])
-
-  // Handle oracle height resize (vertical)
-  const handleOracleHeightResize = useCallback((delta: number) => {
-    setRightPanelHeights(prev => {
-      const container = document.querySelector('.right-panel-container')
-      if (!container) return prev
-      const containerHeight = container.clientHeight
-      const deltaPercent = (delta / containerHeight) * 100
-      const newOracleHeight = Math.min(80, Math.max(10, prev.oracle + deltaPercent))
-      const newWebviewHeight = Math.max(10, prev.webview - deltaPercent)
-      return {
-        ...prev,
-        oracle: newOracleHeight,
-        webview: newWebviewHeight
-      }
-    })
-  }, [])
-
   useEffect(() => {
     const unsubscribe = workspaceStore.subscribe(() => {
       setState(workspaceStore.getState())
-    })
-
-    const unsubscribeSettings = settingsStore.subscribe(() => {
-      setSettings(settingsStore.getSettings())
     })
 
     // Global listener for all terminal output - updates activity for ALL terminals
@@ -232,7 +174,7 @@ export default function App() {
     settingsStore.load()
 
     // Save terminal cwds before app closes
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    const handleBeforeUnload = () => {
       // Trigger async save, but don't wait for it
       // The periodic save in WorkspaceView should have already saved most recent state
       const state = workspaceStore.getState()
@@ -260,7 +202,6 @@ export default function App() {
 
     return () => {
       unsubscribe()
-      unsubscribeSettings()
       unsubscribeOutput()
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
@@ -295,12 +236,6 @@ export default function App() {
     }
   }, [])
 
-  const handleAddCopilotChat = useCallback((workspaceId: string) => {
-    const terminal = workspaceStore.addCopilotChat(workspaceId)
-    // Copilot chat doesn't need PTY creation
-    workspaceStore.setFocusedTerminal(terminal.id)
-  }, [])
-
   // Get the workspace for env dialog
   const envDialogWorkspace = envDialogWorkspaceId
     ? state.workspaces.find(w => w.id === envDialogWorkspaceId)
@@ -333,124 +268,41 @@ export default function App() {
         onOpenAbout={() => setShowAbout(true)}
         showCopilot={showCopilot}
         onToggleCopilot={() => setShowCopilot(!showCopilot)}
-        showApiTester={showApiTester}
-        onToggleApiTester={() => setShowApiTester(!showApiTester)}
         showSnippets={showSnippetSidebar}
         onToggleSnippets={() => setShowSnippetSidebar(!showSnippetSidebar)}
-        showOracle={showOracle}
-        onToggleOracle={() => setShowOracle(!showOracle)}
-        showWebView={showWebView}
-        onToggleWebView={() => setShowWebView(!showWebView)}
-        hasWebViewUrl={!!settings.webViewUrl}
-        showFileExplorer={showFileExplorer}
-        onToggleFileExplorer={() => setShowFileExplorer(!showFileExplorer)}
       />
       <ResizeHandle
         direction="horizontal"
         onResize={handleSidebarResize}
         onDoubleClick={handleSidebarResetWidth}
       />
-      {/* File Explorer Panel - between sidebar and main content */}
-      {showFileExplorer && !isFileExplorerFloating && (
-        <>
-          <FileExplorerPanel 
-            isVisible={showFileExplorer}
-            onClose={() => setShowFileExplorer(false)}
-            width={fileExplorerWidth}
-            isFloating={false}
-            onToggleFloat={() => setIsFileExplorerFloating(true)}
-            onAnalyzeFile={(fileName, content) => {
-              setFileContentForAI({ fileName, content })
-              setShowCopilot(true)
-            }}
-            workspaceId={state.activeWorkspaceId}
-          />
-          <ResizeHandle
-            direction="horizontal"
-            onResize={(delta) => {
-              setFileExplorerWidth(prev => {
-                const newWidth = Math.min(700, Math.max(300, prev + delta))
-                localStorage.setItem('file-explorer-width', newWidth.toString())
-                return newWidth
-              })
-            }}
-            onDoubleClick={() => {
-              setFileExplorerWidth(400)
-              localStorage.setItem('file-explorer-width', '400')
-            }}
-          />
-        </>
-      )}
-
-      {/* File Explorer Panel - floating mode */}
-      {showFileExplorer && isFileExplorerFloating && (
-        <FileExplorerPanel 
-          isVisible={true}
-          onClose={() => setShowFileExplorer(false)}
-          width={450}
-          isFloating={true}
-          onToggleFloat={() => setIsFileExplorerFloating(false)}
-          onAnalyzeFile={(fileName, content) => {
-            setFileContentForAI({ fileName, content })
-            setShowCopilot(true)
-          }}
-          workspaceId={state.activeWorkspaceId}
-        />
-      )}
-      {/* API Tester Panel - between file explorer and main content */}
-      {showApiTester && (
-        <>
-          <ApiTesterPanel 
-            isVisible={showApiTester}
-            onClose={() => setShowApiTester(false)}
-            height={apiTesterHeight}
-            onResize={handleApiTesterResize}
-          />
-          <ResizeHandle
-            direction="horizontal"
-            onResize={(delta) => {
-              setApiTesterHeight(prev => {
-                const newHeight = Math.min(600, Math.max(200, prev + delta))
-                localStorage.setItem('api-tester-height', newHeight.toString())
-                return newHeight
-              })
-            }}
-            onDoubleClick={() => {
-              setApiTesterHeight(300)
-              localStorage.setItem('api-tester-height', '300')
-            }}
-          />
-        </>
-      )}
-      {/* Copilot Chat Panel - between api and main content */}
+      {/* Copilot Chat Panel - between sidebar and main content */}
       {showCopilot && (
         <>
           <CopilotChatPanel 
             isVisible={showCopilot}
             onClose={() => setShowCopilot(false)}
             width={copilotWidth}
-            oracleQueryResult={oracleQueryResult}
-            webPageContent={webPageContent}
-            fileContent={fileContentForAI}
-            onRequestWebPageContent={handleRequestWebPageContent}
-            onOpenWebView={() => setShowWebView(true)}
-            isWebViewOpen={showWebView}
             workspaceId={state.activeWorkspaceId}
+            collapsed={panelSettings.copilot.collapsed}
+            onCollapse={handleCopilotCollapse}
           />
-          <ResizeHandle
-            direction="horizontal"
-            onResize={(delta) => {
-              setCopilotWidth(prev => {
-                const newWidth = Math.min(700, Math.max(300, prev + delta))
-                localStorage.setItem('copilot-width', newWidth.toString())
-                return newWidth
-              })
-            }}
-            onDoubleClick={() => {
-              setCopilotWidth(400)
-              localStorage.setItem('copilot-width', '400')
-            }}
-          />
+          {!panelSettings.copilot.collapsed && (
+            <ResizeHandle
+              direction="horizontal"
+              onResize={(delta) => {
+                setCopilotWidth(prev => {
+                  const newWidth = Math.min(700, Math.max(300, prev + delta))
+                  localStorage.setItem('copilot-width', newWidth.toString())
+                  return newWidth
+                })
+              }}
+              onDoubleClick={() => {
+                setCopilotWidth(400)
+                localStorage.setItem('copilot-width', '400')
+              }}
+            />
+          )}
         </>
       )}
       <main className="main-content">
@@ -466,7 +318,7 @@ export default function App() {
                 terminals={workspaceStore.getWorkspaceTerminals(workspace.id)}
                 focusedTerminalId={workspace.id === state.activeWorkspaceId ? state.focusedTerminalId : null}
                 isActive={workspace.id === state.activeWorkspaceId}
-                oracleQueryResult={oracleQueryResult}
+                onAnalyzeFile={handleFileAnalysis}
               />
             </div>
           ))
@@ -485,69 +337,46 @@ export default function App() {
           onDoubleClick={handleSnippetResetWidth}
         />
       )}
-      {/* Right panel container - only show if at least one panel is visible and docked */}
-      {((showSnippetSidebar && !isSnippetFloating) || (showOracle && !isOracleFloating) || (showWebView && !isWebViewFloating && settings.webViewUrl)) && (
+      {/* Right panel container - show if snippet is visible and docked and not collapsed */}
+      {showSnippetSidebar && !isSnippetFloating && !panelSettings.snippetSidebar.collapsed && (
         <div className="right-panel-container" style={{ 
           width: panelSettings.snippetSidebar.width, 
           display: 'flex',
           flexDirection: 'column'
         }}>
           {/* Snippets Panel */}
-          {showSnippetSidebar && !isSnippetFloating && (
-            <>
-              <SnippetSidebar
-                isVisible={showSnippetSidebar}
-                width={panelSettings.snippetSidebar.width}
-                collapsed={panelSettings.snippetSidebar.collapsed}
-                onCollapse={handleSnippetCollapse}
-                onPasteToTerminal={handlePasteToTerminal}
-                style={{ 
-                  height: ((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) 
-                    ? `${rightPanelHeights.snippet}%` 
-                    : '100%',
-                  minHeight: '100px',
-                  flex: ((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) 
-                    ? undefined 
-                    : 1
-                }}
-              />
-              {((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) && (
-                <ResizeHandle direction="vertical" onResize={handleSnippetHeightResize} />
-              )}
-            </>
-          )}
-          
-          {/* Oracle Panel */}
-          {showOracle && !isOracleFloating && (
-            <>
-              <div style={{ height: `${rightPanelHeights.oracle}%`, minHeight: '100px', overflow: 'auto' }}>
-                <OraclePanel
-                  onQueryResult={setOracleQueryResult}
-                  isFloating={false}
-                  onToggleFloat={() => setIsOracleFloating(true)}
-                  onClose={() => setShowOracle(false)}
-                />
-              </div>
-              {(!isWebViewFloating && showWebView && settings.webViewUrl) && (
-                <ResizeHandle direction="vertical" onResize={handleOracleHeightResize} />
-              )}
-            </>
-          )}
-          
-          {/* WebView Panel */}
-          {showWebView && !isWebViewFloating && settings.webViewUrl && (
-            <div style={{ height: `${rightPanelHeights.webview}%`, minHeight: '100px' }}>
-              <WebViewPanel 
-                ref={webViewRef}
-                height="100%" 
-                url={settings.webViewUrl}
-                isFloating={false}
-                onToggleFloat={() => setIsWebViewFloating(true)}
-                onClose={() => setShowWebView(false)}
-                onContentChange={setWebPageContent}
-              />
-            </div>
-          )}
+          <SnippetSidebar
+            isVisible={showSnippetSidebar}
+            width={panelSettings.snippetSidebar.width}
+            collapsed={panelSettings.snippetSidebar.collapsed}
+            onCollapse={handleSnippetCollapse}
+            onPasteToTerminal={handlePasteToTerminal}
+            style={{ 
+              height: '100%',
+              minHeight: '100px',
+              flex: 1
+            }}
+          />
+        </div>
+      )}
+      
+      {/* Collapsed Snippet Bar - fixed to right edge */}
+      {showSnippetSidebar && !isSnippetFloating && panelSettings.snippetSidebar.collapsed && (
+        <div style={{
+          position: 'fixed',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 100
+        }}>
+          <SnippetSidebar
+            isVisible={showSnippetSidebar}
+            width={40}
+            collapsed={panelSettings.snippetSidebar.collapsed}
+            onCollapse={handleSnippetCollapse}
+            onPasteToTerminal={handlePasteToTerminal}
+            style={{ height: '100%' }}
+          />
         </div>
       )}
       
@@ -620,27 +449,6 @@ export default function App() {
             style={{ height: 'auto' }}
           />
         </div>
-      )}
-      
-      {showOracle && isOracleFloating && (
-        <OraclePanel
-          onQueryResult={setOracleQueryResult}
-          isFloating={true}
-          onToggleFloat={() => setIsOracleFloating(false)}
-          onClose={() => setShowOracle(false)}
-        />
-      )}
-      
-      {showWebView && isWebViewFloating && settings.webViewUrl && (
-        <WebViewPanel 
-          ref={webViewRef}
-          height="100%" 
-          url={settings.webViewUrl}
-          isFloating={true}
-          onToggleFloat={() => setIsWebViewFloating(false)}
-          onClose={() => setShowWebView(false)}
-          onContentChange={setWebPageContent}
-        />
       )}
       
 

@@ -44,7 +44,7 @@ interface WorkspaceViewProps {
   terminals: TerminalInstance[]
   focusedTerminalId: string | null
   isActive: boolean
-  oracleQueryResult?: string | null
+  onAnalyzeFile?: (fileContent: string, fileName: string) => void
 }
 
 // Helper to get shell path from settings
@@ -77,7 +77,7 @@ function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = [])
 // Track which workspaces have been initialized (outside component to persist across renders)
 const initializedWorkspaces = new Set<string>()
 
-export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, oracleQueryResult }: Readonly<WorkspaceViewProps>) {
+export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, onAnalyzeFile }: Readonly<WorkspaceViewProps>) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
   const [thumbnailSettings, setThumbnailSettings] = useState<ThumbnailSettings>(loadThumbnailSettings)
 
@@ -182,8 +182,8 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
 
         for (const terminal of terminals) {
           console.log('[WorkspaceView] Processing terminal:', { id: terminal.id, type: terminal.type })
-          // Skip copilot chat terminals (they don't need PTY)
-          if (terminal.type === 'copilot') continue
+          // Skip non-terminal types (they don't need PTY)
+          if (terminal.type !== 'terminal') continue
 
           // Check if PTY already exists
           let ptyExists = false
@@ -299,6 +299,29 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     workspaceStore.setFocusedTerminal(terminal.id)
   }, [workspace.id, workspace.folderPath, workspace.envVars])
 
+  const handleAddOracle = useCallback(() => {
+    const terminal = workspaceStore.addOracle(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
+  const handleAddWebView = useCallback(() => {
+    // For now, use a default URL or prompt user
+    const settings = settingsStore.getSettings()
+    const url = settings.webViewUrl || 'https://www.google.com'
+    const terminal = workspaceStore.addWebView(workspace.id, url)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
+  const handleAddFile = useCallback(() => {
+    const terminal = workspaceStore.addFile(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
+  const handleAddApiTester = useCallback(() => {
+    const terminal = workspaceStore.addApiTester(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
   const handleCloseTerminal = useCallback((id: string) => {
     const terminal = terminals.find(t => t.id === id)
     // Show confirm for agent terminals
@@ -336,8 +359,8 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
   // mainTerminal: the currently focused or first available terminal
   const mainTerminal = focusedTerminal || agentTerminal || terminals[0]
 
-  // Show all terminals in thumbnail bar (except the currently focused one)
-  const thumbnailTerminals = terminals.filter(t => t.id !== mainTerminal?.id)
+  // Show all terminals in thumbnail bar (including the currently focused one)
+  const thumbnailTerminals = terminals
 
   return (
     <div className="workspace-view">
@@ -352,7 +375,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
               terminal={terminal}
               onClose={handleCloseTerminal}
               onRestart={handleRestart}
-              oracleQueryResult={oracleQueryResult}
+              onAnalyzeFile={onAnalyzeFile}
             />
           </div>
         ))}
@@ -372,6 +395,10 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         focusedTerminalId={focusedTerminalId}
         onFocus={handleFocus}
         onAddTerminal={handleAddTerminal}
+        onAddOracle={handleAddOracle}
+        onAddWebView={handleAddWebView}
+        onAddFile={handleAddFile}
+        onAddApiTester={handleAddApiTester}
         showAddButton={true}
         height={thumbnailSettings.height}
         collapsed={thumbnailSettings.collapsed}

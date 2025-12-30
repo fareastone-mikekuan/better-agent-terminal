@@ -14,8 +14,12 @@ export interface WebViewPanelRef {
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url, isFloating = false, onToggleFloat, onClose, onContentChange }, ref) {
-  const [zoom, setZoom] = useState(40)
+  function WebViewPanel({ height, url: initialUrl, isFloating = false, onToggleFloat, onClose, onContentChange }, ref) {
+  const [zoom, setZoom] = useState(75)
+  const [currentUrl, setCurrentUrl] = useState(initialUrl)
+  const [urlInput, setUrlInput] = useState(initialUrl)
+  const [isFetching, setIsFetching] = useState(false)
+  const webviewRef = useRef<any>(null)
 
   // Dragging and resizing state
   const [position, setPosition] = useState(() => {
@@ -31,72 +35,127 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Handle URL navigation
+  const handleNavigate = () => {
+    if (urlInput.trim()) {
+      let finalUrl = urlInput.trim()
+      // Add https:// if no protocol specified
+      if (!finalUrl.match(/^https?:\/\//)) {
+        finalUrl = 'https://' + finalUrl
+      }
+      setCurrentUrl(finalUrl)
+      setUrlInput(finalUrl)
+    }
+  }
+
+  // Handle refresh
+  const handleRefresh = () => {
+    if (webviewRef.current) {
+      webviewRef.current.reload()
+    }
+  }
+
+  // Fetch and save content function
+  const fetchAndSaveContent = async (): Promise<string | null> => {
+    const webview = webviewRef.current || containerRef.current?.querySelector('webview') as any
+    if (!webview) {
+      console.error('WebView element not found')
+      return null
+    }
+    
+    setIsFetching(true)
+    try {
+      // Wait a bit to ensure webview is ready
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      const content = await webview.executeJavaScript(`
+        (function() {
+          try {
+            // Try multiple ways to get content
+            let text = '';
+            
+            // Method 1: innerText
+            if (document.body.innerText) {
+              text = document.body.innerText;
+            }
+            // Method 2: textContent
+            else if (document.body.textContent) {
+              text = document.body.textContent;
+            }
+            // Method 3: Get all text nodes
+            else {
+              const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+              const textNodes = [];
+              while(walker.nextNode()) {
+                textNodes.push(walker.currentNode.textContent);
+              }
+              text = textNodes.join(' ');
+            }
+            
+            // Clean up whitespace
+            text = text.replace(/\\s+/g, ' ').trim();
+            
+            // Limit size
+            return text.substring(0, 50000);
+          } catch (e) {
+            return 'Error: ' + e.message;
+          }
+        })();
+      `)
+      
+      if (content && content.length > 10 && !content.startsWith('Error:')) {
+        if (onContentChange) {
+          onContentChange(content)
+        }
+        console.log('[WebView] Content extracted, length:', content.length)
+        setIsFetching(false)
+        return content
+      } else {
+        console.warn('Content is empty or error:', content)
+        setIsFetching(false)
+        return null
+      }
+    } catch (e) {
+      console.error('Failed to extract content:', e)
+      setIsFetching(false)
+      return null
+    }
+  }
+
+  // Update URL input when initial URL changes
+  useEffect(() => {
+    setCurrentUrl(initialUrl)
+    setUrlInput(initialUrl)
+  }, [initialUrl])
+
+  // Auto-fetch content when webview loads
+  useEffect(() => {
+    if (!webviewRef.current) return
+
+    const webview = webviewRef.current
+    
+    const handleDidFinishLoad = () => {
+      console.log('[WebView] Page loaded, auto-fetching content...')
+      // Auto-fetch content after page loads
+      setTimeout(() => {
+        fetchAndSaveContent()
+      }, 2000) // Wait 2 seconds for JS to execute
+    }
+
+    webview.addEventListener('did-finish-load', handleDidFinishLoad)
+    
+    return () => {
+      webview.removeEventListener('did-finish-load', handleDidFinishLoad)
+    }
+  }, [currentUrl])
+
   // Expose fetchContent method to parent
   useImperativeHandle(ref, () => ({
-    fetchContent: async () => {
-      const webview = containerRef.current?.querySelector('webview') as any
-      if (!webview) {
-        console.error('WebView element not found')
-        return null
-      }
-      
-      try {
-        // Wait a bit to ensure webview is ready
-        await new Promise(resolve => setTimeout(resolve, 200))
-        
-        const content = await webview.executeJavaScript(`
-          (function() {
-            try {
-              // Try multiple ways to get content
-              let text = '';
-              
-              // Method 1: innerText
-              if (document.body.innerText) {
-                text = document.body.innerText;
-              }
-              // Method 2: textContent
-              else if (document.body.textContent) {
-                text = document.body.textContent;
-              }
-              // Method 3: Get all text nodes
-              else {
-                const walker = document.createTreeWalker(
-                  document.body,
-                  NodeFilter.SHOW_TEXT,
-                  null
-                );
-                const textNodes = [];
-                while(walker.nextNode()) {
-                  textNodes.push(walker.currentNode.textContent);
-                }
-                text = textNodes.join(' ');
-              }
-              
-              // Clean up whitespace
-              text = text.replace(/\\s+/g, ' ').trim();
-              
-              // Limit size
-              return text.substring(0, 50000);
-            } catch (e) {
-              return 'Error: ' + e.message;
-            }
-          })();
-        `)
-        
-        if (content && content.length > 10 && !content.startsWith('Error:')) {
-          if (onContentChange) {
-            onContentChange(content)
-          }
-          return content
-        } else {
-          console.warn('Content is empty or error:', content)
-          return null
-        }
-      } catch (e) {
-        console.error('Failed to extract content:', e)
-        return null
-      }
-    }
+    fetchContent: fetchAndSaveContent
   }), [onContentChange])
 
   // Save position and size to localStorage
@@ -226,7 +285,78 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
         }}
         onMouseDown={isFloating ? handleDragStart : undefined}
       >
-        <span style={{ color: '#dfdbc3', fontSize: '12px', fontWeight: 500, flex: 1 }}>🌐 網頁視窗</span>
+        <span style={{ color: '#dfdbc3', fontSize: '12px', fontWeight: 500 }}>🌐</span>
+        <input
+          type="text"
+          value={urlInput}
+          onChange={(e) => setUrlInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleNavigate()
+            }
+          }}
+          placeholder="輸入網址..."
+          style={{
+            flex: 1,
+            padding: '4px 8px',
+            fontSize: '12px',
+            backgroundColor: '#1f1d1a',
+            color: '#dfdbc3',
+            border: '1px solid #3a3836',
+            borderRadius: '4px',
+            outline: 'none'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        />
+        <button
+          onClick={handleNavigate}
+          style={{
+            background: 'none',
+            border: '1px solid #3a3836',
+            color: '#7bbda4',
+            cursor: 'pointer',
+            padding: '4px 8px',
+            fontSize: '12px',
+            borderRadius: '4px',
+            fontWeight: 'bold'
+          }}
+          title="前往"
+        >
+          GO
+        </button>
+        <button
+          onClick={handleRefresh}
+          style={{
+            background: 'none',
+            border: '1px solid #3a3836',
+            color: '#dfdbc3',
+            cursor: 'pointer',
+            padding: '4px 8px',
+            fontSize: '12px',
+            borderRadius: '4px'
+          }}
+          title="重新整理"
+        >
+          🔄
+        </button>
+        <button
+          onClick={fetchAndSaveContent}
+          disabled={isFetching}
+          style={{
+            background: 'none',
+            border: '1px solid #3a3836',
+            color: isFetching ? '#888' : '#7bbda4',
+            cursor: isFetching ? 'not-allowed' : 'pointer',
+            padding: '4px 8px',
+            fontSize: '12px',
+            borderRadius: '4px',
+            fontWeight: 'bold'
+          }}
+          title="抓取網頁內容供 AI 分析"
+        >
+          {isFetching ? '⏳' : '📥'}
+        </button>
         <button
           onClick={() => setZoom(Math.max(25, zoom - 10))}
           style={{
@@ -318,7 +448,8 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
           height: `${10000 / zoom}%`
         }}>
           <webview
-            src={url}
+            ref={webviewRef}
+            src={currentUrl}
             style={{
               width: '100%',
               height: '100%',

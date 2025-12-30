@@ -1774,9 +1774,9 @@ body {
 .snippet-edit-dialog {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
-  width: 600px;
+  width: 800px;
   max-width: 90vw;
-  max-height: 80vh;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--glass-border);
@@ -1837,7 +1837,7 @@ body {
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
   resize: vertical;
-  min-height: 200px;
+  min-height: 400px;
   pointer-events: auto;
 }
 
@@ -2099,6 +2099,44 @@ body {
   color: var(--text-primary);
 }
 
+/* Thumbnail Tabs */
+.thumbnail-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.thumbnail-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.thumbnail-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.thumbnail-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: bold;
+}
+
+.thumbnail-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 12px;
+}
+
 /* Copilot Panel Styles */
 .copilot-panel {
   display: flex;
@@ -2351,14 +2389,111 @@ body {
 
 .api-tester-panel.docked {
   height: 100%;
+  width: 100%;
   border-top: none;
   border-bottom: none;
   border-left: none;
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
-  min-width: 250px;
-  max-width: 600px;
+}
+
+/* API Tester Body Layout */
+.api-tester-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.api-tester-sidebar {
+  width: 280px;
+  min-width: 200px;
+  max-width: 400px;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+}
+
+.api-sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.api-sidebar-tabs button {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.api-sidebar-tabs button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.api-sidebar-tabs button.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  background: var(--bg-primary);
+}
+
+.api-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.api-sidebar-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.api-sidebar-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.api-sidebar-item .item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.api-tester-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-tester-panel.docked {
+  height: 100%;
+  width: 100%;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
 }
 
 .api-tester-panel.floating {
@@ -2826,6 +2961,38 @@ body {
 .api-history-item .method-delete {
   background: rgba(244, 67, 54, 0.2);
   color: var(--danger-color);
+}
+
+/* Collections styles */
+.api-collections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-collection-group {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-collection-title {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.api-collection-group .api-sidebar-item {
+  margin: 0;
 }
 
 .api-history-item .url {

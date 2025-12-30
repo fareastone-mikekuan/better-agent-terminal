@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // Snippet interface (matches backend)
 type SnippetFormat = 'plaintext' | 'markdown'
-type TabType = 'snippets' | 'community'
+type TabType = 'snippets' | 'community' | 'todo'
 
 interface Snippet {
     id: number
@@ -24,6 +24,14 @@ interface WikiPage {
     updated_at?: string
     isLocal?: boolean  // 标记是否为本地片段
     gistId?: string    // 关联的Gist ID
+}
+
+interface TodoItem {
+    id: string
+    title: string
+    completed: boolean
+    createdAt: number
+    priority?: 'low' | 'medium' | 'high'
 }
 
 interface SnippetSidebarProps {
@@ -268,11 +276,10 @@ function WikiEditDialog({ page, isNew, onSave, onClose }: Readonly<WikiEditDialo
 function EditDialog({ snippet, isNew, onSave, onClose }: Readonly<EditDialogProps>) {
     const [title, setTitle] = useState(snippet?.title || '')
     const [content, setContent] = useState(snippet?.content || '')
-    const [format, setFormat] = useState<SnippetFormat>(snippet?.format || 'plaintext')
 
     const handleSave = () => {
         if (!title.trim() || !content.trim()) return
-        onSave({ title: title.trim(), content: content.trim(), format })
+        onSave({ title: title.trim(), content: content.trim(), format: 'plaintext' })
         onClose()
     }
 
@@ -280,7 +287,7 @@ function EditDialog({ snippet, isNew, onSave, onClose }: Readonly<EditDialogProp
         <div className="snippet-edit-overlay" onClick={onClose}>
             <div className="snippet-edit-dialog" onClick={e => e.stopPropagation()}>
                 <div className="snippet-edit-header">
-                    <h3>{isNew ? 'New Snippet' : 'Edit Snippet'}</h3>
+                    <h3>{isNew ? '新增個人筆記' : '編輯個人筆記'}</h3>
                     <button className="close-btn" onClick={onClose}>×</button>
                 </div>
                 <div className="snippet-edit-body">
@@ -295,19 +302,12 @@ function EditDialog({ snippet, isNew, onSave, onClose }: Readonly<EditDialogProp
                         />
                     </div>
                     <div className="form-group">
-                        <label>Format</label>
-                        <select value={format} onChange={e => setFormat(e.target.value as SnippetFormat)}>
-                            <option value="plaintext">Plaintext</option>
-                            <option value="markdown">Markdown</option>
-                        </select>
-                    </div>
-                    <div className="form-group">
                         <label>Content</label>
                         <textarea
                             value={content}
                             onChange={e => setContent(e.target.value)}
                             placeholder="Enter snippet content..."
-                            rows={12}
+                            rows={20}
                         />
                     </div>
                 </div>
@@ -338,12 +338,14 @@ export function SnippetSidebar({
     const [activeTab, setActiveTab] = useState<TabType>('snippets')
     const [snippets, setSnippets] = useState<Snippet[]>([])
     const [searchQuery, setSearchQuery] = useState('')
+    const [communitySearchQuery, setCommunitySearchQuery] = useState('')
     const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null)
     const [isCreating, setIsCreating] = useState(false)
-    // Double-click behavior: 'clipboard', 'terminal', or 'edit'
-    const [doubleClickAction, setDoubleClickAction] = useState<'clipboard' | 'terminal' | 'edit'>('terminal')
-    // Auto-execute: automatically press Enter after pasting to terminal
-    const [autoExecute, setAutoExecute] = useState(true)
+    
+    // TODO tab state
+    const [todos, setTodos] = useState<TodoItem[]>([])
+    const [newTodoTitle, setNewTodoTitle] = useState('')
+    const todoInputRef = useRef<HTMLInputElement>(null)
     
     // Community tab state (local shareable snippets)
     const [wikiPages, setWikiPages] = useState<WikiPage[]>([])
@@ -636,10 +638,10 @@ export function SnippetSidebar({
 
             const gistData = await response.json()
             
-            // 更新本地片段，添加 gistId 和 html_url
+            // 更新本地片段，添加 gistId、html_url 並設置為雲端片段
             const updatedPages = wikiPages.map(p => 
                 p.name === page.name 
-                    ? { ...p, gistId: gistData.id, html_url: gistData.html_url }
+                    ? { ...p, gistId: gistData.id, html_url: gistData.html_url, isLocal: false }
                     : p
             )
             saveWikiPages(updatedPages)
@@ -975,9 +977,7 @@ export function SnippetSidebar({
     const handlePasteToTerminal = (content: string) => {
         try {
             if (onPasteToTerminal) {
-                // Add carriage return to auto-execute if enabled (use \r for terminal)
-                const finalContent = autoExecute ? content + '\r' : content
-                onPasteToTerminal(finalContent)
+                onPasteToTerminal(content)
             }
         } catch (error) {
             console.error('Paste to terminal failed:', error)
@@ -986,13 +986,8 @@ export function SnippetSidebar({
     }
 
     const handleDoubleClick = (snippet: Snippet) => {
-        if (doubleClickAction === 'clipboard') {
-            handleCopyToClipboard(snippet.content)
-        } else if (doubleClickAction === 'terminal') {
-            handlePasteToTerminal(snippet.content)
-        } else {
-            setEditingSnippet(snippet)
-        }
+        // 個人筆記雙擊直接開啟編輯
+        setEditingSnippet(snippet)
     }
 
     const openWikiInBrowser = (url: string) => {
@@ -1029,6 +1024,77 @@ export function SnippetSidebar({
         }
     }
 
+    // Load todos from localStorage
+    const loadTodos = useCallback(() => {
+        try {
+            const saved = localStorage.getItem('better-terminal-todos')
+            if (saved) {
+                setTodos(JSON.parse(saved))
+            }
+        } catch (error) {
+            console.error('Failed to load todos:', error)
+        }
+    }, [])
+
+    // Save todos to localStorage
+    const saveTodos = (updatedTodos: TodoItem[]) => {
+        try {
+            localStorage.setItem('better-terminal-todos', JSON.stringify(updatedTodos))
+            setTodos(updatedTodos)
+        } catch (error) {
+            console.error('Failed to save todos:', error)
+        }
+    }
+
+    // Add new todo
+    const handleAddTodo = () => {
+        if (!newTodoTitle.trim()) {
+            // 如果輸入框為空，聚焦到輸入框提示用戶輸入
+            todoInputRef.current?.focus()
+            return
+        }
+        const newTodo: TodoItem = {
+            id: Date.now().toString(),
+            title: newTodoTitle.trim(),
+            completed: false,
+            createdAt: Date.now(),
+            priority: 'medium'
+        }
+        saveTodos([newTodo, ...todos])
+        setNewTodoTitle('')
+        // 新增後重新聚焦輸入框
+        setTimeout(() => todoInputRef.current?.focus(), 0)
+    }
+
+    // Toggle todo completion
+    const handleToggleTodo = (id: string) => {
+        const updated = todos.map(todo => 
+            todo.id === id ? { ...todo, completed: !todo.completed } : todo
+        )
+        saveTodos(updated)
+    }
+
+    // Delete todo
+    const handleDeleteTodo = (id: string) => {
+        if (!confirm('確定要刪除這個 TODO？')) return
+        saveTodos(todos.filter(todo => todo.id !== id))
+    }
+
+    // Change todo priority
+    const handleChangePriority = (id: string, priority: 'low' | 'medium' | 'high') => {
+        const updated = todos.map(todo => 
+            todo.id === id ? { ...todo, priority } : todo
+        )
+        saveTodos(updated)
+    }
+
+    // Load todos on mount
+    useEffect(() => {
+        if (activeTab === 'todo') {
+            loadTodos()
+        }
+    }, [activeTab, loadTodos])
+
     if (!isVisible) return null
 
     // Collapsed state - show icon bar
@@ -1048,7 +1114,7 @@ export function SnippetSidebar({
         <>
             <aside className="snippet-sidebar" style={{ width: `${width}px`, minWidth: `${width}px`, ...style }}>
                 <div className="snippet-sidebar-header">
-                    <h3>📝 Snippets</h3>
+                    <h3>📝 筆記</h3>
                     <div className="snippet-header-actions">
                         {activeTab === 'snippets' && (
                             <button className="snippet-add-btn" onClick={() => setIsCreating(true)} title="New Snippet">
@@ -1067,6 +1133,11 @@ export function SnippetSidebar({
                                     ↻
                                 </button>
                             </>
+                        )}
+                        {activeTab === 'todo' && (
+                            <button className="snippet-add-btn" onClick={handleAddTodo} title="新增 TODO">
+                                +
+                            </button>
                         )}
                         {onCollapse && (
                             <button className="snippet-collapse-btn" onClick={onCollapse} title="Collapse Panel">
@@ -1090,6 +1161,12 @@ export function SnippetSidebar({
                     >
                         🌐 分享筆記
                     </button>
+                    <button 
+                        className={`snippet-tab ${activeTab === 'todo' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('todo')}
+                    >
+                        ✅ TODO
+                    </button>
                 </div>
 
                 {/* Snippets Tab Content */}
@@ -1098,35 +1175,10 @@ export function SnippetSidebar({
                         <div className="snippet-sidebar-search">
                             <input
                                 type="text"
-                                placeholder="Search snippets..."
+                                placeholder="搜尋筆記..."
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                             />
-                        </div>
-
-                        <div className="snippet-sidebar-options">
-                            <label>Double-click:</label>
-                            <select
-                                value={doubleClickAction}
-                                onChange={e => setDoubleClickAction(e.target.value as 'clipboard' | 'terminal' | 'edit')}
-                            >
-                                <option value="terminal">Paste to Terminal</option>
-                                <option value="clipboard">Copy to Clipboard</option>
-                                <option value="edit">Open Editor</option>
-                            </select>
-                        </div>
-
-                        <div className="snippet-sidebar-options">
-                            <label>Auto-execute:</label>
-                            <input
-                                type="checkbox"
-                                checked={autoExecute}
-                                onChange={e => setAutoExecute(e.target.checked)}
-                                title="Automatically press Enter after pasting to terminal"
-                            />
-                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                                (press Enter)
-                            </span>
                         </div>
 
                         <div className="snippet-sidebar-list">
@@ -1191,6 +1243,14 @@ export function SnippetSidebar({
                 {/* Community Tab Content - Local Shareable Snippets */}
                 {activeTab === 'community' && (
                     <>
+                        <div className="snippet-sidebar-search">
+                            <input
+                                type="text"
+                                placeholder="搜尋筆記..."
+                                value={communitySearchQuery}
+                                onChange={e => setCommunitySearchQuery(e.target.value)}
+                            />
+                        </div>
                         <div className="snippet-sidebar-search" style={{ padding: '8px' }}>
                             <small style={{ fontSize: '10px', color: '#888', display: 'block', marginBottom: '4px' }}>
                                 本地分享筆記，可導入/導出到 GitHub
@@ -1213,11 +1273,18 @@ export function SnippetSidebar({
                                     </small>
                                 </div>
                             ) : (
-                                wikiPages.map((page, index) => (
+                                wikiPages
+                                    .filter(page => {
+                                        if (!communitySearchQuery.trim()) return true
+                                        const query = communitySearchQuery.toLowerCase()
+                                        return page.title.toLowerCase().includes(query) || 
+                                               page.content.toLowerCase().includes(query)
+                                    })
+                                    .map((page, index) => (
                                     <div
                                         key={`${page.name}-${index}`}
                                         className="snippet-sidebar-item community-item wiki-item"
-                                        onDoubleClick={() => openWikiInBrowser(page.html_url)}
+                                        onDoubleClick={() => editWikiPage(page)}
                                     >
                                         <div className="snippet-item-main">
                                             <span className="snippet-item-title">
@@ -1303,6 +1370,108 @@ export function SnippetSidebar({
                                                     </button>
                                                 </>
                                             )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {/* TODO Tab Content */}
+                {activeTab === 'todo' && (
+                    <>
+                        <div style={{ padding: '8px 12px', backgroundColor: '#2a2826', borderBottom: '1px solid #3a3836', position: 'relative', zIndex: 1 }}>
+                            <input
+                                ref={todoInputRef}
+                                type="text"
+                                placeholder="輸入 TODO 標題後按 Enter 或點上方 +"
+                                value={newTodoTitle}
+                                onChange={e => setNewTodoTitle(e.target.value)}
+                                onKeyPress={e => e.key === 'Enter' && handleAddTodo()}
+                                autoComplete="off"
+                                style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    backgroundColor: '#1f1d1a',
+                                    border: '1px solid #3a3836',
+                                    borderRadius: '4px',
+                                    color: '#dfdbc3',
+                                    fontSize: '12px',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                                onFocus={(e) => e.target.style.borderColor = '#7bbda4'}
+                                onBlur={(e) => e.target.style.borderColor = '#3a3836'}
+                            />
+                        </div>
+
+                        <div className="snippet-sidebar-list">
+                            {todos.length === 0 ? (
+                                <div className="snippet-empty">
+                                    尚無 TODO
+                                    <br />
+                                    <small style={{ fontSize: '10px', color: '#888' }}>
+                                        在上方輸入框新增 TODO 項目
+                                    </small>
+                                </div>
+                            ) : (
+                                todos.map(todo => (
+                                    <div
+                                        key={todo.id}
+                                        className="snippet-sidebar-item"
+                                        style={{ 
+                                            opacity: todo.completed ? 0.6 : 1,
+                                            borderLeft: `3px solid ${
+                                                todo.priority === 'high' ? '#ef4444' : 
+                                                todo.priority === 'medium' ? '#f59e0b' : 
+                                                '#10b981'
+                                            }`
+                                        }}
+                                    >
+                                        <div className="snippet-item-main" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={todo.completed}
+                                                onChange={() => handleToggleTodo(todo.id)}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            <span 
+                                                className="snippet-item-title" 
+                                                style={{ 
+                                                    textDecoration: todo.completed ? 'line-through' : 'none',
+                                                    flex: 1
+                                                }}
+                                            >
+                                                {todo.title}
+                                            </span>
+                                        </div>
+                                        <div className="snippet-item-actions">
+                                            <select
+                                                value={todo.priority}
+                                                onChange={e => handleChangePriority(todo.id, e.target.value as 'low' | 'medium' | 'high')}
+                                                style={{
+                                                    fontSize: '10px',
+                                                    padding: '2px 4px',
+                                                    background: 'var(--bg-tertiary)',
+                                                    border: '1px solid var(--border-color)',
+                                                    borderRadius: '3px',
+                                                    color: 'var(--text-primary)',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onClick={e => e.stopPropagation()}
+                                            >
+                                                <option value="low">低</option>
+                                                <option value="medium">中</option>
+                                                <option value="high">高</option>
+                                            </select>
+                                            <button
+                                                className="snippet-action-btn danger"
+                                                onClick={() => handleDeleteTodo(todo.id)}
+                                                title="刪除"
+                                            >
+                                                🗑️
+                                            </button>
                                         </div>
                                     </div>
                                 ))

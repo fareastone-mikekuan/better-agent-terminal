@@ -27,11 +27,6 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
-  // If this is a Copilot terminal, render CopilotPanel instead
-  if (terminalType === 'copilot') {
-    return <CopilotPanel terminalId={terminalId} isActive={isActive} oracleQueryResult={oracleQueryResult} />
-  }
-
   // Handle paste with text size checking
   const handlePasteText = (text: string) => {
     if (!text) return

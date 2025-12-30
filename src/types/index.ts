@@ -36,12 +36,22 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'copilot';  // terminal 或 copilot chat
+  type: 'terminal' | 'oracle' | 'webview' | 'file' | 'api';  // terminal、oracle、webview、file explorer 或 api tester
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;
   pid?: number;
   cwd: string;
+  url?: string;  // WebView URL（僅用於 type='webview'）
+  webviewContent?: string;  // WebView 頁面內容（用於 AI 分析）
+  oracleQueryResult?: string;  // Oracle 查詢結果（用於 AI 分析）
+  oracleConfig?: {  // Oracle 連接配置（僅用於 type='oracle'）
+    host: string;
+    port: string;
+    service: string;
+    username: string;
+    password: string;
+  };
   scrollbackBuffer: string[];
   chatMessages?: CopilotMessage[]; // Copilot chat 對話記錄（僅用於 type='copilot'）
   lastActivityTime?: number;
@@ -58,7 +68,7 @@ export interface AppState {
 export interface CreatePtyOptions {
   id: string;
   cwd: string;
-  type: 'terminal' | 'copilot';  // terminal 或 copilot chat
+  type: 'terminal';  // terminal only
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   shell?: string;
   customEnv?: Record<string, string>;  // 自定義環境變數

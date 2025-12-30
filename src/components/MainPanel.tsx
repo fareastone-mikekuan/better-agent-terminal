@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import type { TerminalInstance } from '../types'
 import { TerminalPanel } from './TerminalPanel'
+import { OraclePanel } from './OraclePanel'
+import { WebViewPanel } from './WebViewPanel'
+import { FileExplorerPanel } from './FileExplorerPanel'
+import { ApiTesterPanel } from './ApiTesterPanel'
 import { ActivityIndicator } from './ActivityIndicator'
 import { getAgentPreset } from '../types/agent-presets'
 import { workspaceStore } from '../stores/workspace-store'
@@ -9,10 +13,10 @@ interface MainPanelProps {
   terminal: TerminalInstance
   onClose: (id: string) => void
   onRestart: (id: string) => void
-  oracleQueryResult?: string | null
+  onAnalyzeFile?: (fileContent: string, fileName: string) => void
 }
 
-export function MainPanel({ terminal, onClose, onRestart, oracleQueryResult }: Readonly<MainPanelProps>) {
+export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Readonly<MainPanelProps>) {
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
   const [isEditing, setIsEditing] = useState(false)
@@ -67,13 +71,15 @@ export function MainPanel({ terminal, onClose, onRestart, oracleQueryResult }: R
             terminalId={terminal.id}
             size="small"
           />
-          <button
-            className="action-btn"
-            onClick={() => onRestart(terminal.id)}
-            title="Restart terminal"
-          >
-            ⟳
-          </button>
+          {terminal.type === 'terminal' && (
+            <button
+              className="action-btn"
+              onClick={() => onRestart(terminal.id)}
+              title="Restart terminal"
+            >
+              ⟳
+            </button>
+          )}
           <button
             className="action-btn danger"
             onClick={() => onClose(terminal.id)}
@@ -84,7 +90,41 @@ export function MainPanel({ terminal, onClose, onRestart, oracleQueryResult }: R
         </div>
       </div>
       <div className="main-panel-content">
-        <TerminalPanel terminalId={terminal.id} terminalType={terminal.type} oracleQueryResult={oracleQueryResult} />
+        {terminal.type === 'terminal' ? (
+          <TerminalPanel terminalId={terminal.id} terminalType={terminal.type} />
+        ) : terminal.type === 'oracle' ? (
+          <OraclePanel
+            isFloating={false}
+            onQueryResult={(result) => {
+              // Store oracle query result in terminal for AI reading
+              workspaceStore.updateTerminal(terminal.id, { oracleQueryResult: result })
+            }}
+          />
+        ) : terminal.type === 'webview' ? (
+          <WebViewPanel
+            height="100%"
+            url={terminal.url || ''}
+            isFloating={false}
+            onContentChange={(content) => {
+              // Store webview content in terminal for AI reading
+              workspaceStore.updateTerminal(terminal.id, { webviewContent: content })
+            }}
+          />
+        ) : terminal.type === 'file' ? (
+          <FileExplorerPanel
+            isVisible={true}
+            onClose={() => {}}
+            workspaceId={terminal.workspaceId}
+            isFloating={false}
+            onAnalyzeFile={onAnalyzeFile}
+          />
+        ) : terminal.type === 'api' ? (
+          <ApiTesterPanel
+            isVisible={true}
+            onClose={() => {}}
+            isFloating={false}
+          />
+        ) : null}
       </div>
     </div>
   )

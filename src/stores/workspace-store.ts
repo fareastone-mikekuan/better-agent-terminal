@@ -196,15 +196,115 @@ class WorkspaceStore {
     return terminal
   }
 
-  addCopilotChat(workspaceId: string): TerminalInstance {
+  addOracle(workspaceId: string): TerminalInstance {
     const workspace = this.state.workspaces.find(w => w.id === workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+
+    // Count existing oracles in this workspace to get next number
+    const existingOracles = this.state.terminals.filter(
+      t => t.workspaceId === workspaceId && t.type === 'oracle'
+    )
+    const oracleNumber = existingOracles.length + 1
 
     const terminal: TerminalInstance = {
       id: uuidv4(),
       workspaceId,
-      type: 'copilot',
-      title: '⚡ Copilot Chat',
+      type: 'oracle',
+      title: `🗄️ 資料庫 #${oracleNumber}`,
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
+  addWebView(workspaceId: string, url: string = 'https://www.google.com'): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    // Count existing webviews in this workspace to get next number
+    const existingWebViews = this.state.terminals.filter(
+      t => t.workspaceId === workspaceId && t.type === 'webview'
+    )
+    const webViewNumber = existingWebViews.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'webview',
+      title: `🌐 網頁 #${webViewNumber}`,
+      url,
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
+  addFile(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    // Count existing files in this workspace to get next number
+    const existingFiles = this.state.terminals.filter(
+      t => t.workspaceId === workspaceId && t.type === 'file'
+    )
+    const fileNumber = existingFiles.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'file',
+      title: `📁 FILE #${fileNumber}`,
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
+  addApiTester(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    // Count existing API testers in this workspace to get next number
+    const existingApis = this.state.terminals.filter(
+      t => t.workspaceId === workspaceId && t.type === 'api'
+    )
+    const apiNumber = existingApis.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'api',
+      title: `🔌 API #${apiNumber}`,
       cwd: workspace.folderPath,
       scrollbackBuffer: [],
       lastActivityTime: Date.now()
@@ -267,6 +367,18 @@ class WorkspaceStore {
     }
 
     this.notify()
+  }
+
+  updateTerminal(id: string, updates: Partial<TerminalInstance>): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id ? { ...t, ...updates } : t
+      )
+    }
+
+    this.notify()
+    this.save()
   }
 
   appendScrollback(id: string, data: string): void {

@@ -3,8 +3,9 @@ import { useState, useEffect, useRef } from 'react'
 interface ApiTesterPanelProps {
     isVisible: boolean
     onClose: () => void
-    height?: number
-    onResize?: (delta: number) => void
+    isFloating?: boolean
+    collapsed?: boolean
+    onCollapse?: () => void
 }
 
 interface RequestHeader {
@@ -23,13 +24,60 @@ interface RequestHistory {
     duration?: number
 }
 
+interface PostmanCollection {
+    info: {
+        name: string
+        description?: string
+    }
+    item: PostmanItem[]
+    variable?: PostmanVariable[]
+}
+
+interface PostmanItem {
+    name: string
+    request?: PostmanRequest
+    item?: PostmanItem[] // For folders
+}
+
+interface PostmanRequest {
+    method: string
+    header?: Array<{ key: string; value: string; disabled?: boolean }>
+    url: string | { raw: string; host?: string[] }
+    body?: {
+        mode: string
+        raw?: string
+        formdata?: Array<{ key: string; value: string }>
+    }
+}
+
+interface PostmanVariable {
+    key: string
+    value: string
+}
+
+interface SavedCollection {
+    id: string
+    name: string
+    requests: Array<{
+        id: string
+        name: string
+        method: string
+        url: string
+        headers: RequestHeader[]
+        body: string
+    }>
+}
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
-export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: Readonly<ApiTesterPanelProps>) {
-    const [isFloating, setIsFloating] = useState(() => {
+export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collapsed = false, onCollapse }: Readonly<ApiTesterPanelProps>) {
+    const [isInternalFloating, setIsInternalFloating] = useState(() => {
         const saved = localStorage.getItem('api-tester-floating')
         return saved ? JSON.parse(saved) : false
     })
+    
+    // Use prop isFloating when in tab system, otherwise use internal state
+    const effectiveFloating = isFloating || isInternalFloating
     
     const [position, setPosition] = useState(() => {
         const saved = localStorage.getItem('api-tester-position')
@@ -57,13 +105,18 @@ export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: R
         const saved = localStorage.getItem('api-tester-history')
         return saved ? JSON.parse(saved) : []
     })
+    const [collections, setCollections] = useState<SavedCollection[]>(() => {
+        const saved = localStorage.getItem('api-tester-collections')
+        return saved ? JSON.parse(saved) : []
+    })
+    const [showCollections, setShowCollections] = useState(false)
     const [activeTab, setActiveTab] = useState<'body' | 'headers' | 'response'>('body')
     const isDragging = useRef(false)
     const dragOffset = useRef({ x: 0, y: 0 })
 
     // Handle drag start
     const handleDragStart = (e: React.MouseEvent) => {
-        if (!isFloating) return
+        if (!effectiveFloating) return
         setZIndex(1001) // 置顶
         isDragging.current = true
         dragOffset.current = {
@@ -207,12 +260,148 @@ export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: R
         }
     }
 
+    const handleImportPostman = () => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.json'
+        input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0]
+            if (!file) return
+
+            const reader = new FileReader()
+            reader.onload = (event) => {
+                try {
+                    const json = JSON.parse(event.target?.result as string)
+                    const collection = parsePostmanCollection(json)
+                    if (collection) {
+                        setCollections(prev => {
+                            const updated = [...prev, collection]
+                            localStorage.setItem('api-tester-collections', JSON.stringify(updated))
+                            return updated
+                        })
+                        setShowCollections(true)
+                        alert(`✅ 成功導入 "${collection.name}"，共 ${collection.requests.length} 個請求`)
+                    }
+                } catch (error) {
+                    alert(`❌ 導入失敗: ${(error as Error).message}`)
+                }
+            }
+            reader.readAsText(file)
+        }
+        input.click()
+    }
+
+    const parsePostmanCollection = (json: PostmanCollection): SavedCollection | null => {
+        try {
+            const requests: SavedCollection['requests'] = []
+            
+            const parseItems = (items: PostmanItem[], prefix = '') => {
+                items.forEach(item => {
+                    if (item.request) {
+                        const req = item.request
+                        const requestUrl = typeof req.url === 'string' ? req.url : req.url.raw
+                        const requestHeaders: RequestHeader[] = (req.header || []).map((h, idx) => ({
+                            id: `${Date.now()}-${idx}`,
+                            key: h.key,
+                            value: h.value,
+                            enabled: !h.disabled
+                        }))
+                        const requestBody = req.body?.mode === 'raw' ? req.body.raw || '' : ''
+                        
+                        requests.push({
+                            id: `${Date.now()}-${requests.length}`,
+                            name: prefix + item.name,
+                            method: req.method.toUpperCase(),
+                            url: requestUrl,
+                            headers: requestHeaders,
+                            body: requestBody
+                        })
+                    }
+                    if (item.item) {
+                        parseItems(item.item, prefix + item.name + ' > ')
+                    }
+                })
+            }
+            
+            parseItems(json.item)
+            
+            return {
+                id: Date.now().toString(),
+                name: json.info.name,
+                requests
+            }
+        } catch (error) {
+            console.error('Parse error:', error)
+            return null
+        }
+    }
+
+    const loadRequest = (collectionId: string, requestId: string) => {
+        const collection = collections.find(c => c.id === collectionId)
+        const request = collection?.requests.find(r => r.id === requestId)
+        if (request) {
+            setMethod(request.method as HttpMethod)
+            setUrl(request.url)
+            setHeaders(request.headers)
+            setBody(request.body)
+            setResponse('')
+            setResponseStatus(null)
+            setResponseTime(null)
+            setShowCollections(false)
+        }
+    }
+
+    const deleteCollection = (collectionId: string) => {
+        if (confirm('確定要刪除此集合嗎？')) {
+            setCollections(prev => {
+                const updated = prev.filter(c => c.id !== collectionId)
+                localStorage.setItem('api-tester-collections', JSON.stringify(updated))
+                return updated
+            })
+        }
+    }
+
     if (!isVisible) return null
 
-    const panelClass = isFloating ? 'api-tester-panel floating' : 'api-tester-panel docked'
-    const panelStyle = isFloating 
-        ? { left: position.x, top: position.y, width: size.width, height: size.height, zIndex }
-        : { width: height } // Using height prop as width for vertical panel
+    // Collapsed state - show icon bar
+    if (collapsed && onCollapse) {
+        return (
+            <div
+                className="collapsed-bar collapsed-bar-right"
+                onClick={onCollapse}
+                title="展開 API 測試器"
+                style={{ width: '40px' }}
+            >
+                <div className="collapsed-bar-icon">🌐</div>
+            </div>
+        )
+    }
+
+    const panelClass = effectiveFloating ? 'api-tester-panel floating' : 'api-tester-panel docked'
+    const panelStyle = effectiveFloating 
+        ? { 
+            position: 'fixed' as const,
+            left: position.x, 
+            top: position.y, 
+            width: size.width, 
+            height: size.height, 
+            zIndex,
+            backgroundColor: '#1f1d1a',
+            border: '1px solid #3a3836',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            flexDirection: 'column' as const,
+            overflow: 'hidden'
+          }
+        : { 
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#1f1d1a',
+            display: 'flex',
+            flexDirection: 'column' as const,
+            overflow: 'hidden'
+          }
 
     return (
         <aside className={panelClass} style={panelStyle}>
@@ -222,15 +411,137 @@ export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: R
                 <div className="api-tester-controls">
                     <button
                         className="api-tester-toggle-btn"
-                        onClick={() => setIsFloating(!isFloating)}
-                        title={isFloating ? '固定面板' : '浮動面板'}
+                        onClick={handleImportPostman}
+                        title="導入 Postman 集合"
                     >
-                        {isFloating ? '📌' : '🔗'}
+                        📥
                     </button>
-                    <button className="api-tester-close-btn" onClick={onClose}>×</button>
+                    {/* Only show float/collapse buttons when not in tab system */}
+                    {isFloating === undefined && (
+                        <>
+                            <button
+                                className="api-tester-toggle-btn"
+                                onClick={() => {
+                                    setIsInternalFloating(!isInternalFloating)
+                                    localStorage.setItem('api-tester-floating', JSON.stringify(!isInternalFloating))
+                                }}
+                                title={effectiveFloating ? '固定面板' : '浮動面板'}
+                            >
+                                {effectiveFloating ? '📌' : '🔗'}
+                            </button>
+                            {onCollapse && !effectiveFloating && (
+                                <button
+                                    className="api-tester-toggle-btn"
+                                    onClick={onCollapse}
+                                    title="收合面板"
+                                >
+                                    »
+                                </button>
+                            )}
+                            <button className="api-tester-close-btn" onClick={onClose}>×</button>
+                        </>
+                    )}
                 </div>
             </div>
 
+            <div className="api-tester-body">
+                {/* Left sidebar for collections and history */}
+                <div className="api-tester-sidebar">
+                    <div className="api-sidebar-tabs">
+                        <button
+                            className={!showCollections ? 'active' : ''}
+                            onClick={() => setShowCollections(false)}
+                        >
+                            📜 歷史
+                        </button>
+                        <button
+                            className={showCollections ? 'active' : ''}
+                            onClick={() => setShowCollections(true)}
+                        >
+                            📚 集合 {collections.length > 0 && `(${collections.length})`}
+                        </button>
+                    </div>
+
+                    {showCollections ? (
+                        <div className="api-sidebar-content">
+                            {collections.length === 0 ? (
+                                <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '12px' }}>
+                                    暫無集合<br/>點擊 📥 導入
+                                </div>
+                            ) : (
+                                <div className="api-collections-list">
+                                    {collections.map(collection => (
+                                        <div key={collection.id} className="api-collection-group">
+                                            <div className="api-collection-title">
+                                                <span>📁 {collection.name}</span>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        deleteCollection(collection.id)
+                                                    }}
+                                                    style={{
+                                                        marginLeft: 'auto',
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: '#ef4444',
+                                                        cursor: 'pointer',
+                                                        fontSize: '14px',
+                                                        padding: '2px'
+                                                    }}
+                                                    title="刪除集合"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: '#999', marginBottom: '4px' }}>
+                                                {collection.requests.length} 個請求
+                                            </div>
+                                            {collection.requests.map(request => (
+                                                <div
+                                                    key={request.id}
+                                                    className="api-sidebar-item"
+                                                    onClick={() => loadRequest(collection.id, request.id)}
+                                                >
+                                                    <span className={`method method-${request.method.toLowerCase()}`}>
+                                                        {request.method}
+                                                    </span>
+                                                    <span className="item-name">{request.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="api-sidebar-content">
+                            {history.length === 0 ? (
+                                <div className="api-history-empty">暫無記錄</div>
+                            ) : (
+                                history.map(item => (
+                                    <div
+                                        key={item.id}
+                                        className="api-sidebar-item"
+                                        onClick={() => handleLoadFromHistory(item)}
+                                    >
+                                        <span className={`method method-${item.method.toLowerCase()}`}>
+                                            {item.method}
+                                        </span>
+                                        <span className="item-name">{item.url}</span>
+                                        {item.status && (
+                                            <span className={`status ${item.status < 400 ? 'success' : 'error'}`}>
+                                                {item.status}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Right panel for request editor */}
+                <div className="api-tester-main">
             <div className="api-tester-request-line">
                 <select 
                     className="api-method-select"
@@ -347,35 +658,6 @@ export function ApiTesterPanel({ isVisible, onClose, height = 300, onResize }: R
                     </div>
                 )}
             </div>
-
-            <div className="api-tester-history">
-                <div className="api-history-header">
-                    <h4>📜 歷史記錄</h4>
-                    <button onClick={handleClearHistory}>清除</button>
-                </div>
-                <div className="api-history-list">
-                    {history.length === 0 ? (
-                        <div className="api-history-empty">暫無記錄</div>
-                    ) : (
-                        history.map(item => (
-                            <div
-                                key={item.id}
-                                className="api-history-item"
-                                onClick={() => handleLoadFromHistory(item)}
-                            >
-                                <span className={`method method-${item.method.toLowerCase()}`}>
-                                    {item.method}
-                                </span>
-                                <span className="url">{item.url}</span>
-                                {item.status && (
-                                    <span className={`status ${item.status < 400 ? 'success' : 'error'}`}>
-                                        {item.status}
-                                    </span>
-                                )}
-                                {item.duration && <span className="duration">{item.duration}ms</span>}
-                            </div>
-                        ))
-                    )}
                 </div>
             </div>
         </aside>

@@ -18,17 +18,8 @@ interface SidebarProps {
   onOpenAbout: () => void
   showCopilot?: boolean
   onToggleCopilot?: () => void
-  showApiTester?: boolean
-  onToggleApiTester?: () => void
   showSnippets?: boolean
   onToggleSnippets?: () => void
-  showOracle?: boolean
-  onToggleOracle?: () => void
-  showWebView?: boolean
-  onToggleWebView?: () => void
-  hasWebViewUrl?: boolean
-  showFileExplorer?: boolean
-  onToggleFileExplorer?: () => void
 }
 
 function getRoleColor(role?: string): string {
@@ -52,17 +43,8 @@ export function Sidebar({
   onOpenAbout,
   showCopilot = false,
   onToggleCopilot,
-  showApiTester = false,
-  onToggleApiTester,
   showSnippets = true,
-  onToggleSnippets,
-  showOracle = true,
-  onToggleOracle,
-  showWebView = true,
-  onToggleWebView,
-  hasWebViewUrl = false,
-  showFileExplorer = false,
-  onToggleFileExplorer
+  onToggleSnippets
 }: Readonly<SidebarProps>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -392,52 +374,6 @@ export function Sidebar({
             ⚡ AI
           </button>
         )}
-        {onToggleFileExplorer && (
-          <button
-            onClick={onToggleFileExplorer}
-            title={showFileExplorer ? '隱藏 FILE' : '顯示 FILE'}
-            style={{
-              padding: '10px',
-              backgroundColor: '#78716c',
-              color: 'white',
-              border: `2px solid ${showFileExplorer ? '#22c55e' : '#ef4444'}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            📁 FILE
-          </button>
-        )}
-        {onToggleApiTester && (
-          <button
-            onClick={onToggleApiTester}
-            title={showApiTester ? '隱藏 API' : '顯示 API'}
-            style={{
-              padding: '10px',
-              backgroundColor: '#78716c',
-              color: 'white',
-              border: `2px solid ${showApiTester ? '#22c55e' : '#ef4444'}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            🌐 API
-          </button>
-        )}
         {onToggleSnippets && (
           <button
             onClick={onToggleSnippets}
@@ -459,52 +395,6 @@ export function Sidebar({
             }}
           >
             📋 筆記
-          </button>
-        )}
-        {onToggleOracle && (
-          <button
-            onClick={onToggleOracle}
-            title={showOracle ? '隱藏資料庫連線' : '顯示資料庫連線'}
-            style={{
-              padding: '10px',
-              backgroundColor: '#78716c',
-              color: 'white',
-              border: `2px solid ${showOracle ? '#22c55e' : '#ef4444'}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            🗄️ 資料庫連線
-          </button>
-        )}
-        {onToggleWebView && hasWebViewUrl && (
-          <button
-            onClick={onToggleWebView}
-            title={showWebView ? '隱藏網頁視窗' : '顯示網頁視窗'}
-            style={{
-              padding: '10px',
-              backgroundColor: '#78716c',
-              color: 'white',
-              border: `2px solid ${showWebView ? '#22c55e' : '#ef4444'}`,
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            🌐 網頁視窗
           </button>
         )}
         <div className="sidebar-footer-buttons">

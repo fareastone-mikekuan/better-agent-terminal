@@ -9,8 +9,10 @@ interface FileExplorerPanelProps {
   width?: number
   isFloating?: boolean
   onToggleFloat?: () => void
-  onAnalyzeFile?: (fileName: string, content: string) => void
   workspaceId?: string | null  // 用於工作區獨立模式
+  collapsed?: boolean
+  onCollapse?: () => void
+  onAnalyzeFile?: (filePath: string, fileName: string) => void  // AI 分析檔案
 }
 
 interface RemoteConnection {
@@ -43,8 +45,10 @@ export function FileExplorerPanel({
   width = 400,
   isFloating = false,
   onToggleFloat,
-  onAnalyzeFile,
-  workspaceId
+  workspaceId,
+  collapsed = false,
+  onCollapse,
+  onAnalyzeFile
 }: Readonly<FileExplorerPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
@@ -488,29 +492,6 @@ export function FileExplorerPanel({
     }
   }
 
-  const handleAnalyzeWithAI = async (file: FileItem) => {
-    if (!onAnalyzeFile) {
-      setError('ℹ️ Copilot 功能未啟用')
-      return
-    }
-    
-    try {
-      setError('🤖 正在讀取檔案並傳送給 AI...')
-      const readResult = await window.electronAPI.ftp.read(file.path)
-      
-      if (!readResult.success) {
-        throw new Error(readResult.error || '讀取檔案失敗')
-      }
-      
-      // 傳送給 Copilot 分析
-      onAnalyzeFile(file.name, readResult.content)
-      setError('✅ 已傳送給 Copilot 分析')
-      setTimeout(() => setError(null), 2000)
-    } catch (err) {
-      setError(`AI 分析失敗: ${(err as Error).message}`)
-    }
-  }
-
   const handleDownloadFile = async (file: FileItem) => {
     try {
       setError('正在下載文件...')
@@ -527,6 +508,26 @@ export function FileExplorerPanel({
       setTimeout(() => setError(null), 3000)
     } catch (err) {
       setError(`下載失敗: ${(err as Error).message}`)
+    }
+  }
+
+  const handleAnalyzeWithAI = async (file: FileItem) => {
+    if (!onAnalyzeFile) return
+    
+    try {
+      setError('正在讀取文件進行 AI 分析...')
+      const readResult = await window.electronAPI.ftp.read(file.path)
+      
+      if (!readResult.success) {
+        throw new Error(readResult.error || '讀取文件失敗')
+      }
+      
+      // 傳送到 CHAT 進行分析
+      onAnalyzeFile(readResult.content || '', file.name)
+      setError('✅ 已傳送到 CHAT 進行分析')
+      setTimeout(() => setError(null), 2000)
+    } catch (err) {
+      setError(`AI 分析失敗: ${(err as Error).message}`)
     }
   }
 
@@ -605,6 +606,20 @@ export function FileExplorerPanel({
 
   if (!isVisible) return null
 
+  // Collapsed state - show icon bar
+  if (collapsed && onCollapse) {
+    return (
+      <div
+        className="collapsed-bar collapsed-bar-right"
+        onClick={onCollapse}
+        title="展開檔案瀏覽器"
+        style={{ width: '40px' }}
+      >
+        <div className="collapsed-bar-icon">📁</div>
+      </div>
+    )
+  }
+
   // Get workspace name for display
   const state = workspaceStore.getState()
   const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
@@ -629,10 +644,9 @@ export function FileExplorerPanel({
         overflow: 'hidden'
       }
     : { 
-        width: isFloating ? '100%' : width,
-        height: isFloating ? '100%' : '100%',
+        width: '100%',
+        height: '100%',
         backgroundColor: '#1f1d1a',
-        borderRight: isFloating ? 'none' : '1px solid #3a3836',
         display: 'flex',
         flexDirection: 'column' as const,
         overflow: 'hidden'
@@ -684,6 +698,23 @@ export function FileExplorerPanel({
               title={isFloating ? '固定面板' : '浮動視窗'}
             >
               {isFloating ? '📌' : '🔗'}
+            </button>
+          )}
+          {onCollapse && !isFloating && (
+            <button 
+              onClick={onCollapse}
+              style={{
+                background: 'none',
+                border: '1px solid #3a3836',
+                color: '#dfdbc3',
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '2px 6px',
+                borderRadius: '3px'
+              }}
+              title="收合面板"
+            >
+              »
             </button>
           )}
           <button onClick={onClose} style={{
@@ -1356,25 +1387,27 @@ export function FileExplorerPanel({
                     )}
                     {!file.isDirectory && file.name !== '..' && (
                       <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleAnalyzeWithAI(file)
-                          }}
-                          style={{
-                            padding: '2px 6px',
-                            backgroundColor: '#7bbda4',
-                            color: '#1f1d1a',
-                            border: 'none',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            fontSize: '10px',
-                            fontWeight: 'bold'
-                          }}
-                          title="AI分析"
-                        >
-                          🤖 AI
-                        </button>
+                        {onAnalyzeFile && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAnalyzeWithAI(file)
+                            }}
+                            style={{
+                              padding: '2px 6px',
+                              backgroundColor: '#7bbda4',
+                              color: '#1f1d1a',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                              fontSize: '10px',
+                              fontWeight: 'bold'
+                            }}
+                            title="AI 分析"
+                          >
+                            🤖 AI
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()

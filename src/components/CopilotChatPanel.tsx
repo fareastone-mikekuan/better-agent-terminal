@@ -8,16 +8,12 @@ interface CopilotChatPanelProps {
   onClose: () => void
   width?: number
   onResize?: (delta: number) => void
-  oracleQueryResult?: string | null
-  webPageContent?: string | null
-  fileContent?: { fileName: string; content: string } | null
-  onRequestWebPageContent?: () => Promise<void>
-  onOpenWebView?: () => void
-  isWebViewOpen?: boolean
   workspaceId?: string | null  // 用於工作區獨立模式
+  collapsed?: boolean
+  onCollapse?: () => void
 }
 
-export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryResult, webPageContent: webPageContentProp, fileContent: fileContentProp, onRequestWebPageContent, onOpenWebView, isWebViewOpen, workspaceId }: Readonly<CopilotChatPanelProps>) {
+export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse }: Readonly<CopilotChatPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
   const isShared = settings.sharedPanels?.copilot !== false
@@ -55,12 +51,16 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
   const [error, setError] = useState<string | null>(null)
   const [targetTerminalId, setTargetTerminalId] = useState<string>('')
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
-  const [webPageContent, setWebPageContent] = useState<string | null>(webPageContentProp || null)
-  const [fileContent, setFileContent] = useState<{ fileName: string; content: string } | null>(fileContentProp || null)
-  const [oracleContent, setOracleContent] = useState<string | null>(oracleQueryResult || null)
+  
+  // Multi-instance support for Oracle and WebView
+  const [selectedOracleId, setSelectedOracleId] = useState<string>('')
+  const [selectedWebViewId, setSelectedWebViewId] = useState<string>('')
+  const [oracleInstances, setOracleInstances] = useState<TerminalInstance[]>([])
+  const [webViewInstances, setWebViewInstances] = useState<TerminalInstance[]>([])
+  
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
-  const [loadedFileData, setLoadedFileData] = useState(false)
+  const [loadedFile, setLoadedFile] = useState<{ content: string; fileName: string } | null>(null)
   const terminalOutputBuffer = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -207,30 +207,37 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     }
   }, [isFloating])
 
-  // Update content when props change
+  // Query available Oracle and WebView instances from workspace
   useEffect(() => {
-    setOracleContent(oracleQueryResult || null)
-  }, [oracleQueryResult])
+    if (!workspaceId) return
 
-  useEffect(() => {
-    setWebPageContent(webPageContentProp || null)
-  }, [webPageContentProp])
+    const updateInstances = () => {
+      const allTerminals = workspaceStore.getWorkspaceTerminals(workspaceId)
+      const oracles = allTerminals.filter(t => t.type === 'oracle')
+      const webviews = allTerminals.filter(t => t.type === 'webview')
+      
+      setOracleInstances(oracles)
+      setWebViewInstances(webviews)
 
-  useEffect(() => {
-    setFileContent(fileContentProp || null)
-    if (fileContentProp) {
-      setLoadedFileData(true)
-      // 添加系統訊息提示
-      const systemMessage: CopilotMessage = {
-        role: 'system',
-        content: `📁 已載入檔案：${fileContentProp.fileName}\n檔案大小：${(fileContentProp.content.length / 1024).toFixed(2)} KB\n\n請在下方輸入您的問題，AI 會根據檔案內容回答。`,
-        timestamp: Date.now()
+      // Auto-select first instance if not already selected
+      if (oracles.length > 0 && !selectedOracleId) {
+        setSelectedOracleId(oracles[0].id)
       }
-      setMessages(prev => [...prev, systemMessage])
-      // 預填輸入提示
-      setInput('請分析這個檔案')
+      if (webviews.length > 0 && !selectedWebViewId) {
+        setSelectedWebViewId(webviews[0].id)
+      }
     }
-  }, [fileContentProp])
+
+    // Initial load
+    updateInstances()
+
+    // Subscribe to workspace store changes
+    const unsubscribe = workspaceStore.subscribe(() => {
+      updateInstances()
+    })
+
+    return unsubscribe
+  }, [workspaceId, selectedOracleId, selectedWebViewId])
 
   useEffect(() => {
     localStorage.setItem('copilot-floating', JSON.stringify(isFloating))
@@ -272,22 +279,38 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
       const copilotConfig = settingsStore.getCopilotConfig()
       setIsEnabled(!!copilotConfig?.apiKey && !!copilotConfig?.model)
     }
-    
+
     updateEnabled()
     const unsubscribe = settingsStore.subscribe(updateEnabled)
     return unsubscribe
   }, [])
 
-  // Load available terminals
+  // Listen for file analysis requests from FILE panel
+  useEffect(() => {
+    const handleFileAnalysisRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<{ fileContent: string; fileName: string }>
+      const { fileContent, fileName } = customEvent.detail
+      
+      // 保存已加載的文件，不直接填充輸入框
+      setLoadedFile({ content: fileContent, fileName })
+      
+      // 自動滾動到底部
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+    }
+
+    window.addEventListener('file-analysis-request', handleFileAnalysisRequest)
+    return () => {
+      window.removeEventListener('file-analysis-request', handleFileAnalysisRequest)
+    }
+  }, [])
+
+  // Update available terminals when workspace changes
   useEffect(() => {
     const updateTerminals = () => {
-      const state = workspaceStore.getState()
-      const currentSettings = settingsStore.getSettings()
-      const isShared = currentSettings.sharedPanels?.copilot !== false
-      
-      // If shared, show all terminals; if not shared, only show current workspace's terminals
-      let terminals = state.terminals.filter(t => t.type === 'terminal')
-      
+      let terminals = workspaceStore.getState().terminals.filter(t => t.type === 'terminal')
+      console.log('[Copilot] All terminals:', terminals.length)
       if (!isShared && workspaceId) {
         terminals = terminals.filter(t => t.workspaceId === workspaceId)
         console.log('[Copilot] Filtered terminals for workspace:', workspaceId, 'count:', terminals.length)
@@ -307,7 +330,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     updateTerminals()
     const unsubscribe = workspaceStore.subscribe(updateTerminals)
     return unsubscribe
-  }, [targetTerminalId, workspaceId])
+  }, [targetTerminalId, workspaceId, isShared])
 
   // Listen to terminal output
   useEffect(() => {
@@ -320,13 +343,6 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     const cleanup = window.electronAPI.pty.onOutput(handleOutput)
     return cleanup
   }, [])
-
-  // Update oracle content when it changes
-  useEffect(() => {
-    if (oracleQueryResult) {
-      setOracleContent(oracleQueryResult)
-    }
-  }, [oracleQueryResult])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -451,16 +467,24 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
 
     let messageContent = input.trim()
 
-    
-    // 如果有已读取的分析数据，附加到消息中
-    if (loadedFileData && fileContent) {
-      messageContent = `請分析以下檔案內容：\n\n檔案名稱：${fileContent.fileName}\n\n內容：\n${fileContent.content}\n\n我的問題：${messageContent}`
-      setLoadedFileData(false)
-      setFileContent(null)
-    } else if (loadedOracleData && oracleContent) {
-      messageContent = `請分析以下Oracle查詢結果：\n\n${oracleContent}\n\n我的問題：${messageContent}`
-    } else if (loadedWebPageData && webPageContent) {
-      messageContent = `請分析以下網頁內容：\n\n${webPageContent}\n\n我的問題：${messageContent}`
+    // 如果有已讀取的文件，附加到消息中
+    if (loadedFile) {
+      messageContent = `請分析以下文件內容（${loadedFile.fileName}）：\n\n${loadedFile.content}\n\n我的問題：${messageContent}`
+      setLoadedFile(null)  // 清除已加載的文件
+    }
+    // 如果有已讀取的分析數據，附加到消息中
+    else if (loadedOracleData) {
+      const selectedOracle = oracleInstances.find(o => o.id === selectedOracleId)
+      if (selectedOracle?.oracleQueryResult) {
+        messageContent = `請分析以下 Oracle 查詢結果（${selectedOracle.title}）：\n\n${selectedOracle.oracleQueryResult}\n\n我的問題：${messageContent}`
+      }
+      setLoadedOracleData(false)
+    } else if (loadedWebPageData) {
+      const selectedWebView = webViewInstances.find(w => w.id === selectedWebViewId)
+      if (selectedWebView?.webviewContent) {
+        messageContent = `請分析以下網頁內容（${selectedWebView.title}）：\n\n${selectedWebView.webviewContent}\n\n我的問題：${messageContent}`
+      }
+      setLoadedWebPageData(false)
     }
 
     const userMessage: CopilotMessage = {
@@ -508,10 +532,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
 範例：
 - 用戶："列出檔案"
   ${isWindows ? 'PowerShell: \`\`\`bash\nGet-ChildItem\n\`\`\`' : 'Bash: \`\`\`bash\nls -la\n\`\`\`'}
-- 看到輸出後，你："目錄中有 X 個檔案，包括..."
-
-${oracleContent ? `\n資料庫查詢結果：\n${oracleContent}` : ''}
-${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
+- 看到輸出後，你："目錄中有 X 個檔案，包括..."`
 
       const options: CopilotChatOptions = {
         messages: [
@@ -550,6 +571,20 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
 
   if (!isVisible) return null
 
+  // Collapsed state - show icon bar
+  if (collapsed && onCollapse) {
+    return (
+      <div
+        className="collapsed-bar collapsed-bar-right"
+        onClick={onCollapse}
+        title="展開 AI 助手"
+        style={{ width: '40px' }}
+      >
+        <div className="collapsed-bar-icon">🤖</div>
+      </div>
+    )
+  }
+
   // Get workspace name for display
   const state = workspaceStore.getState()
   const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
@@ -563,21 +598,27 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
 
   return (
     <aside className={panelClass} style={panelStyle}>
-      <div className="copilot-chat-header" onMouseDown={handleDragStart}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h3>⚡ AI</h3>
-          <span style={{ 
-            fontSize: '11px', 
-            color: isShared ? '#7bbda4' : '#f59e0b',
-            backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
-            padding: '2px 8px',
-            borderRadius: '10px',
-            fontWeight: 'bold'
-          }}>
-            {modeLabel}
-          </span>
+      <div className="copilot-chat-header" onMouseDown={handleDragStart} style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+        {/* Title Row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3>⚡ AI</h3>
+            <span style={{ 
+              fontSize: '11px', 
+              color: isShared ? '#7bbda4' : '#f59e0b',
+              backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontWeight: 'bold'
+            }}>
+              {modeLabel}
+            </span>
+          </div>
+          <button className="copilot-close-btn" onClick={onClose}>×</button>
         </div>
-        <div className="copilot-chat-controls">
+        
+        {/* Buttons Row */}
+        <div className="copilot-chat-controls" style={{ justifyContent: 'flex-start' }}>
           {messages.length > 0 && (
             <>
               <button
@@ -603,13 +644,6 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
           >
             📂
           </button>
-          <button
-            className="copilot-toggle-btn"
-            onClick={viewAllMessages}
-            title="查看所有對話"
-          >
-            📊
-          </button>
           {messages.length > 0 && (
             <button
               className="copilot-toggle-btn"
@@ -631,7 +665,15 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
           >
             {isFloating ? '📌' : '🔗'}
           </button>
-          <button className="copilot-close-btn" onClick={onClose}>×</button>
+          {onCollapse && !isFloating && (
+            <button
+              className="copilot-toggle-btn"
+              onClick={onCollapse}
+              title="收合面板"
+            >
+              »
+            </button>
+          )}
         </div>
       </div>
 
@@ -799,84 +841,237 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
           </div>
 
           <div className="copilot-chat-actions">
-            <button
-              onClick={() => {
-                if (oracleContent) {
-                  setLoadedOracleData(true)
-                  setLoadedWebPageData(false)
-                } else {
-                  setError('請先執行Oracle查詢')
-                }
-              }}
-              className={`copilot-action-btn ${loadedOracleData ? 'active' : ''} ${!oracleContent ? 'hint-needed' : ''}`}
-              title={oracleContent ? "分析Oracle查詢結果" : "請先執行Oracle查詢"}
-            >
-              🔍 分析Oracle
-            </button>
-            <button
-              onClick={async () => {
-                // 先检查WebView是否打开
-                if (!isWebViewOpen) {
-                  if (onOpenWebView) {
-                    onOpenWebView()
-                    setError('已開啟WebView面板，請稍後再試')
-                  } else {
-                    setError('請先點擊左側「網頁」按鈕開啟WebView面板')
-                  }
-                  return
-                }
-                
-                // 如果没有内容，先抓取
-                if (!webPageContent && onRequestWebPageContent) {
-                  try {
-                    await onRequestWebPageContent()
-                    // 等待一下让状态更新
-                    await new Promise(resolve => setTimeout(resolve, 500))
-                  } catch (e) {
-                    console.error('Failed to fetch web content:', e)
-                    setError('無法抓取網頁內容')
-                    return
-                  }
-                }
-                
-                // 现在应该有内容了
-                if (webPageContent) {
-                  setLoadedWebPageData(true)
-                  setLoadedOracleData(false)
-                  setLoadedFileData(false)
-                } else {
-                  setError('網頁內容為空，請確認網頁已加載')
-                }
-              }}
-              className={`copilot-action-btn ${loadedWebPageData ? 'active' : ''}`}
-              title="分析網頁內容"
-            >
-              🌐 分析網頁
-            </button>
-            {fileContent && (
-              <button
-                onClick={() => {
-                  setLoadedFileData(true)
-                  setLoadedOracleData(false)
-                  setLoadedWebPageData(false)
-                }}
-                className={`copilot-action-btn ${loadedFileData ? 'active' : ''}`}
-                title="分析檔案內容"
-              >
-                📁 分析檔案
-              </button>
-            )}
+            <div style={{ 
+              padding: '12px', 
+              backgroundColor: '#1e1e1e', 
+              borderRadius: '6px',
+              border: '1px solid #2d2d2d',
+              width: '100%',
+              boxSizing: 'border-box'
+            }}>
+              {/* 終端選擇 */}
+              {availableTerminals.length > 0 && (
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: '#8c8c8c',
+                    fontWeight: '600',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    💻 終端
+                  </div>
+                  <select
+                    value={targetTerminalId}
+                    onChange={(e) => setTargetTerminalId(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: '80px',
+                      maxWidth: '100%',
+                      padding: '6px 8px',
+                      fontSize: '12px',
+                      backgroundColor: '#2d2d2d',
+                      color: '#e0e0e0',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {availableTerminals.map(terminal => (
+                      <option key={terminal.id} value={terminal.id}>
+                        {terminal.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 資料庫選擇 */}
+              {oracleInstances.length > 0 && (
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: '#8c8c8c',
+                    fontWeight: '600',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    🗄️ 資料庫
+                  </div>
+                  <select
+                    value={selectedOracleId}
+                    onChange={(e) => {
+                      setSelectedOracleId(e.target.value)
+                      setLoadedOracleData(false) // 切換時清除已讀取狀態
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: '60px',
+                      maxWidth: '100%',
+                      padding: '6px 8px',
+                      fontSize: '12px',
+                      backgroundColor: '#2d2d2d',
+                      color: '#e0e0e0',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {oracleInstances.map(oracle => (
+                      <option key={oracle.id} value={oracle.id}>
+                        {oracle.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const selectedOracle = oracleInstances.find(o => o.id === selectedOracleId)
+                      if (selectedOracle?.oracleQueryResult) {
+                        setLoadedOracleData(true)
+                        setLoadedWebPageData(false)
+                      } else {
+                        setError('請先執行 Oracle 查詢')
+                      }
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: '#dc2626',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                      transition: 'background-color 0.15s'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = '#e53e3e'
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = '#dc2626'
+                    }}
+                  >
+                    🔍 分析
+                  </button>
+                </div>
+              )}
+
+              {/* 網頁選擇 */}
+              {webViewInstances.length > 0 && (
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px'
+                }}>
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: '#8c8c8c',
+                    fontWeight: '600',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    🌐 網頁
+                  </div>
+                  <select
+                    value={selectedWebViewId}
+                    onChange={(e) => {
+                      setSelectedWebViewId(e.target.value)
+                      setLoadedWebPageData(false) // 切換時清除已讀取狀態
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: '60px',
+                      maxWidth: '100%',
+                      padding: '6px 8px',
+                      fontSize: '12px',
+                      backgroundColor: '#2d2d2d',
+                      color: '#e0e0e0',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {webViewInstances.map(webview => (
+                      <option key={webview.id} value={webview.id}>
+                        {webview.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const selectedWebView = webViewInstances.find(w => w.id === selectedWebViewId)
+                      if (selectedWebView?.webviewContent) {
+                        setLoadedWebPageData(true)
+                        setLoadedOracleData(false)
+                      } else {
+                        setError('網頁內容為空，請確認網頁已加載')
+                      }
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                      transition: 'background-color 0.15s'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = '#22c55e'
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = '#16a34a'
+                    }}
+                  >
+                    🌐 分析
+                  </button>
+                </div>
+              )}
+
+              {availableTerminals.length === 0 && oracleInstances.length === 0 && webViewInstances.length === 0 && (
+                <div style={{ 
+                  padding: '20px', 
+                  textAlign: 'center', 
+                  color: '#666',
+                  fontSize: '12px'
+                }}>
+                  暫無可用的終端或實例
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="copilot-chat-input-area">
-            {(loadedOracleData || loadedWebPageData || loadedFileData) && (
+            {(loadedFile || loadedOracleData || loadedWebPageData) && (
               <div className="copilot-data-loaded-hint">
-                ✅ 已讀取{loadedOracleData ? 'Oracle查詢結果' : loadedFileData ? `檔案：${fileContent?.fileName}` : '網頁內容'}，請輸入您的問題
+                ✅ 已讀取
+                {loadedFile
+                  ? `文件（${loadedFile.fileName}）`
+                  : loadedOracleData 
+                    ? `Oracle 查詢結果（${oracleInstances.find(o => o.id === selectedOracleId)?.title}）`
+                    : `網頁內容（${webViewInstances.find(w => w.id === selectedWebViewId)?.title}）`
+                }，請輸入您的問題
                 <button
                   onClick={() => {
+                    setLoadedFile(null)
                     setLoadedOracleData(false)
                     setLoadedWebPageData(false)
-                    setLoadedFileData(false)
                   }}
                   className="copilot-clear-data-btn"
                   title="清除已讀取的資料"
@@ -884,17 +1079,6 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
                   ✕
                 </button>
               </div>
-            )}
-            {availableTerminals.length > 0 && (
-              <select
-                value={targetTerminalId}
-                onChange={(e) => setTargetTerminalId(e.target.value)}
-                className="copilot-terminal-select"
-              >
-                {availableTerminals.map(t => (
-                  <option key={t.id} value={t.id}>{t.title}</option>
-                ))}
-              </select>
             )}
             <textarea
               value={input}
