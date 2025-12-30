@@ -1,166 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <!-- Magical rainbow gradient for book -->
-    <linearGradient id="magicBookGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="50%" style="stop-color:#16213e"/>
-      <stop offset="100%" style="stop-color:#0f3460"/>
+    <!-- Modern gradient background -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
     </linearGradient>
-
-    <!-- Glowing page gradient -->
-    <linearGradient id="glowPageGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#e8daef"/>
-      <stop offset="50%" style="stop-color:#d2b4de"/>
-      <stop offset="100%" style="stop-color:#bb8fce"/>
+    
+    <!-- Glossy effect -->
+    <linearGradient id="glossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.3"/>
+      <stop offset="50%" style="stop-color:#ffffff;stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.1"/>
     </linearGradient>
-
-    <!-- Rainbow quill gradient -->
-    <linearGradient id="rainbowQuill" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ff6b6b"/>
-      <stop offset="25%" style="stop-color:#feca57"/>
-      <stop offset="50%" style="stop-color:#48dbfb"/>
-      <stop offset="75%" style="stop-color:#ff9ff3"/>
-      <stop offset="100%" style="stop-color:#54a0ff"/>
-    </linearGradient>
-
-    <!-- Magic aura -->
-    <radialGradient id="magicAura" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" style="stop-color:#a855f7;stop-opacity:0.8"/>
-      <stop offset="50%" style="stop-color:#7c3aed;stop-opacity:0.4"/>
-      <stop offset="100%" style="stop-color:#4c1d95;stop-opacity:0"/>
-    </radialGradient>
-
-    <!-- Glow filter -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <filter id="strongGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="15" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <!-- Background magic circle -->
-  <circle cx="256" cy="280" r="180" fill="url(#magicAura)" opacity="0.5"/>
-
-  <!-- Book base/cover with magical glow -->
-  <path d="M80 120 L80 420 Q80 440 100 440 L380 440 Q400 440 400 420 L400 120 Q400 100 380 100 L100 100 Q80 100 80 120 Z"
-        fill="url(#magicBookGrad)" filter="url(#glow)"/>
-
-  <!-- Book spine with runes -->
-  <rect x="70" y="100" width="25" height="340" rx="5" fill="#0a0a1a"/>
-
-  <!-- Spine runes -->
-  <g fill="#a855f7" opacity="0.8">
-    <text x="82" y="160" font-size="16" text-anchor="middle">✧</text>
-    <text x="82" y="200" font-size="16" text-anchor="middle">◈</text>
-    <text x="82" y="240" font-size="16" text-anchor="middle">✦</text>
-    <text x="82" y="280" font-size="16" text-anchor="middle">◇</text>
-    <text x="82" y="320" font-size="16" text-anchor="middle">✧</text>
-    <text x="82" y="360" font-size="16" text-anchor="middle">◈</text>
-    <text x="82" y="400" font-size="16" text-anchor="middle">✦</text>
-  </g>
-
-  <!-- Glowing book pages -->
-  <path d="M95 110 L95 430 L385 430 Q395 430 395 420 L395 120 Q395 110 385 110 Z"
-        fill="url(#glowPageGrad)" filter="url(#glow)"/>
-
-  <!-- Magic symbols on pages instead of lines -->
-  <g fill="#7c3aed" opacity="0.6" font-size="14">
-    <text x="130" y="165">⌘ ∆ ◊ ∞ ☆ ∴ ⊕</text>
-    <text x="130" y="195">◈ ✧ ∇ ⊛ ◇ ∞ ⌘</text>
-    <text x="130" y="225">✦ ⊕ ∆ ◊ ✧ ∴ ◈</text>
-    <text x="130" y="255">∞ ◇ ⊛ ∇ ☆ ⌘ ✦</text>
-    <text x="130" y="285">⊕ ∴ ◊ ✧ ◈ ∆ ∞</text>
-    <text x="130" y="315">◇ ☆ ⌘ ⊛ ✦ ∇ ◊</text>
-    <text x="130" y="345">∆ ◈ ∞ ✧ ⊕ ◇ ☆</text>
-  </g>
-
-  <!-- Central magic circle on book -->
-  <circle cx="245" cy="270" r="60" fill="none" stroke="#a855f7" stroke-width="2" opacity="0.5"/>
-  <circle cx="245" cy="270" r="45" fill="none" stroke="#c084fc" stroke-width="1" opacity="0.4"/>
-
-  <!-- Pentagram in circle -->
-  <polygon points="245,215 275,295 210,240 280,240 215,295"
-           fill="none" stroke="#e9d5ff" stroke-width="1.5" opacity="0.4"/>
-
-  <!-- Massive magic glow under quill tip -->
-  <ellipse cx="340" cy="380" rx="80" ry="40" fill="url(#magicAura)" filter="url(#strongGlow)"/>
-
-  <!-- Rainbow Quill feather with glow -->
-  <path d="M460 30
-           Q425 70 400 140
-           Q375 210 345 300
-           L330 350
-           L340 355
-           Q375 280 405 190
-           Q435 100 475 45
-           Q490 25 460 30 Z"
-        fill="url(#rainbowQuill)" filter="url(#glow)"/>
-
-  <!-- Quill feather light streaks -->
-  <path d="M458 40 Q430 85 410 155 Q390 220 365 300"
-        stroke="white" stroke-width="2" fill="none" opacity="0.3"/>
-
-  <!-- Quill tip (nib) with magic -->
-  <path d="M330 350 L310 410 L325 415 L340 355 Z" fill="#1a1a2e"/>
-
-  <!-- Magic ink drop -->
-  <circle cx="315" cy="405" r="8" fill="#a855f7" filter="url(#glow)"/>
-
-  <!-- Floating magic particles -->
-  <g filter="url(#glow)">
-    <circle cx="280" cy="360" r="5" fill="#ff6b6b" opacity="0.9">
-      <animate attributeName="cy" values="360;350;360" dur="2s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="360" cy="340" r="4" fill="#48dbfb" opacity="0.8">
-      <animate attributeName="cy" values="340;325;340" dur="1.8s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.8;0.3;0.8" dur="1.8s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="320" cy="420" r="4" fill="#feca57" opacity="0.85">
-      <animate attributeName="cy" values="420;408;420" dur="2.2s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.85;0.35;0.85" dur="2.2s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="390" cy="370" r="3" fill="#ff9ff3" opacity="0.75">
-      <animate attributeName="cy" values="370;358;370" dur="1.6s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.75;0.25;0.75" dur="1.6s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="250" cy="390" r="3" fill="#54a0ff" opacity="0.7">
-      <animate attributeName="cy" values="390;380;390" dur="2.4s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.7;0.2;0.7" dur="2.4s" repeatCount="indefinite"/>
-    </circle>
-  </g>
-
-  <!-- Sparkle stars -->
-  <g fill="#faf089" filter="url(#glow)">
-    <path d="M260 320 L264 332 L276 332 L266 340 L270 352 L260 344 L250 352 L254 340 L244 332 L256 332 Z" opacity="0.9">
-      <animate attributeName="opacity" values="0.9;0.3;0.9" dur="1.2s" repeatCount="indefinite"/>
-      <animate attributeName="transform" values="scale(1);scale(1.2);scale(1)" dur="1.2s" repeatCount="indefinite" type="scale"/>
-    </path>
-    <path d="M380 300 L383 308 L391 308 L385 314 L388 322 L380 316 L372 322 L375 314 L369 308 L377 308 Z" opacity="0.8">
-      <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite"/>
-    </path>
-    <path d="M420 100 L422 106 L428 106 L423 110 L425 116 L420 112 L415 116 L417 110 L412 106 L418 106 Z" opacity="0.7">
-      <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1.8s" repeatCount="indefinite"/>
-    </path>
-  </g>
-
-  <!-- Extra magic swirls from quill -->
-  <path d="M320 400 Q280 380 300 350 Q320 320 280 300"
-        stroke="url(#rainbowQuill)" stroke-width="3" fill="none" opacity="0.4" filter="url(#glow)">
-    <animate attributeName="opacity" values="0.4;0.1;0.4" dur="3s" repeatCount="indefinite"/>
-  </path>
-  <path d="M330 390 Q370 360 340 330 Q310 300 350 280"
-        stroke="url(#rainbowQuill)" stroke-width="2" fill="none" opacity="0.3" filter="url(#glow)">
-    <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2.5s" repeatCount="indefinite"/>
-  </path>
+  <!-- Background circle with gradient -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGrad)"/>
+  
+  <!-- Glossy overlay -->
+  <circle cx="256" cy="256" r="240" fill="url(#glossGrad)"/>
+  
+  <!-- Letter M -->
+  <text 
+    x="256" 
+    y="380" 
+    font-family="Arial, sans-serif" 
+    font-size="360" 
+    font-weight="bold" 
+    text-anchor="middle" 
+    fill="#ffffff"
+    style="text-shadow: 0 8px 16px rgba(0,0,0,0.3);">
+    M
+  </text>
 </svg>

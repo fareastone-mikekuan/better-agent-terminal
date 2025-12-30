@@ -79,6 +79,18 @@ export default function App() {
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
 
+  // Apply theme to body element
+  useEffect(() => {
+    const applyTheme = () => {
+      const theme = settingsStore.getSettings().theme
+      document.body.setAttribute('data-theme', theme)
+    }
+    
+    applyTheme()
+    const unsubscribe = settingsStore.subscribe(applyTheme)
+    return unsubscribe
+  }, [])
+
   // Debug: log state on mount
   useEffect(() => {
     console.log('[App] Initial state:', state)

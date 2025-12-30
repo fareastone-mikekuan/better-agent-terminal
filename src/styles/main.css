@@ -28,6 +28,23 @@
   --radius-lg: 16px;
 }
 
+/* Light theme */
+body[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f3f3;
+  --bg-tertiary: #e8e8e8;
+  --bg-hover: #e0e0e0;
+  --text-primary: #1e1e1e;
+  --text-secondary: #666666;
+  --border-color: #d0d0d0;
+  --accent-color: #0078d4;
+  --accent-hover: #106ebe;
+  --claude-accent: #d97706;
+  --danger-color: #d32f2f;
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(0, 0, 0, 0.1);
+}
+
 html,
 body,
 #root {

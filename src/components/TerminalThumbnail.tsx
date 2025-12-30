@@ -6,6 +6,7 @@ import { getAgentPreset } from '../types/agent-presets'
 
 // Global preview cache - persists across component unmounts
 const previewCache = new Map<string, string>()
+const webviewScreenshotCache = new Map<string, string>()
 
 // Strip all ANSI escape sequences and problematic characters
 const stripAnsi = (str: string): string => {
@@ -57,31 +58,70 @@ interface TerminalThumbnailProps {
 
 export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumbnailProps) {
   const [preview, setPreview] = useState<string>(previewCache.get(terminal.id) || '')
+  const [screenshot, setScreenshot] = useState<string>(webviewScreenshotCache.get(terminal.id) || '')
   const [fontFamily, setFontFamily] = useState<string>(settingsStore.getFontFamilyString())
 
   // Check if this is an agent terminal
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
+  const isWebView = terminal.type === 'webview'
 
   useEffect(() => {
-    setupGlobalListener()
+    if (!isWebView) {
+      setupGlobalListener()
 
-    // Poll for updates from cache
-    const interval = setInterval(() => {
-      const cached = previewCache.get(terminal.id) || ''
-      setPreview(cached)
-    }, 500)
+      // Poll for updates from cache
+      const interval = setInterval(() => {
+        const cached = previewCache.get(terminal.id) || ''
+        setPreview(cached)
+      }, 500)
 
-    // Subscribe to settings changes for font updates
-    const unsubscribeSettings = settingsStore.subscribe(() => {
-      setFontFamily(settingsStore.getFontFamilyString())
-    })
+      // Subscribe to settings changes for font updates
+      const unsubscribeSettings = settingsStore.subscribe(() => {
+        setFontFamily(settingsStore.getFontFamilyString())
+      })
 
-    return () => {
-      clearInterval(interval)
-      unsubscribeSettings()
+      return () => {
+        clearInterval(interval)
+        unsubscribeSettings()
+      }
+    } else {
+      // For webview, capture screenshot periodically
+      const captureScreenshot = async () => {
+        try {
+          const webviewElement = document.querySelector(`webview[data-terminal-id="${terminal.id}"]`) as any
+          if (webviewElement && webviewElement.capturePage) {
+            const image = await webviewElement.capturePage()
+            if (image) {
+              const dataUrl = image.toDataURL()
+              webviewScreenshotCache.set(terminal.id, dataUrl)
+              setScreenshot(dataUrl)
+            }
+          }
+        } catch (error) {
+          console.error('Failed to capture webview screenshot:', error)
+        }
+      }
+
+      // Capture initial screenshot
+      setTimeout(captureScreenshot, 1000)
+
+      // Update screenshot every 5 seconds when active
+      const interval = setInterval(() => {
+        if (isActive) {
+          captureScreenshot()
+        }
+      }, 5000)
+
+      // Check cache
+      const cached = webviewScreenshotCache.get(terminal.id)
+      if (cached) {
+        setScreenshot(cached)
+      }
+
+      return () => clearInterval(interval)
     }
-  }, [terminal.id])
+  }, [terminal.id, isWebView, isActive])
 
   return (
     <div
@@ -110,7 +150,33 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
         <ActivityIndicator terminalId={terminal.id} size="small" />
       </div>
       <div className="thumbnail-preview" style={{ fontFamily }}>
-        {preview || '$ _'}
+        {isWebView ? (
+          screenshot ? (
+            <img 
+              src={screenshot} 
+              alt="Web preview" 
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'cover',
+                borderRadius: '4px'
+              }} 
+            />
+          ) : (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              height: '100%',
+              color: '#999',
+              fontSize: '12px'
+            }}>
+              🌐 {terminal.url || '網頁載入中...'}
+            </div>
+          )
+        ) : (
+          preview || '$ _'
+        )}
       </div>
     </div>
   )

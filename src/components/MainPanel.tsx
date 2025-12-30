@@ -105,6 +105,7 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
             height="100%"
             url={terminal.url || ''}
             isFloating={false}
+            terminalId={terminal.id}
             onContentChange={(content) => {
               // Store webview content in terminal for AI reading
               workspaceStore.updateTerminal(terminal.id, { webviewContent: content })

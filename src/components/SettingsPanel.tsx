@@ -1130,6 +1130,45 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               />
             </div>
 
+            {/* Theme Selection */}
+            <div className="settings-group" style={{ marginBottom: '16px' }}>
+              <label>介面主題</label>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => settingsStore.setTheme('dark')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: settings.theme === 'dark' ? '#0078d4' : 'transparent',
+                    color: settings.theme === 'dark' ? '#fff' : 'var(--text-primary)',
+                    border: '2px solid ' + (settings.theme === 'dark' ? '#0078d4' : 'var(--border-color)'),
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  🌙 深色模式
+                </button>
+                <button
+                  onClick={() => settingsStore.setTheme('light')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: settings.theme === 'light' ? '#0078d4' : 'transparent',
+                    color: settings.theme === 'light' ? '#fff' : 'var(--text-primary)',
+                    border: '2px solid ' + (settings.theme === 'light' ? '#0078d4' : 'var(--border-color)'),
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  ☀️ 淺色模式
+                </button>
+              </div>
+            </div>
+
             {/* Font Family, Color Theme, Preview in one row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div className="settings-group" style={{ marginBottom: 0 }}>

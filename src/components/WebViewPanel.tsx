@@ -7,6 +7,7 @@ interface WebViewPanelProps {
   onToggleFloat?: () => void
   onClose?: () => void
   onContentChange?: (content: string) => void
+  terminalId?: string
 }
 
 export interface WebViewPanelRef {
@@ -14,7 +15,7 @@ export interface WebViewPanelRef {
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url: initialUrl, isFloating = false, onToggleFloat, onClose, onContentChange }, ref) {
+  function WebViewPanel({ height, url: initialUrl, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
   const [zoom, setZoom] = useState(75)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
@@ -450,6 +451,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
           <webview
             ref={webviewRef}
             src={currentUrl}
+            data-terminal-id={terminalId}
             style={{
               width: '100%',
               height: '100%',
