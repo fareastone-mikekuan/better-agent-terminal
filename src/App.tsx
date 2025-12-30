@@ -501,7 +501,15 @@ export default function App() {
                 collapsed={panelSettings.snippetSidebar.collapsed}
                 onCollapse={handleSnippetCollapse}
                 onPasteToTerminal={handlePasteToTerminal}
-                style={{ height: `${rightPanelHeights.snippet}%`, minHeight: '100px' }}
+                style={{ 
+                  height: ((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) 
+                    ? `${rightPanelHeights.snippet}%` 
+                    : '100%',
+                  minHeight: '100px',
+                  flex: ((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) 
+                    ? undefined 
+                    : 1
+                }}
               />
               {((!isOracleFloating && showOracle) || (!isWebViewFloating && showWebView && settings.webViewUrl)) && (
                 <ResizeHandle direction="vertical" onResize={handleSnippetHeightResize} />
@@ -635,35 +643,7 @@ export default function App() {
         />
       )}
       
-      {/* Panel Control Menu */}
-      <div style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        zIndex: 2000
-      }}>
-        {!showSnippetSidebar && (
-          <button
-            onClick={() => setShowSnippetSidebar(true)}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#2a7d2e',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-            title="显示 Snippets"
-          >
-            📋 Snippets
-          </button>
-        )}
-      </div>
+
       
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />

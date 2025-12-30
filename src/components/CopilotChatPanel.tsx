@@ -345,6 +345,56 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
     return commands
   }
 
+  // Auto-analyze command output
+  const analyzeCommandOutput = async (command: string, output: string) => {
+    setIsLoading(true)
+    try {
+      const copilotConfig = settingsStore.getCopilotConfig()
+      if (!copilotConfig?.apiKey || !copilotConfig?.model) {
+        return
+      }
+
+      const systemPrompt = `你是終端 AI Agent。用戶剛執行了命令，現在需要你分析輸出。
+      
+回應要求：
+1. 直接說明輸出內容的關鍵信息
+2. 如果發現問題或異常，指出來
+3. 建議下一步操作（如果適用）
+4. 保持簡潔專業，不要廢話`
+
+      // 將命令和輸出合併為一條用戶訊息
+      const analysisMessage: CopilotMessage = {
+        role: 'user',
+        content: `命令：\`${command}\`\n\n輸出：\n\`\`\`\n${output}\n\`\`\``
+      }
+
+      const currentMessages = [...messages, analysisMessage]
+
+      const options: CopilotChatOptions = {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...currentMessages
+        ]
+      }
+
+      const chatId = `chat-${Date.now()}`
+      const response = await window.electronAPI.copilot.chat(chatId, options)
+
+      if (response?.content) {
+        const assistantMessage: CopilotMessage = {
+          role: 'assistant',
+          content: response.content
+        }
+        // 同時更新 messages，包含分析請求和回應
+        setMessages(prev => [...prev, analysisMessage, assistantMessage])
+      }
+    } catch (error) {
+      console.error('Analysis error:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // Execute command in terminal
   const executeCommand = async (command: string) => {
     try {
@@ -371,12 +421,19 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
       // Clean up ANSI codes for display
       const cleanOutput = output.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim()
 
+      // Add execution result as user message (command output)
       const executionMessage: CopilotMessage = {
-        role: 'assistant',
-        content: `✅ 已在終端 "${terminalName}" 執行命令：\`${command}\`\n\n**輸出：**\n\`\`\`\n${cleanOutput.substring(0, 2000) || '(無輸出)'}\n\`\`\``
+        role: 'user',
+        content: `[終端輸出]\n\`\`\`\n${cleanOutput.substring(0, 2000) || '(無輸出)'}\n\`\`\``
       }
 
       setMessages(prev => [...prev, executionMessage])
+      
+      // Trigger AI to analyze the output
+      setTimeout(() => {
+        analyzeCommandOutput(command, cleanOutput)
+      }, 500)
+      
       return { success: true, output: cleanOutput }
     } catch (error) {
       console.error('Execute command error:', error)
@@ -424,14 +481,34 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, oracleQueryR
         throw new Error('請先在設定中配置 Copilot API Key 和模型')
       }
 
-      const systemPrompt = `你是一個AI助手，專門幫助用戶操作終端和執行命令。
+      // 獲取當前終端的 shell 類型
+      const currentTerminal = availableTerminals.find(t => t.id === targetTerminalId)
+      const shellType = currentTerminal?.shell || 'powershell'
+      const isWindows = shellType.toLowerCase().includes('powershell') || 
+                        shellType.toLowerCase().includes('pwsh') || 
+                        shellType.toLowerCase().includes('cmd') ||
+                        shellType.toLowerCase().includes('windows')
+      
+      const shellInfo = isWindows 
+        ? 'PowerShell (使用 `Get-ChildItem` 或 `dir` 而非 `ls -la`，`Remove-Item` 而非 `rm`，等等)'
+        : 'Bash/Zsh (可使用標準 Unix 命令如 `ls -la`, `rm`, `grep` 等)'
 
-重要規則：
-1. 當用戶要求執行命令時，簡潔回應（如："正在執行 ls 命令..."），然後立即提供代碼塊
-2. 命令格式：\`\`\`bash\nls -la\n\`\`\`
-3. 命令執行後，輸出會自動顯示在下一則訊息中
-4. 如果用戶要求"執行並分析"，只需提供命令即可，不要在執行前分析
-5. 看到執行結果後，用戶可以繼續提問
+      const systemPrompt = `你是一個智能終端 AI Agent，能夠理解用戶意圖並主動執行相關命令。
+
+**當前環境**：${shellInfo}
+
+核心行為：
+1. **使用正確的命令語法**：根據當前 shell 類型選擇合適的命令
+2. **直接執行，不廢話**：用戶要求時，立即提供命令代碼塊，無需額外說明
+3. **命令格式**：\`\`\`bash\n命令內容\n\`\`\`
+4. **分析結果**：命令執行後會自動返回輸出，你需要分析輸出並給出有用的見解
+5. **主動建議**：根據情境主動建議下一步操作
+6. **保持簡潔**：回應要專業、準確、直接
+
+範例：
+- 用戶："列出檔案"
+  ${isWindows ? 'PowerShell: \`\`\`bash\nGet-ChildItem\n\`\`\`' : 'Bash: \`\`\`bash\nls -la\n\`\`\`'}
+- 看到輸出後，你："目錄中有 X 個檔案，包括..."
 
 ${oracleContent ? `\n資料庫查詢結果：\n${oracleContent}` : ''}
 ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
@@ -462,17 +539,7 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
       setLoadedOracleData(false)
       setLoadedWebPageData(false)
 
-      // Check if response contains commands (for user awareness)
-      const commands = extractCommands(response.content)
-      
-      if (commands.length > 0) {
-        // Just show a warning message, don't auto-execute
-        const commandListMsg: CopilotMessage = {
-          role: 'system',
-          content: `ℹ️ **偵測到 ${commands.length} 個命令**\n\n如需執行這些命令，請手動複製到終端執行，或使用下方的執行按鈕。\n\n⚠️ **安全提示**：執行前請仔細檢查命令內容，確保安全。`
-        }
-        setMessages(prev => [...prev, commandListMsg])
-      }
+      // Commands will be shown with execute buttons inline, no need for extra messages
     } catch (error) {
       console.error('Send message error:', error)
       setError((error as Error).message)
@@ -586,44 +653,86 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
               const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
               return (
                 <div key={idx} className={`copilot-message ${msg.role}`}>
+                  {msg.role === 'user' && (
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#8c8c8c',
+                      marginBottom: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      justifyContent: 'flex-end'
+                    }}>
+                      <span>你</span>
+                    </div>
+                  )}
+                  {msg.role === 'assistant' && (
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#8c8c8c',
+                      marginBottom: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <span style={{ 
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '4px',
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '10px',
+                        fontWeight: 'bold',
+                        color: 'white'
+                      }}>
+                        AI
+                      </span>
+                      <span>GitHub Copilot</span>
+                    </div>
+                  )}
                   <div className="copilot-message-content">
                     {msg.content}
                   </div>
                   {commands.length > 0 && (
                     <div style={{ 
-                      marginTop: '8px', 
+                      marginTop: '6px', 
                       display: 'flex', 
                       flexDirection: 'column',
-                      gap: '6px',
+                      gap: '4px',
                       padding: '8px',
-                      backgroundColor: '#2a2826',
-                      borderRadius: '4px',
-                      border: '1px solid #3a3836'
+                      backgroundColor: '#1e1e1e',
+                      borderRadius: '6px',
+                      border: '1px solid #2d2d2d',
+                      maxWidth: '90%'
                     }}>
                       <div style={{ 
-                        fontSize: '12px', 
-                        color: '#dfdbc3', 
-                        fontWeight: 'bold',
-                        marginBottom: '4px'
+                        fontSize: '11px', 
+                        color: '#8c8c8c', 
+                        fontWeight: '500',
+                        marginBottom: '2px'
                       }}>
-                        🔧 偵測到 {commands.length} 個命令：
+                        偵測到 {commands.length} 個命令
                       </div>
                       {commands.map((cmd, cmdIdx) => (
                         <div key={cmdIdx} style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
-                          gap: '8px',
+                          gap: '6px',
                           fontSize: '11px'
                         }}>
                           <code style={{ 
                             flex: 1, 
-                            padding: '4px 8px', 
-                            backgroundColor: '#1f1d1a',
-                            borderRadius: '3px',
+                            padding: '6px 8px', 
+                            backgroundColor: '#2d2d2d',
+                            borderRadius: '4px',
                             color: '#7bbda4',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
+                            whiteSpace: 'nowrap',
+                            fontSize: '11px',
+                            fontFamily: 'Consolas, Monaco, Courier New, monospace'
                           }}>
                             {cmd}
                           </code>
@@ -631,17 +740,28 @@ ${webPageContent ? `\n網頁內容：\n${webPageContent}` : ''}`
                             onClick={() => executeCommand(cmd)}
                             disabled={!targetTerminalId}
                             style={{
-                              padding: '4px 12px',
-                              backgroundColor: targetTerminalId ? '#7bbda4' : '#555',
-                              color: targetTerminalId ? '#1f1d1a' : '#999',
+                              padding: '5px 10px',
+                              backgroundColor: targetTerminalId ? '#0078d4' : '#404040',
+                              color: targetTerminalId ? '#ffffff' : '#8c8c8c',
                               border: 'none',
-                              borderRadius: '3px',
+                              borderRadius: '4px',
                               cursor: targetTerminalId ? 'pointer' : 'not-allowed',
                               fontSize: '11px',
-                              fontWeight: 'bold',
-                              whiteSpace: 'nowrap'
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s ease'
                             }}
                             title={targetTerminalId ? '執行命令' : '請先選擇終端'}
+                            onMouseOver={(e) => {
+                              if (targetTerminalId) {
+                                e.currentTarget.style.backgroundColor = '#1084d8'
+                              }
+                            }}
+                            onMouseOut={(e) => {
+                              if (targetTerminalId) {
+                                e.currentTarget.style.backgroundColor = '#0078d4'
+                              }
+                            }}
                           >
                             ▶ 執行
                           </button>
