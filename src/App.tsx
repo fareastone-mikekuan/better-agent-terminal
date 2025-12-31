@@ -317,7 +317,9 @@ export default function App() {
           )}
         </>
       )}
-      <main className="main-content">
+      <main className="main-content" style={{
+        marginRight: showSnippetSidebar && !isSnippetFloating && panelSettings.snippetSidebar.collapsed ? '32px' : '0'
+      }}>
         {state.workspaces.length > 0 ? (
           // Render ALL workspaces, hide inactive ones with CSS to preserve terminal state
           state.workspaces.map(workspace => (
@@ -354,7 +356,9 @@ export default function App() {
         <div className="right-panel-container" style={{ 
           width: panelSettings.snippetSidebar.width, 
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          position: 'relative',
+          zIndex: 10
         }}>
           {/* Snippets Panel */}
           <SnippetSidebar
@@ -379,7 +383,7 @@ export default function App() {
           right: 0,
           top: 0,
           bottom: 0,
-          zIndex: 100
+          zIndex: 50
         }}>
           <SnippetSidebar
             isVisible={showSnippetSidebar}

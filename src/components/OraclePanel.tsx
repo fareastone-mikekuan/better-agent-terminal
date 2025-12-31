@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 interface OraclePanelProps {
   onQueryResult?: (result: string) => void
@@ -50,6 +51,9 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
   const [isExpanded, setIsExpanded] = useState(true)
   const [showNewTabDialog, setShowNewTabDialog] = useState(false)
   const [newTabName, setNewTabName] = useState('')
+  const [showActivityMonitor, setShowActivityMonitor] = useState(false)
+  const [activeSessions, setActiveSessions] = useState<any[]>([])
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false)
 
   // Dragging and resizing state
   const [position, setPosition] = useState(() => {
@@ -193,6 +197,69 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
     setTabs(newTabs)
     if (activeTabId === id) {
       setActiveTabId(newTabs[0]?.id || null)
+    }
+  }
+
+  // 查询正在运行的SQL和JOB
+  const fetchActiveSessions = async () => {
+    if (!activeTab || !activeTab.isConnected) {
+      updateTab(activeTab!.id, { error: '请先连接数据库' })
+      return
+    }
+
+    setIsLoadingActivity(true)
+    
+    try {
+      // TODO: 实现真实的Oracle查询
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // 模拟数据 - 查询 V$SESSION 和 V$SQL
+      const mockSessions = [
+        {
+          sid: 145,
+          serial: 23891,
+          username: 'BILLING_USER',
+          program: 'JDBC Thin Client',
+          status: 'ACTIVE',
+          sql_text: 'SELECT * FROM BILLING_TRANSACTIONS WHERE PROCESS_DATE = TRUNC(SYSDATE) AND STATUS = \'PROCESSING\' ORDER BY CREATE_TIME',
+          elapsed_time: 127.5,
+          cpu_time: 89.2,
+          module: 'BillingJob',
+          action: 'ProcessMonthlyBilling'
+        },
+        {
+          sid: 238,
+          serial: 45123,
+          username: 'ETL_USER',
+          program: 'SQL*Plus',
+          status: 'ACTIVE',
+          sql_text: 'INSERT INTO FACT_SALES SELECT /*+ PARALLEL(4) */ * FROM STG_SALES WHERE BATCH_ID = :1',
+          elapsed_time: 45.8,
+          cpu_time: 32.1,
+          module: 'DataWarehouse',
+          action: 'LoadFactTable'
+        },
+        {
+          sid: 412,
+          serial: 67890,
+          username: 'REPORT_USER',
+          program: 'OracleBI',
+          status: 'ACTIVE',
+          sql_text: 'SELECT SUM(AMOUNT), CUSTOMER_ID FROM TRANSACTIONS GROUP BY CUSTOMER_ID HAVING SUM(AMOUNT) > 10000',
+          elapsed_time: 23.4,
+          cpu_time: 18.9,
+          module: 'ReportEngine',
+          action: 'GenerateReport'
+        }
+      ]
+      
+      setActiveSessions(mockSessions)
+      setShowActivityMonitor(true)
+    } catch (error) {
+      console.error('Failed to fetch active sessions:', error)
+      updateTab(activeTab!.id, { error: `查询活动会话失败: ${(error as Error).message}` })
+    } finally {
+      setIsLoadingActivity(false)
     }
   }
 
@@ -353,7 +420,7 @@ Value7       Value8       Value9
     border: '1px solid #3a3836',
     borderRadius: '6px',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-    zIndex: 1000,
+    zIndex: 1100,
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -368,7 +435,8 @@ Value7       Value8       Value9
   }
 
   return (
-    <div ref={containerRef} style={containerStyle}>
+    <>
+      <div ref={containerRef} style={containerStyle}>
       {/* Header */}
       <div
         style={{
@@ -831,6 +899,23 @@ Value7       Value8       Value9
                   {isLoading ? '執行中...' : '▶ 執行查詢'}
                 </button>
                 <button
+                  onClick={fetchActiveSessions}
+                  disabled={isLoadingActivity}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: isLoadingActivity ? '#555' : '#ff9800',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isLoadingActivity ? 'not-allowed' : 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 'bold'
+                  }}
+                  title="查看正在运行的SQL和JOB"
+                >
+                  {isLoadingActivity ? '查詢中...' : '📊 活動監控'}
+                </button>
+                <button
                   onClick={handleDisconnect}
                   style={{
                     padding: '8px 16px',
@@ -936,6 +1021,164 @@ Value7       Value8       Value9
           title="拖動調整大小"
         />
       )}
-    </div>
+      </div>
+
+      {/* 活动监控弹窗 - 使用 Portal 渲染到 body 层级 */}
+    {showActivityMonitor && createPortal(
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999
+        }}
+        onClick={() => setShowActivityMonitor(false)}
+      >
+        <div
+          style={{
+            backgroundColor: '#1f1d1a',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '90%',
+            maxHeight: '80%',
+            overflow: 'auto',
+            border: '1px solid #3a3836',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ color: '#dfdbc3', margin: 0, fontSize: '18px' }}>
+              📊 正在運行的SQL和JOB ({activeSessions.length})
+            </h3>
+            <button
+              onClick={() => setShowActivityMonitor(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#999',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '0 8px'
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {activeSessions.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+              暫無正在運行的會話
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {activeSessions.map((session, index) => (
+                <div
+                  key={index}
+                  style={{
+                    backgroundColor: '#2a2826',
+                    border: '1px solid #3a3836',
+                    borderRadius: '8px',
+                    padding: '16px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#4caf50', fontWeight: 'bold' }}>
+                        SID: {session.sid}
+                      </span>
+                      <span style={{ color: '#2196f3' }}>
+                        👤 {session.username}
+                      </span>
+                      <span style={{ color: '#ff9800' }}>
+                        💻 {session.program}
+                      </span>
+                      {session.module && (
+                        <span style={{ color: '#9c27b0' }}>
+                          📦 {session.module}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      style={{
+                        padding: '4px 12px',
+                        backgroundColor: session.status === 'ACTIVE' ? '#4caf50' : '#999',
+                        color: 'white',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {session.status}
+                    </span>
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ color: '#999', fontSize: '11px', marginBottom: '4px' }}>SQL 語句:</div>
+                    <pre
+                      style={{
+                        backgroundColor: '#1a1816',
+                        padding: '12px',
+                        borderRadius: '6px',
+                        color: '#dfdbc3',
+                        fontSize: '12px',
+                        fontFamily: 'monospace',
+                        overflow: 'auto',
+                        maxHeight: '120px',
+                        margin: 0,
+                        border: '1px solid #3a3836'
+                      }}
+                    >
+                      {session.sql_text}
+                    </pre>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '24px', fontSize: '12px' }}>
+                    <span style={{ color: '#999' }}>
+                      ⏱ 運行時間: <strong style={{ color: '#dfdbc3' }}>{session.elapsed_time.toFixed(1)}s</strong>
+                    </span>
+                    <span style={{ color: '#999' }}>
+                      💻 CPU: <strong style={{ color: '#dfdbc3' }}>{session.cpu_time.toFixed(1)}s</strong>
+                    </span>
+                    {session.action && (
+                      <span style={{ color: '#999' }}>
+                        🎯 動作: <strong style={{ color: '#dfdbc3' }}>{session.action}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ marginTop: '20px', textAlign: 'center' }}>
+            <button
+              onClick={fetchActiveSessions}
+              disabled={isLoadingActivity}
+              style={{
+                padding: '8px 24px',
+                backgroundColor: '#0078d4',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: isLoadingActivity ? 'wait' : 'pointer',
+                fontSize: '13px',
+                fontWeight: 'bold'
+              }}
+            >
+              {isLoadingActivity ? '刷新中...' : '🔄 刷新'}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   )
 }

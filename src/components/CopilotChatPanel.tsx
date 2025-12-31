@@ -598,10 +598,13 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 
   return (
     <aside className={panelClass} style={panelStyle}>
-      <div className="copilot-chat-header" onMouseDown={handleDragStart} style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+      <div className="copilot-chat-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
         {/* Title Row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: isFloating ? 'move' : 'default' }}
+            onMouseDown={handleDragStart}
+          >
             <h3>⚡ AI</h3>
             <span style={{ 
               fontSize: '11px', 
@@ -614,7 +617,24 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
               {modeLabel}
             </span>
           </div>
-          <button className="copilot-close-btn" onClick={onClose}>×</button>
+          {onCollapse && !isFloating && (
+            <button
+              className="copilot-toggle-btn"
+              onClick={onCollapse}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="收合面板"
+              style={{ padding: '6px 12px' }}
+            >
+              «
+            </button>
+          )}
+          <button 
+            className="copilot-close-btn" 
+            onClick={onClose}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            ×
+          </button>
         </div>
         
         {/* Buttons Row */}
@@ -665,15 +685,6 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
           >
             {isFloating ? '📌' : '🔗'}
           </button>
-          {onCollapse && !isFloating && (
-            <button
-              className="copilot-toggle-btn"
-              onClick={onCollapse}
-              title="收合面板"
-            >
-              »
-            </button>
-          )}
         </div>
       </div>
 
