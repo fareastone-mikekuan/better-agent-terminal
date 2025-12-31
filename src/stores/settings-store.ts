@@ -280,6 +280,125 @@ class SettingsStore {
   async isCopilotEnabled(): Promise<boolean> {
     return await window.electronAPI.copilot.isEnabled()
   }
+
+  // Export all data (settings + workspaces + localStorage)
+  async exportAllData(): Promise<boolean> {
+    try {
+      // Get file path from dialog
+      const filePath = await window.electronAPI.data.export()
+      if (!filePath) return false
+
+      // Collect all data
+      const exportData = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        settings: await window.electronAPI.settings.load(),
+        workspaces: await window.electronAPI.workspace.load(),
+        localStorage: {} as Record<string, string>
+      }
+
+      // Export all localStorage data
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key) {
+          exportData.localStorage[key] = localStorage.getItem(key) || ''
+        }
+      }
+
+      // Log export summary
+      console.log('=== Export Summary ===')
+      console.log('Export Date:', exportData.exportDate)
+      
+      // Parse and log workspace data
+      if (exportData.workspaces) {
+        try {
+          const wsData = JSON.parse(exportData.workspaces)
+          console.log('Workspaces:', wsData.workspaces?.length || 0)
+          console.log('Terminals:', wsData.terminals?.length || 0)
+          if (wsData.terminals) {
+            console.log('Terminal types:', wsData.terminals.map((t: any) => ({ type: t.type, id: t.id })))
+          }
+        } catch (e) {
+          console.warn('Could not parse workspace data')
+        }
+      }
+      
+      console.log('LocalStorage keys:', Object.keys(exportData.localStorage).length)
+      console.log('Key list:', Object.keys(exportData.localStorage))
+
+      // Save to file
+      const success = await window.electronAPI.data.saveToFile(
+        filePath,
+        JSON.stringify(exportData, null, 2)
+      )
+
+      console.log('Export result:', success ? 'SUCCESS' : 'FAILED')
+      return success
+    } catch (error) {
+      console.error('Failed to export data:', error)
+      return false
+    }
+  }
+
+  // Import all data
+  async importAllData(): Promise<boolean> {
+    try {
+      // Get file content from dialog
+      const data = await window.electronAPI.data.import()
+      if (!data) return false
+
+      const importData = JSON.parse(data)
+
+      // Validate data structure
+      if (!importData.version || !importData.exportDate) {
+        throw new Error('Invalid backup file format')
+      }
+
+      console.log('Importing data from:', importData.exportDate)
+      console.log('Data includes:', Object.keys(importData))
+
+      // Restore settings
+      if (importData.settings) {
+        console.log('Restoring settings...')
+        await window.electronAPI.settings.save(importData.settings)
+        await this.load()
+      }
+
+      // Restore workspaces
+      if (importData.workspaces) {
+        console.log('Restoring workspaces...')
+        await window.electronAPI.workspace.save(importData.workspaces)
+        // Parse and log workspace info
+        try {
+          const workspaceData = JSON.parse(importData.workspaces)
+          console.log('Workspace count:', workspaceData.workspaces?.length || 0)
+          console.log('Terminal count:', workspaceData.terminals?.length || 0)
+        } catch (e) {
+          console.warn('Could not parse workspace data for logging')
+        }
+        // ✅ 重新載入 workspace store 以套用新數據
+        const { workspaceStore } = await import('./workspace-store')
+        await workspaceStore.load()
+        console.log('[Import] Workspace store reloaded')
+      }
+
+      // Restore localStorage
+      if (importData.localStorage) {
+        console.log('Restoring localStorage items:', Object.keys(importData.localStorage).length)
+        for (const [key, value] of Object.entries(importData.localStorage)) {
+          if (typeof value === 'string') {
+            localStorage.setItem(key, value)
+          }
+        }
+      }
+
+      console.log('Import completed successfully')
+      return true
+    } catch (error) {
+      console.error('Failed to import data:', error)
+      return false
+    }
+  }
 }
 
 export const settingsStore = new SettingsStore()

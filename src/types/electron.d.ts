@@ -20,6 +20,11 @@ interface ElectronAPI {
     load: () => Promise<string | null>
     getShellPath: (shell: string) => Promise<string>
   }
+  data: {
+    export: () => Promise<string | null>
+    import: () => Promise<string | null>
+    saveToFile: (filePath: string, data: string) => Promise<boolean>
+  }
   dialog: {
     selectFolder: () => Promise<string | null>
   }

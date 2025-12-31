@@ -265,6 +265,63 @@ ipcMain.handle('settings:load', async () => {
   }
 })
 
+// Data export/import handlers
+ipcMain.handle('data:export', async () => {
+  if (!mainWindow) return null
+  
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '匯出所有數據',
+    defaultPath: `better-terminal-backup-${new Date().toISOString().split('T')[0]}.json`,
+    filters: [
+      { name: 'JSON 檔案', extensions: ['json'] },
+      { name: '所有檔案', extensions: ['*'] }
+    ]
+  })
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  return result.filePath
+})
+
+ipcMain.handle('data:import', async () => {
+  if (!mainWindow) return null
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '匯入數據',
+    filters: [
+      { name: 'JSON 檔案', extensions: ['json'] },
+      { name: '所有檔案', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  const fs = await import('fs/promises')
+  try {
+    const data = await fs.readFile(result.filePaths[0], 'utf-8')
+    return data
+  } catch (error) {
+    console.error('Failed to read import file:', error)
+    return null
+  }
+})
+
+ipcMain.handle('data:save-to-file', async (_event, filePath: string, data: string) => {
+  const fs = await import('fs/promises')
+  try {
+    await fs.writeFile(filePath, data, 'utf-8')
+    return true
+  } catch (error) {
+    console.error('Failed to save file:', error)
+    return false
+  }
+})
+
 ipcMain.handle('settings:get-shell-path', async (_event, shellType: string) => {
   const fs = await import('fs')
 

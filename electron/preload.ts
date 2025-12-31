@@ -42,6 +42,11 @@ const electronAPI = {
     load: () => ipcRenderer.invoke('settings:load'),
     getShellPath: (shell: string) => ipcRenderer.invoke('settings:get-shell-path', shell)
   },
+  data: {
+    export: () => ipcRenderer.invoke('data:export'),
+    import: () => ipcRenderer.invoke('data:import'),
+    saveToFile: (filePath: string, data: string) => ipcRenderer.invoke('data:save-to-file', filePath, data)
+  },
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:select-folder')
   },

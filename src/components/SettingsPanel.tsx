@@ -262,6 +262,48 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   }
 
+  // Handle export all data
+  const handleExportData = async () => {
+    try {
+      const success = await settingsStore.exportAllData()
+      if (success) {
+        alert('✅ 數據匯出成功！')
+      } else {
+        alert('❌ 匯出已取消或失敗')
+      }
+    } catch (error) {
+      console.error('Export error:', error)
+      alert('❌ 匯出失敗：' + (error as Error).message)
+    }
+  }
+
+  // Handle import all data
+  const handleImportData = async () => {
+    const confirmed = confirm(
+      '⚠️ 匯入將會覆蓋所有現有數據（設定、工作區、CHAT對話、筆記等）\n\n' +
+      '建議先匯出當前數據作為備份。\n\n' +
+      '確定要繼續嗎？'
+    )
+    
+    if (!confirmed) return
+
+    try {
+      const success = await settingsStore.importAllData()
+      if (success) {
+        alert('✅ 數據匯入成功！\n\n頁面將重新載入以套用變更。')
+        // 延迟一下确保文件写入完成
+        setTimeout(() => {
+          window.location.reload()
+        }, 100)
+      } else {
+        alert('❌ 匯入已取消或失敗')
+      }
+    } catch (error) {
+      console.error('Import error:', error)
+      alert('❌ 匯入失敗：' + (error as Error).message)
+    }
+  }
+
   const terminalColors = settingsStore.getTerminalColors()
 
   return (
@@ -1347,6 +1389,61 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
             <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
               <strong>瀏覽器儲存：</strong> localStorage (Copilot 聊天記錄、面板位置)
+            </div>
+          </div>
+
+          {/* Data Backup Section */}
+          <div className="settings-section">
+            <h3>💾 數據備份</h3>
+            <div className="settings-group">
+              <p style={{ fontSize: '13px', color: '#888', marginBottom: '12px' }}>
+                匯出或匯入所有數據，包含設定、工作區、終端狀態、CHAT 對話記錄、筆記等。
+              </p>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={handleExportData}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    backgroundColor: '#2d4a2d',
+                    color: '#7bbda4',
+                    border: '1px solid #7bbda4',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📦 匯出所有數據
+                </button>
+                <button
+                  onClick={handleImportData}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    backgroundColor: '#3d2f1f',
+                    color: '#f59e0b',
+                    border: '1px solid #f59e0b',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📥 匯入數據
+                </button>
+              </div>
+              <p style={{ fontSize: '11px', color: '#666', marginTop: '8px', fontStyle: 'italic' }}>
+                💡 提示：定期備份可防止數據丟失，也可用於跨機器同步設定
+              </p>
             </div>
           </div>
 

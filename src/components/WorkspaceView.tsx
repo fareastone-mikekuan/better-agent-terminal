@@ -173,17 +173,23 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
 
   // Restore PTY processes for loaded terminals (from saved state)
   useEffect(() => {
-    if (isActive) {
-      console.log('[WorkspaceView] restoreTerminals useEffect triggered, terminals:', terminals.length)
+    console.log('[WorkspaceView] restoreTerminals useEffect - isActive:', isActive, 'terminals.length:', terminals.length)
+    if (isActive && terminals.length > 0) {
+      console.log('[WorkspaceView] Starting terminal restoration for workspace:', workspace.id)
+      console.log('[WorkspaceView] Terminals to restore:', terminals.map(t => ({ id: t.id, type: t.type, cwd: t.cwd })))
+      
       const restoreTerminals = async () => {
         const shell = await getShellFromSettings()
         const settings = settingsStore.getSettings()
         const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
 
         for (const terminal of terminals) {
-          console.log('[WorkspaceView] Processing terminal:', { id: terminal.id, type: terminal.type })
+          console.log('[WorkspaceView] Processing terminal:', { id: terminal.id, type: terminal.type, title: terminal.title })
           // Skip non-terminal types (they don't need PTY)
-          if (terminal.type !== 'terminal') continue
+          if (terminal.type !== 'terminal') {
+            console.log('[WorkspaceView] Skipping non-terminal type:', terminal.type)
+            continue
+          }
 
           // Check if PTY already exists
           let ptyExists = false

@@ -95,6 +95,23 @@ export class PtyManager {
   create(options: CreatePtyOptions): boolean {
     const { id, cwd, type, shell: shellOverride, customEnv = {} } = options
 
+    // ✅ 驗證目錄是否存在
+    const fs = require('fs')
+    if (!fs.existsSync(cwd)) {
+      console.error(`[PtyManager] Directory does not exist: ${cwd}`)
+      // 發送錯誤訊息到終端
+      if (!this.window.isDestroyed()) {
+        this.window.webContents.send('pty:output', id, 
+          `\r\n⚠️  [錯誤] 工作目錄不存在：${cwd}\r\n` +
+          `   這個工作區可能是從其他電腦匯入的。\r\n` +
+          `   請關閉此工作區，或手動更改工作目錄。\r\n\r\n`
+        )
+        // 立即發送退出訊號，防止 UI 卡住
+        this.window.webContents.send('pty:exit', id, 1)
+      }
+      return false
+    }
+
     let shell = shellOverride || this.getDefaultShell()
     
     // If shell path is relative (contains path separators), resolve it from project root

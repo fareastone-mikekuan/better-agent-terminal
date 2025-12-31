@@ -288,38 +288,7 @@ export default function App() {
         onResize={handleSidebarResize}
         onDoubleClick={handleSidebarResetWidth}
       />
-      {/* Copilot Chat Panel - between sidebar and main content */}
-      {showCopilot && (
-        <>
-          <CopilotChatPanel 
-            isVisible={showCopilot}
-            onClose={() => setShowCopilot(false)}
-            width={copilotWidth}
-            workspaceId={state.activeWorkspaceId}
-            collapsed={panelSettings.copilot.collapsed}
-            onCollapse={handleCopilotCollapse}
-          />
-          {!panelSettings.copilot.collapsed && (
-            <ResizeHandle
-              direction="horizontal"
-              onResize={(delta) => {
-                setCopilotWidth(prev => {
-                  const newWidth = Math.min(700, Math.max(300, prev + delta))
-                  localStorage.setItem('copilot-width', newWidth.toString())
-                  return newWidth
-                })
-              }}
-              onDoubleClick={() => {
-                setCopilotWidth(400)
-                localStorage.setItem('copilot-width', '400')
-              }}
-            />
-          )}
-        </>
-      )}
-      <main className="main-content" style={{
-        marginRight: showSnippetSidebar && !isSnippetFloating && panelSettings.snippetSidebar.collapsed ? '32px' : '0'
-      }}>
+      <main className="main-content">
         {state.workspaces.length > 0 ? (
           // Render ALL workspaces, hide inactive ones with CSS to preserve terminal state
           state.workspaces.map(workspace => (
@@ -343,59 +312,57 @@ export default function App() {
           </div>
         )}
       </main>
-      {/* Resize handle for snippet sidebar */}
-      {showSnippetSidebar && !isSnippetFloating && !panelSettings.snippetSidebar.collapsed && (
-        <ResizeHandle
-          direction="horizontal"
-          onResize={handleSnippetResize}
-          onDoubleClick={handleSnippetResetWidth}
-        />
-      )}
-      {/* Right panel container - show if snippet is visible and docked and not collapsed */}
-      {showSnippetSidebar && !isSnippetFloating && !panelSettings.snippetSidebar.collapsed && (
-        <div className="right-panel-container" style={{ 
-          width: panelSettings.snippetSidebar.width, 
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          zIndex: 10
-        }}>
-          {/* Snippets Panel */}
-          <SnippetSidebar
-            isVisible={showSnippetSidebar}
-            width={panelSettings.snippetSidebar.width}
-            collapsed={panelSettings.snippetSidebar.collapsed}
-            onCollapse={handleSnippetCollapse}
-            onClose={() => setShowSnippetSidebar(false)}
-            onPasteToTerminal={handlePasteToTerminal}
-            style={{ 
-              height: '100%',
-              minHeight: '100px',
-              flex: 1
-            }}
+
+      {/* CHAT Panel - always in flex flow */}
+      {showCopilot && (
+        <>
+          {!panelSettings.copilot.collapsed && (
+            <ResizeHandle
+              direction="horizontal"
+              onResize={(delta) => {
+                setCopilotWidth(prev => {
+                  const newWidth = Math.min(700, Math.max(300, prev - delta))
+                  localStorage.setItem('copilot-width', newWidth.toString())
+                  return newWidth
+                })
+              }}
+              onDoubleClick={() => {
+                setCopilotWidth(400)
+                localStorage.setItem('copilot-width', '400')
+              }}
+            />
+          )}
+          <CopilotChatPanel 
+            isVisible={showCopilot}
+            onClose={() => setShowCopilot(false)}
+            width={panelSettings.copilot.collapsed ? 32 : copilotWidth}
+            workspaceId={state.activeWorkspaceId}
+            collapsed={panelSettings.copilot.collapsed}
+            onCollapse={handleCopilotCollapse}
           />
-        </div>
+        </>
       )}
-      
-      {/* Collapsed Snippet Bar - fixed to right edge */}
-      {showSnippetSidebar && !isSnippetFloating && panelSettings.snippetSidebar.collapsed && (
-        <div style={{
-          position: 'fixed',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          zIndex: 50
-        }}>
+
+      {/* Snippet Panel - always in flex flow */}
+      {showSnippetSidebar && !isSnippetFloating && (
+        <>
+          {!panelSettings.snippetSidebar.collapsed && (
+            <ResizeHandle
+              direction="horizontal"
+              onResize={handleSnippetResize}
+              onDoubleClick={handleSnippetResetWidth}
+            />
+          )}
           <SnippetSidebar
             isVisible={showSnippetSidebar}
-            width={40}
+            width={panelSettings.snippetSidebar.collapsed ? 32 : panelSettings.snippetSidebar.width}
             collapsed={panelSettings.snippetSidebar.collapsed}
             onCollapse={handleSnippetCollapse}
             onClose={() => setShowSnippetSidebar(false)}
             onPasteToTerminal={handlePasteToTerminal}
             style={{ height: '100%' }}
           />
-        </div>
+        </>
       )}
       
       {/* Floating Panels */}

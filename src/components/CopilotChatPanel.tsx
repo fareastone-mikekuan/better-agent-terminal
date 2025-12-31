@@ -577,10 +577,9 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       <div
         className="collapsed-bar collapsed-bar-right"
         onClick={onCollapse}
-        title="展開 AI 助手"
-        style={{ width: '40px' }}
+        title="展開 CHAT"
       >
-        <div className="collapsed-bar-icon">🤖</div>
+        <div className="collapsed-bar-icon">💬</div>
       </div>
     )
   }
@@ -605,7 +604,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
             style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: isFloating ? 'move' : 'default', flex: 1, minWidth: 0 }}
             onMouseDown={handleDragStart}
           >
-            <h3>⚡ AI</h3>
+            <h3>CHAT</h3>
             <span style={{ 
               fontSize: '11px', 
               color: isShared ? '#7bbda4' : '#f59e0b',
@@ -625,7 +624,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
               title="收合面板"
               style={{ padding: '6px 12px' }}
             >
-              «
+              »
             </button>
           )}
           <button 

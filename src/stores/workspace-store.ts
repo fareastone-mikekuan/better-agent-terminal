@@ -425,7 +425,9 @@ class WorkspaceStore {
 
   // Get terminals for current workspace
   getWorkspaceTerminals(workspaceId: string): TerminalInstance[] {
-    return this.state.terminals.filter(t => t.workspaceId === workspaceId)
+    const terminals = this.state.terminals.filter(t => t.workspaceId === workspaceId)
+    console.log('[WorkspaceStore] getWorkspaceTerminals for', workspaceId, ':', terminals.length, 'terminals')
+    return terminals
   }
 
   // Get agent terminal for workspace (first agent terminal, regardless of type)
@@ -489,6 +491,9 @@ class WorkspaceStore {
     if (data) {
       try {
         const parsed = JSON.parse(data)
+        console.log('Loading workspace data...')
+        console.log('Workspaces:', parsed.workspaces?.length || 0)
+        console.log('Terminals:', parsed.terminals?.length || 0)
         this.state = {
           ...this.state,
           workspaces: parsed.workspaces || [],
@@ -496,10 +501,13 @@ class WorkspaceStore {
           terminals: parsed.terminals || [],
           focusedTerminalId: parsed.focusedTerminalId || null
         }
+        console.log('Workspace state updated:', this.state)
         this.notify()
       } catch (e) {
         console.error('Failed to parse workspace data:', e)
       }
+    } else {
+      console.log('No workspace data found')
     }
   }
 }
