@@ -11,3 +11,7 @@ packages/PowerShell/
 # Local environment (not committed)
 .envrc
 .env.local
+
+# Backup files (contain tokens, passwords, and sensitive data)
+better-terminal-backup-*.json
+*-backup-*.json
