@@ -34,7 +34,14 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
     const saved = localStorage.getItem('oracle-tabs')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        const loadedTabs = JSON.parse(saved)
+        // Reset connection state on load - connections don't persist across app restarts
+        return loadedTabs.map((tab: DBTab) => ({
+          ...tab,
+          isConnected: false,
+          error: '',
+          result: ''
+        }))
       } catch (e) {
         console.error('Failed to load Oracle tabs:', e)
       }

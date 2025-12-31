@@ -5,8 +5,8 @@ import { FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS } from '../types'
 type Listener = () => void
 
 const defaultSettings: AppSettings = {
-  shell: 'auto',
-  customShellPath: '',
+  shell: 'custom',
+  customShellPath: 'packages/PowerShell/pwsh.exe',
   fontSize: 14,
   fontFamily: 'sf-mono',
   customFontFamily: '',
@@ -235,6 +235,17 @@ class SettingsStore {
       try {
         const parsed = JSON.parse(data)
         this.settings = { ...defaultSettings, ...parsed }
+        
+        // 如果用户使用的是旧的系统 PowerShell 路径，迁移到项目内的 PowerShell
+        if (this.settings.shell === 'custom' && 
+            this.settings.customShellPath &&
+            (this.settings.customShellPath.includes('Program Files\\PowerShell') ||
+             this.settings.customShellPath.includes('WindowsApps\\pwsh'))) {
+          console.log('Migrating to bundled PowerShell:', this.settings.customShellPath, '→ packages/PowerShell/pwsh.exe')
+          this.settings.customShellPath = 'packages/PowerShell/pwsh.exe'
+          this.save() // 保存迁移后的设置
+        }
+        
         // 確保 webViewUrl 有預設值
         if (!this.settings.webViewUrl) {
           this.settings.webViewUrl = defaultSettings.webViewUrl

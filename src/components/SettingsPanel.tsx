@@ -1027,13 +1027,33 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
               {settings.shell === 'custom' && (
                 <div className="settings-group" style={{ marginBottom: 0 }}>
-                  <label>自訂 Shell 路徑</label>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>自訂 Shell 路徑</span>
+                    <button
+                      onClick={() => handleCustomPathChange('packages/PowerShell/pwsh.exe')}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        background: '#4a9eff',
+                        border: 'none',
+                        borderRadius: '3px',
+                        color: '#fff',
+                        cursor: 'pointer'
+                      }}
+                      title="使用專案內建的 PowerShell 7.5.4"
+                    >
+                      使用內建 PS
+                    </button>
+                  </label>
                   <input
                     type="text"
                     value={settings.customShellPath}
                     onChange={e => handleCustomPathChange(e.target.value)}
-                    placeholder="C:\path\to\shell.exe"
+                    placeholder="例如: packages/PowerShell/pwsh.exe (支援相對路徑)"
                   />
+                  <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
+                    提示：可使用相對路徑（如 packages/PowerShell/...）或絕對路徑
+                  </div>
                 </div>
               )}
 

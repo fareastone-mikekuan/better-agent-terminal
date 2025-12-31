@@ -95,7 +95,34 @@ export class PtyManager {
   create(options: CreatePtyOptions): boolean {
     const { id, cwd, type, shell: shellOverride, customEnv = {} } = options
 
-    const shell = shellOverride || this.getDefaultShell()
+    let shell = shellOverride || this.getDefaultShell()
+    
+    // If shell path is relative (contains path separators), resolve it from project root
+    // Don't resolve bare command names like 'cmd.exe', 'powershell.exe' - they're in PATH
+    const path = require('path')
+    if (shell && !path.isAbsolute(shell) && (shell.includes('/') || shell.includes('\\'))) {
+      const electron = require('electron')
+      
+      // In development: __dirname is in dist-electron/
+      // In production: app.getAppPath() points to app.asar or unpacked folder
+      let projectRoot: string
+      
+      if (electron.app.isPackaged) {
+        // Production: use app path
+        projectRoot = electron.app.getAppPath()
+        // If in .asar, go up one level
+        if (projectRoot.includes('.asar')) {
+          projectRoot = path.dirname(projectRoot)
+        }
+      } else {
+        // Development: go up from dist-electron to project root
+        projectRoot = path.resolve(__dirname, '..')
+      }
+      
+      shell = path.resolve(projectRoot, shell)
+      console.log('[PtyManager] Resolved relative shell path:', shell)
+    }
+    
     let args: string[] = []
 
     // For PowerShell (pwsh or powershell), bypass execution policy to allow unsigned scripts

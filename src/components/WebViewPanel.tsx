@@ -342,23 +342,6 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
           🔄
         </button>
         <button
-          onClick={fetchAndSaveContent}
-          disabled={isFetching}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: isFetching ? '#888' : '#7bbda4',
-            cursor: isFetching ? 'not-allowed' : 'pointer',
-            padding: '4px 8px',
-            fontSize: '12px',
-            borderRadius: '4px',
-            fontWeight: 'bold'
-          }}
-          title="抓取網頁內容供 AI 分析"
-        >
-          {isFetching ? '⏳' : '📥'}
-        </button>
-        <button
           onClick={() => setZoom(Math.max(25, zoom - 10))}
           style={{
             background: 'none',

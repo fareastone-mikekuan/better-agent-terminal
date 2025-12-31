@@ -5,6 +5,9 @@ release/
 *.log
 .DS_Store
 
+# PowerShell binaries (download separately)
+packages/PowerShell/
+
 # Local environment (not committed)
 .envrc
 .env.local

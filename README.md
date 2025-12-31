@@ -88,7 +88,7 @@
 git clone https://github.com/tony1223/better-agent-terminal.git
 cd better-agent-terminal
 
-# Install dependencies
+# Install dependencies (automatically downloads PowerShell 7.5.4 on Windows)
 npm install
 
 # Rebuild node-pty for Electron (required for full PTY support)
@@ -101,6 +101,10 @@ npm start
 # Build for production
 npm run build
 ```
+
+**Note:** On Windows, `npm install` automatically downloads PowerShell 7.5.4 (~110MB) 
+to `packages/PowerShell/`. This ensures the terminal works even if PowerShell is not 
+installed on the system. The download only happens once and is skipped on subsequent installs.
 
 ---
 
