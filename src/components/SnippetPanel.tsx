@@ -39,6 +39,7 @@ interface SnippetSidebarProps {
     width?: number
     collapsed?: boolean
     onCollapse?: () => void
+    onClose?: () => void
     onPasteToClipboard?: (content: string) => void
     onPasteToTerminal?: (content: string) => void
     style?: React.CSSProperties
@@ -331,6 +332,7 @@ export function SnippetSidebar({
     width = 280,
     collapsed = false,
     onCollapse,
+    onClose,
     onPasteToClipboard,
     onPasteToTerminal,
     style
@@ -1140,8 +1142,13 @@ export function SnippetSidebar({
                             </button>
                         )}
                         {onCollapse && (
-                            <button className="snippet-collapse-btn" onClick={onCollapse} title="Collapse Panel">
+                            <button className="snippet-collapse-btn" onClick={onCollapse} title="收合面板">
                                 »
+                            </button>
+                        )}
+                        {onClose && (
+                            <button className="snippet-collapse-btn" onClick={onClose} title="关闭" style={{ marginLeft: '4px' }}>
+                                ×
                             </button>
                         )}
                     </div>

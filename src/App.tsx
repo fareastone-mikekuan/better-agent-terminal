@@ -366,6 +366,7 @@ export default function App() {
             width={panelSettings.snippetSidebar.width}
             collapsed={panelSettings.snippetSidebar.collapsed}
             onCollapse={handleSnippetCollapse}
+            onClose={() => setShowSnippetSidebar(false)}
             onPasteToTerminal={handlePasteToTerminal}
             style={{ 
               height: '100%',
@@ -390,6 +391,7 @@ export default function App() {
             width={40}
             collapsed={panelSettings.snippetSidebar.collapsed}
             onCollapse={handleSnippetCollapse}
+            onClose={() => setShowSnippetSidebar(false)}
             onPasteToTerminal={handlePasteToTerminal}
             style={{ height: '100%' }}
           />
@@ -442,17 +444,27 @@ export default function App() {
               <button
                 onClick={() => setShowSnippetSidebar(false)}
                 style={{
-                  background: 'none',
-                  border: '1px solid #3a3836',
+                  background: 'transparent',
+                  border: '1px solid #666',
                   color: '#dfdbc3',
                   cursor: 'pointer',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  borderRadius: '4px'
+                  padding: '4px 10px',
+                  fontSize: '16px',
+                  borderRadius: '4px',
+                  lineHeight: 1,
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#444'
+                  e.currentTarget.style.borderColor = '#888'
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.borderColor = '#666'
                 }}
                 title="关闭"
               >
-                ✕
+                ×
               </button>
             </div>
           </div>
@@ -461,6 +473,7 @@ export default function App() {
             width={350}
             collapsed={false}
             onCollapse={() => {}}
+            onClose={() => setShowSnippetSidebar(false)}
             onPasteToTerminal={handlePasteToTerminal}
             style={{ height: 'auto' }}
           />

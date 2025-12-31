@@ -602,7 +602,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         {/* Title Row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div 
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: isFloating ? 'move' : 'default' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: isFloating ? 'move' : 'default', flex: 1, minWidth: 0 }}
             onMouseDown={handleDragStart}
           >
             <h3>⚡ AI</h3>
