@@ -212,6 +212,32 @@ ipcMain.handle('pty:get-capture', async (_event, id: string) => {
   return ptyManager?.getCapture(id) || ''
 })
 
+// File system helper for AI analysis
+ipcMain.handle('fs:read-file', async (_event, filePath: string, cwd: string) => {
+  try {
+    const fs = await import('fs/promises')
+    const path = await import('path')
+    
+    // Resolve relative path against cwd
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath)
+    
+    // Read file (limit to first 100 lines or 10KB)
+    const content = await fs.readFile(absolutePath, 'utf-8')
+    const lines = content.split('\n').slice(0, 100)
+    const limitedContent = lines.join('\n')
+    
+    return {
+      success: true,
+      content: limitedContent.substring(0, 10000) // Max 10KB
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+})
+
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory']

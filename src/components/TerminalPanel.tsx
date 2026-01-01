@@ -424,59 +424,28 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       
       // 只有在明确是文件路径时才尝试读取内容
       let fileContent: string | null = null
-      if (isFilePath && terminalRef.current && !isError) {
+      if (isFilePath && !isError) {
         try {
-          const buffer = terminalRef.current.buffer.active
-          const lines: string[] = []
-          // 只读取最近的50行，避免匹配到太旧的内容
-          const lineCount = Math.min(buffer.length, 50)
-          const startLine = Math.max(0, buffer.length - lineCount)
+          // 使用文件系统 API 直接读取文件
+          console.log('[AI Analysis] Reading file:', text.trim())
           
-          for (let i = startLine; i < buffer.length; i++) {
-            const line = buffer.getLine(i)
-            if (line) {
-              lines.push(line.translateToString(true))
-            }
-          }
+          // 获取当前工作目录
+          const cwd = await window.electronAPI.pty.getCwd(terminalId) || '.'
+          console.log('[AI Analysis] Current working directory:', cwd)
           
-          const bufferText = lines.join('\n')
-          const fileName = text.trim()
+          // 读取文件
+          const result = await window.electronAPI.fs.readFile(text.trim(), cwd)
           
-          // 更严格的匹配：查找 cat/head 命令后紧跟的内容
-          // 必须在最近20行内，且命令行中明确包含该文件名
-          const recentLines = lines.slice(-20)
-          let foundCatCommand = false
-          let contentStartIndex = -1
-          
-          for (let i = 0; i < recentLines.length; i++) {
-            const line = recentLines[i]
-            // 匹配 cat/head 命令行
-            if (line.match(new RegExp(`^[^\\n]*\\$.*(?:cat|head|less|more|tail)\\s+["\']?${fileName.replace('.', '\\.')}["\']?(?:\\s|$)`, 'i'))) {
-              foundCatCommand = true
-              contentStartIndex = i + 1
-              break
-            }
-          }
-          
-          if (foundCatCommand && contentStartIndex >= 0 && contentStartIndex < recentLines.length) {
-            // 提取文件内容（从命令后一行开始，到下一个提示符为止）
-            const contentLines: string[] = []
-            for (let i = contentStartIndex; i < recentLines.length; i++) {
-              const line = recentLines[i]
-              // 遇到新的命令提示符就停止
-              if (line.match(/^[\w-]+@[\w-]+.*[$%#>]\s*$/)) {
-                break
-              }
-              contentLines.push(line)
-            }
-            
-            const content = contentLines.join('\n').trim()
-            if (content.length > 20 && content.length < 5000) {
-              fileContent = content
-            }
+          if (result.success && result.content) {
+            fileContent = result.content
+            console.log('[AI Analysis] File read successfully, length:', fileContent.length)
+            console.log('[AI Analysis] Content preview:', fileContent.substring(0, 200))
+          } else {
+            console.error('[AI Analysis] Failed to read file:', result.error)
           }
         } catch (e) {
-          console.log('无法从缓冲区读取文件内容:', e)
+          console.error('[AI Analysis] Failed to read file:', e)
+          fileContent = null
         }
       }
       

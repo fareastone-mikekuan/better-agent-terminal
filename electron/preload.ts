@@ -23,6 +23,9 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('pty:exit', handler)
     }
   },
+  fs: {
+    readFile: (filePath: string, cwd: string) => ipcRenderer.invoke('fs:read-file', filePath, cwd) as Promise<{ success: boolean; content?: string; error?: string }>
+  },
   copilot: {
     setConfig: (config: any) => ipcRenderer.invoke('copilot:set-config', config),
     getConfig: () => ipcRenderer.invoke('copilot:get-config'),

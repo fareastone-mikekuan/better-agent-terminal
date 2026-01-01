@@ -8,8 +8,14 @@ interface ElectronAPI {
     kill: (id: string) => Promise<boolean>
     restart: (id: string, cwd: string, shell?: string) => Promise<boolean>
     getCwd: (id: string) => Promise<string | null>
+    startCapture: (id: string) => Promise<void>
+    stopCapture: (id: string) => Promise<string>
+    getCapture: (id: string) => Promise<string>
     onOutput: (callback: (id: string, data: string) => void) => () => void
     onExit: (callback: (id: string, exitCode: number) => void) => () => void
+  }
+  fs: {
+    readFile: (filePath: string, cwd: string) => Promise<{ success: boolean; content?: string; error?: string }>
   }
   workspace: {
     save: (data: string) => Promise<boolean>
