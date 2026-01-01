@@ -10,7 +10,7 @@ import { snippetDb, CreateSnippetInput } from './snippet-db'
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.fareastone.billing-integration')
 }
-app.name = '3101出帳整合平台'
+app.name = 'AI維運平台'
 
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
@@ -75,8 +75,8 @@ function buildMenu() {
           click: () => {
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
-              title: '關於 3101出帳整合平台',
-              message: '3101出帳整合平台',
+              title: '關於 AI維運平台',
+              message: 'AI維運平台',
           detail: `版本: ${app.getVersion()}\n\n提供先進的終端機整合平台，整合 GitHub Copilot 智慧小助手。\n\n作者: TonyQ、Mike Kuan`
             })
           }
@@ -123,7 +123,7 @@ function createWindow() {
     },
     frame: true,
     titleBarStyle: 'default',
-    title: '3101出帳整合平台',
+    title: 'AI維運平台',
     icon: path.join(__dirname, '../assets/icon.ico')
   })
 

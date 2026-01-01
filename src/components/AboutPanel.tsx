@@ -18,7 +18,7 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
         <div className="settings-content about-content">
           <div className="about-logo">
             <span className="about-icon">⬛</span>
-            <h1>3101出帳整合平台</h1>
+            <h1>AI維運平台</h1>
           </div>
 
           <p className="about-description">

@@ -307,8 +307,8 @@ export default function App() {
           ))
         ) : (
           <div className="empty-state">
-            <h2>Welcome to Better Agent Terminal</h2>
-            <p>Click "+ Add Workspace" to get started</p>
+            <h2>歡迎使用此系統</h2>
+            <p>點擊「+ 新增工作區」開始使用</p>
           </div>
         )}
       </main>
