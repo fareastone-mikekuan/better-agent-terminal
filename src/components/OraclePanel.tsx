@@ -48,6 +48,12 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
     }
     return []
   })
+  
+  // AI Analysis state
+  const [hoveredData, setHoveredData] = useState<{ text: string; x: number; y: number } | null>(null)
+  const [aiAnalysis, setAiAnalysis] = useState<string>('')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
     const saved = localStorage.getItem('oracle-active-tab')
     return saved || (tabs.length > 0 ? tabs[0].id : null)
@@ -415,6 +421,139 @@ Value7       Value8       Value9
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // AI Analysis functions
+  const handleDataHover = (text: string, event: React.MouseEvent) => {
+    // Clear previous timeout
+    if (analysisTimeoutRef.current) {
+      clearTimeout(analysisTimeoutRef.current)
+    }
+
+    // Set hovered data position
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setHoveredData({
+      text,
+      x: rect.left + rect.width / 2,
+      y: rect.top
+    })
+
+    // Delay AI analysis to avoid too many requests
+    analysisTimeoutRef.current = setTimeout(() => {
+      performAIAnalysis(text)
+    }, 500)
+  }
+
+  const handleDataLeave = () => {
+    if (analysisTimeoutRef.current) {
+      clearTimeout(analysisTimeoutRef.current)
+    }
+    setHoveredData(null)
+    setAiAnalysis('')
+    setIsAnalyzing(false)
+  }
+
+  const performAIAnalysis = async (data: string) => {
+    setIsAnalyzing(true)
+    
+    try {
+      // Simulate AI analysis - in real implementation, this would call Copilot or LLM API
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      // Generate contextual analysis based on data type
+      let analysis = ''
+      
+      // Detect data type and generate appropriate analysis
+      if (!isNaN(Number(data))) {
+        const num = Number(data)
+        analysis = `📊 數值分析:
+• 數值: ${num.toLocaleString()}
+• 類型: ${Number.isInteger(num) ? '整數' : '浮點數'}
+${num > 1000 ? `• 格式化: ${(num / 1000).toFixed(2)}K` : ''}
+${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
+💡 建議: ${num > 10000 ? '此為較大數值，建議檢查數據合理性' : '數值在正常範圍內'}`
+      } else if (data.match(/^\d{2}-[A-Z]{3}-\d{2}$/)) {
+        // Date format
+        analysis = `📅 日期分析:
+• 日期: ${data}
+• 格式: Oracle DD-MON-YY
+💡 建議: 考慮使用完整年份格式以避免歧義`
+      } else if (data.includes('@')) {
+        // Email
+        analysis = `📧 Email 分析:
+• 類型: 電子郵件地址
+• 格式: ${data.toLowerCase() === data ? '小寫' : '混合大小寫'}
+💡 建議: 確保郵件格式符合RFC標準`
+      } else if (data.length > 20) {
+        // Long text
+        analysis = `📝 文本分析:
+• 長度: ${data.length} 字元
+• 類型: 長文本
+💡 建議: 考慮建立索引以優化查詢性能`
+      } else {
+        // General text
+        analysis = `🔤 數據分析:
+• 內容: ${data}
+• 長度: ${data.length} 字元
+• 類型: ${/^[A-Z_]+$/.test(data) ? '常量/代碼' : '一般文本'}
+💡 可能的用途: ${/^[A-Z_]+$/.test(data) ? '資料表名稱、欄位名稱或狀態代碼' : '使用者輸入的數據'}`
+      }
+      
+      setAiAnalysis(analysis)
+    } catch (err) {
+      setAiAnalysis('❌ 分析失敗')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  // Parse result to make data interactive
+  const renderInteractiveResult = (result: string) => {
+    if (!result) return null
+    
+    // Split result into lines
+    const lines = result.split('\n')
+    
+    return (
+      <div>
+        {lines.map((line, lineIndex) => {
+          // Check if this is a data line (not header, separator, or summary)
+          const isDataLine = !line.includes('━') && 
+                            !line.includes('查詢結果') &&
+                            !line.includes('行已選取') &&
+                            !line.includes('執行時間') &&
+                            line.trim().length > 0
+          
+          if (isDataLine) {
+            // Split line by whitespace to get individual data values
+            const values = line.trim().split(/\s{2,}/)
+            
+            return (
+              <div key={lineIndex} style={{ display: 'flex', gap: '8px' }}>
+                {values.map((value, valueIndex) => (
+                  <span
+                    key={valueIndex}
+                    onMouseEnter={(e) => handleDataHover(value.trim(), e)}
+                    onMouseLeave={handleDataLeave}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                      borderRadius: '2px',
+                      transition: 'background-color 0.2s',
+                      backgroundColor: hoveredData?.text === value.trim() ? '#1e40af' : 'transparent'
+                    }}
+                  >
+                    {value}
+                  </span>
+                ))}
+              </div>
+            )
+          }
+          
+          return <div key={lineIndex}>{line}</div>
+        })}
+      </div>
+    )
   }
 
   const containerStyle: React.CSSProperties = isFloating ? {
@@ -959,24 +1098,78 @@ Value7       Value8       Value9
 
           {/* Result Display */}
           {activeTab.result && (
-            <div
-              style={{
-                padding: '8px',
-                backgroundColor: '#0f172a',
-                border: '1px solid #1e293b',
-                borderRadius: '4px',
-                color: '#94a3b8',
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap',
-                overflowY: 'auto',
-                overflowX: 'auto',
-                flex: 1,
-                minHeight: isFloating ? '300px' : '200px',
-                maxHeight: isFloating ? 'none' : '400px'
-              }}
-            >
-              {activeTab.result}
+            <div style={{ position: 'relative' }}>
+              <div
+                style={{
+                  padding: '8px',
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #1e293b',
+                  borderRadius: '4px',
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  overflowY: 'auto',
+                  overflowX: 'auto',
+                  flex: 1,
+                  minHeight: isFloating ? '300px' : '200px',
+                  maxHeight: isFloating ? 'none' : '400px'
+                }}
+              >
+                {renderInteractiveResult(activeTab.result)}
+              </div>
+              
+              {/* AI Analysis Tooltip */}
+              {hoveredData && createPortal(
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: `${hoveredData.x}px`,
+                    top: `${hoveredData.y - 10}px`,
+                    transform: 'translate(-50%, -100%)',
+                    backgroundColor: '#1e293b',
+                    border: '2px solid #3b82f6',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                    zIndex: 10000,
+                    maxWidth: '300px',
+                    minWidth: '200px',
+                    color: '#e2e8f0',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    whiteSpace: 'pre-wrap'
+                  }}
+                >
+                  {isAnalyzing ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="loading-spinner" style={{
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid #3b82f6',
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                      <span>AI 分析中...</span>
+                    </div>
+                  ) : aiAnalysis ? (
+                    <>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        color: '#64748b', 
+                        marginBottom: '8px',
+                        borderBottom: '1px solid #334155',
+                        paddingBottom: '4px'
+                      }}>
+                        🤖 AI 智能分析
+                      </div>
+                      {aiAnalysis}
+                    </>
+                  ) : null}
+                </div>,
+                document.body
+              )}
             </div>
           )}
 
