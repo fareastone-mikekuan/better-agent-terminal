@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
+import { buildSystemPromptFromSkills } from '../types/copilot-skills'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 
 interface CopilotChatPanelProps {
@@ -542,7 +543,8 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         ? 'PowerShell (使用 `Get-ChildItem` 或 `dir` 而非 `ls -la`，`Remove-Item` 而非 `rm`，等等)'
         : 'Bash/Zsh (可使用標準 Unix 命令如 `ls -la`, `rm`, `grep` 等)'
 
-      const systemPrompt = `你是一個智能終端 AI Agent，能夠理解用戶意圖並主動執行相關命令。
+      // 構建基礎 system prompt
+      const basePrompt = `你是一個智能終端 AI Agent，能夠理解用戶意圖並主動執行相關命令。
 
 **當前環境**：${shellInfo}
 
@@ -552,7 +554,19 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 3. **命令格式**：\`\`\`bash\n命令內容\n\`\`\`
 4. **分析結果**：命令執行後會自動返回輸出，你需要分析輸出並給出有用的見解
 5. **主動建議**：根據情境主動建議下一步操作
-6. **保持簡潔**：回應要專業、準確、直接
+6. **保持簡潔**：回應要專業、準確、直接`
+
+      // 獲取啟用的技能並構建完整 system prompt
+      const enabledSkills = settingsStore.getEnabledSkills()
+      const skillsPrompt = buildSystemPromptFromSkills(enabledSkills)
+      
+      const systemPrompt = `${basePrompt}
+
+---
+
+${skillsPrompt}
+
+---
 
 範例：
 - 用戶："列出檔案"

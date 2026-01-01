@@ -1,6 +1,8 @@
 import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable, AgentCommandType } from '../types'
 import type { AgentPresetId } from '../types/agent-presets'
+import type { CopilotSkill } from '../types/copilot-skills'
 import { FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS } from '../types'
+import { BUILTIN_SKILLS } from '../types/copilot-skills'
 
 type Listener = () => void
 
@@ -36,6 +38,7 @@ const defaultSettings: AppSettings = {
 class SettingsStore {
   private settings: AppSettings = { ...defaultSettings }
   private copilotConfig: CopilotConfig | null = null
+  private copilotSkills: CopilotSkill[] = [...BUILTIN_SKILLS]
   private listeners: Set<Listener> = new Set()
 
   getSettings(): AppSettings {
@@ -264,6 +267,9 @@ class SettingsStore {
     } catch (e) {
       console.warn('Failed to load Copilot config:', e)
     }
+
+    // Load skills from localStorage
+    this.loadSkillsFromLocalStorage()
   }
 
   // GitHub Copilot methods
@@ -279,6 +285,57 @@ class SettingsStore {
 
   async isCopilotEnabled(): Promise<boolean> {
     return await window.electronAPI.copilot.isEnabled()
+  }
+
+  // Copilot Skills methods
+  getCopilotSkills(): CopilotSkill[] {
+    return this.copilotSkills
+  }
+
+  getEnabledSkills(): CopilotSkill[] {
+    return this.copilotSkills.filter(skill => skill.enabled)
+  }
+
+  toggleSkill(skillId: string, enabled: boolean): void {
+    const skill = this.copilotSkills.find(s => s.id === skillId)
+    if (skill) {
+      skill.enabled = enabled
+      this.notify()
+      // Persist to localStorage
+      this.saveSkillsToLocalStorage()
+    }
+  }
+
+  resetSkills(): void {
+    this.copilotSkills = [...BUILTIN_SKILLS]
+    this.notify()
+    this.saveSkillsToLocalStorage()
+  }
+
+  private saveSkillsToLocalStorage(): void {
+    try {
+      const skillStates = this.copilotSkills.map(s => ({ id: s.id, enabled: s.enabled }))
+      localStorage.setItem('copilot-skills', JSON.stringify(skillStates))
+    } catch (e) {
+      console.error('Failed to save skills to localStorage:', e)
+    }
+  }
+
+  private loadSkillsFromLocalStorage(): void {
+    try {
+      const saved = localStorage.getItem('copilot-skills')
+      if (saved) {
+        const skillStates = JSON.parse(saved) as Array<{ id: string; enabled: boolean }>
+        skillStates.forEach(state => {
+          const skill = this.copilotSkills.find(s => s.id === state.id)
+          if (skill) {
+            skill.enabled = state.enabled
+          }
+        })
+      }
+    } catch (e) {
+      console.error('Failed to load skills from localStorage:', e)
+    }
   }
 
   // Export all data (settings + workspaces + localStorage)

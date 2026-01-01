@@ -790,6 +790,93 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             )}
           </div>
 
+          {/* Copilot Skills Settings */}
+          {copilotConfig.enabled && (
+            <div className="settings-section">
+              <h3>🎯 AI 技能設定</h3>
+              <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px' }}>
+                選擇 AI 助手可以使用的技能
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                {settingsStore.getCopilotSkills().map(skill => (
+                  <label
+                    key={skill.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: skill.enabled ? '#2a3826' : '#2a2826',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      border: `1px solid ${skill.enabled ? '#4a5836' : '#3a3836'}`,
+                      fontSize: '13px'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={skill.enabled}
+                      onChange={e => settingsStore.toggleSkill(skill.id, e.target.checked)}
+                    />
+                    <span style={{ fontSize: '16px' }}>{skill.icon}</span>
+                    <span style={{ color: '#dfdbc3', flex: 1 }}>{skill.name}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
+                <button
+                  onClick={() => {
+                    settingsStore.getCopilotSkills().forEach(skill => {
+                      settingsStore.toggleSkill(skill.id, true)
+                    })
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#2a5826',
+                    color: '#7bbda4',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  全部啟用
+                </button>
+                <button
+                  onClick={() => {
+                    settingsStore.getCopilotSkills().forEach(skill => {
+                      settingsStore.toggleSkill(skill.id, false)
+                    })
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#3a3836',
+                    color: '#888',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  全部停用
+                </button>
+                <button
+                  onClick={() => settingsStore.resetSkills()}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#3a3836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  重設
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Panel Sharing Settings */}
           <div className="settings-section">
             <h3>🔗 面板共用設定</h3>
@@ -1360,38 +1447,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         </div>
 
         <div className="settings-footer">
-          {/* Data Location Info */}
-          <div style={{
-            padding: '12px',
-            backgroundColor: '#2a2826',
-            borderRadius: '6px',
-            marginBottom: '12px',
-            border: '1px solid #3a3836'
-          }}>
-            <div style={{ fontSize: '13px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>
-              📁 資料存放位置
-            </div>
-            <div style={{ fontSize: '12px', color: '#dfdbc3', marginBottom: '4px' }}>
-              <strong>配置檔案：</strong>
-              <code style={{ 
-                backgroundColor: '#1f1d1a', 
-                padding: '2px 6px', 
-                borderRadius: '3px',
-                marginLeft: '8px',
-                fontSize: '11px',
-                fontFamily: 'monospace'
-              }}>
-                Windows: %APPDATA%\better-agent-terminal | macOS: ~/Library/Application Support/better-agent-terminal | Linux: ~/.config/better-agent-terminal
-              </code>
-            </div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
-              包含：workspaces.json、settings.json、copilot-config.json、snippets.json
-            </div>
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-              <strong>瀏覽器儲存：</strong> localStorage (Copilot 聊天記錄、面板位置)
-            </div>
-          </div>
-
           {/* Data Backup Section */}
           <div className="settings-section">
             <h3>💾 數據備份</h3>
