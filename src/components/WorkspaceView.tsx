@@ -8,6 +8,8 @@ import { MainPanel } from './MainPanel'
 import { ResizeHandle } from './ResizeHandle'
 import { AgentPresetId, getAgentPreset } from '../types/agent-presets'
 
+type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api'
+
 // ThumbnailBar panel settings
 const THUMBNAIL_SETTINGS_KEY = 'better-terminal-thumbnail-settings'
 const DEFAULT_THUMBNAIL_HEIGHT = 180
@@ -80,6 +82,7 @@ const initializedWorkspaces = new Set<string>()
 export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, onAnalyzeFile }: Readonly<WorkspaceViewProps>) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
   const [thumbnailSettings, setThumbnailSettings] = useState<ThumbnailSettings>(loadThumbnailSettings)
+  const [activeTab, setActiveTab] = useState<TabType>('terminal')
 
   // Handle thumbnail bar resize
   const handleThumbnailResize = useCallback((delta: number) => {
@@ -361,9 +364,16 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     workspaceStore.setFocusedTerminal(id)
   }, [])
 
-  // Determine what to show
-  // mainTerminal: the currently focused or first available terminal
-  const mainTerminal = focusedTerminal || agentTerminal || terminals[0]
+  // Filter terminals by active tab type
+  const activeTabTerminals = terminals.filter(t => {
+    if (activeTab === 'terminal') {
+      return t.type === 'terminal'
+    }
+    return t.type === activeTab
+  })
+
+  // Determine what to show - only from active tab terminals
+  const mainTerminal = activeTabTerminals.find(t => t.id === focusedTerminalId) || activeTabTerminals[0]
 
   // Show all terminals in thumbnail bar (including the currently focused one)
   const thumbnailTerminals = terminals
@@ -372,19 +382,46 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     <div className="workspace-view">
       {/* Render ALL terminals, show/hide with CSS - keeps processes running */}
       <div className="terminals-container">
-        {terminals.map(terminal => (
-          <div
-            key={terminal.id}
-            className={`terminal-wrapper ${terminal.id === mainTerminal?.id ? 'active' : 'hidden'}`}
-          >
-            <MainPanel
-              terminal={terminal}
-              onClose={handleCloseTerminal}
-              onRestart={handleRestart}
-              onAnalyzeFile={onAnalyzeFile}
-            />
+        {terminals.length > 0 ? (
+          terminals.map(terminal => {
+            // Only show terminals of the active tab type
+            const isActiveTabType = (activeTab === 'terminal' && terminal.type === 'terminal') ||
+                                    (activeTab !== 'terminal' && terminal.type === activeTab)
+            const shouldShow = isActiveTabType && terminal.id === mainTerminal?.id
+            
+            return (
+              <div
+                key={terminal.id}
+                className={`terminal-wrapper ${shouldShow ? 'active' : 'hidden'}`}
+              >
+                <MainPanel
+                  terminal={terminal}
+                  onClose={handleCloseTerminal}
+                  onRestart={handleRestart}
+                  onAnalyzeFile={onAnalyzeFile}
+                />
+              </div>
+            )
+          })
+        ) : null}
+        
+        {/* Show empty state if no terminals of active tab type */}
+        {activeTabTerminals.length === 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: '#888',
+            fontSize: '14px',
+            flexDirection: 'column',
+            gap: '10px'
+          }}>
+            <div style={{ fontSize: '48px' }}>📭</div>
+            <div>尚無任何分頁</div>
+            <div style={{ fontSize: '12px' }}>點擊下方工具列的 + 按鈕新增</div>
           </div>
-        ))}
+        )}
       </div>
 
       {/* Resize handle for thumbnail bar */}
@@ -409,6 +446,8 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         height={thumbnailSettings.height}
         collapsed={thumbnailSettings.collapsed}
         onCollapse={handleThumbnailCollapse}
+        activeTab={activeTab}
+        onActiveTabChange={setActiveTab}
       />
 
       {

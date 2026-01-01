@@ -18,6 +18,8 @@ interface ThumbnailBarProps {
   height?: number
   collapsed?: boolean
   onCollapse?: () => void
+  activeTab?: TabType
+  onActiveTabChange?: (tab: TabType) => void
 }
 
 export function ThumbnailBar({
@@ -32,10 +34,33 @@ export function ThumbnailBar({
   showAddButton,
   height,
   collapsed = false,
-  onCollapse
+  onCollapse,
+  activeTab: externalActiveTab,
+  onActiveTabChange
 }: ThumbnailBarProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('terminal')
+  const [internalActiveTab, setInternalActiveTab] = useState<TabType>('terminal')
+  const activeTab = externalActiveTab !== undefined ? externalActiveTab : internalActiveTab
+  const setActiveTab = onActiveTabChange || setInternalActiveTab
   const menuRef = useRef<HTMLDivElement>(null)
+  // Remember last focused terminal for each tab type
+  const lastFocusedRef = useRef<Record<TabType, string | null>>({
+    terminal: null,
+    oracle: null,
+    webview: null,
+    file: null,
+    api: null
+  })
+
+  // Update last focused terminal when focus changes
+  useEffect(() => {
+    if (focusedTerminalId) {
+      const focusedTerminal = terminals.find(t => t.id === focusedTerminalId)
+      if (focusedTerminal) {
+        const tabType = focusedTerminal.type === 'terminal' ? 'terminal' : focusedTerminal.type as TabType
+        lastFocusedRef.current[tabType] = focusedTerminalId
+      }
+    }
+  }, [focusedTerminalId, terminals])
 
   // Filter terminals by active tab
   const filteredTerminals = terminals.filter(t => {
@@ -44,6 +69,41 @@ export function ThumbnailBar({
     }
     return t.type === activeTab
   })
+
+  // Auto-focus appropriate terminal when switching tabs
+  useEffect(() => {
+    const filtered = terminals.filter(t => {
+      if (activeTab === 'terminal') {
+        return t.type === 'terminal'
+      }
+      return t.type === activeTab
+    })
+    
+    if (filtered.length > 0) {
+      // Check if current focused terminal is of the active tab type
+      const focusedTerminal = terminals.find(t => t.id === focusedTerminalId)
+      const isFocusedCorrectType = focusedTerminal && (
+        (activeTab === 'terminal' && focusedTerminal.type === 'terminal') ||
+        (activeTab !== 'terminal' && focusedTerminal.type === activeTab)
+      )
+      
+      if (!isFocusedCorrectType) {
+        // Try to restore last focused terminal of this type
+        const lastFocused = lastFocusedRef.current[activeTab]
+        const lastTerminal = lastFocused ? filtered.find(t => t.id === lastFocused) : null
+        
+        if (lastTerminal) {
+          // Restore to last focused terminal
+          onFocus(lastTerminal.id)
+        } else {
+          // Fall back to first terminal of this type
+          onFocus(filtered[0].id)
+        }
+      }
+    }
+    // No terminals of this type - just show empty state, don't auto-create
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   // Check if these are agent terminals or regular terminals
   const firstTerminal = filteredTerminals[0]
