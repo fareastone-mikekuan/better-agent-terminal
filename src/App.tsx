@@ -339,6 +339,7 @@ export default function App() {
             workspaceId={state.activeWorkspaceId}
             collapsed={panelSettings.copilot.collapsed}
             onCollapse={handleCopilotCollapse}
+            focusedTerminalId={state.focusedTerminalId}
           />
         </>
       )}

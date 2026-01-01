@@ -11,9 +11,10 @@ interface CopilotChatPanelProps {
   workspaceId?: string | null  // 用於工作區獨立模式
   collapsed?: boolean
   onCollapse?: () => void
+  focusedTerminalId?: string | null  // 當前 focused 的 terminal ID
 }
 
-export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse }: Readonly<CopilotChatPanelProps>) {
+export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse, focusedTerminalId }: Readonly<CopilotChatPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
   const isShared = settings.sharedPanels?.copilot !== false
@@ -332,6 +333,30 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     return unsubscribe
   }, [targetTerminalId, workspaceId, isShared])
 
+  // Auto-switch target terminal when focusedTerminalId changes
+  useEffect(() => {
+    if (focusedTerminalId && availableTerminals.some(t => t.id === focusedTerminalId)) {
+      setTargetTerminalId(focusedTerminalId)
+    }
+  }, [focusedTerminalId, availableTerminals])
+
+  // Auto-switch oracle/webview instance when focused terminal changes
+  useEffect(() => {
+    if (!focusedTerminalId) return
+    
+    // Find the focused terminal in all terminals
+    const allTerminals = workspaceStore.getState().terminals
+    const focusedTerminal = allTerminals.find(t => t.id === focusedTerminalId)
+    
+    if (focusedTerminal) {
+      if (focusedTerminal.type === 'oracle' && oracleInstances.some(o => o.id === focusedTerminalId)) {
+        setSelectedOracleId(focusedTerminalId)
+      } else if (focusedTerminal.type === 'webview' && webViewInstances.some(w => w.id === focusedTerminalId)) {
+        setSelectedWebViewId(focusedTerminalId)
+      }
+    }
+  }, [focusedTerminalId, oracleInstances, webViewInstances])
+
   // Listen to terminal output
   useEffect(() => {
     const handleOutput = (id: string, data: string) => {
@@ -425,8 +450,8 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       // Clear output buffer before executing
       terminalOutputBuffer.current.set(targetTerminalId, '')
 
-      // Send command
-      await window.electronAPI.pty.write(targetTerminalId, command + '\n')
+      // Send command (use \r for proper command execution in all shells)
+      await window.electronAPI.pty.write(targetTerminalId, command + '\r')
       
       // Wait for output
       await new Promise(resolve => setTimeout(resolve, 1500))
