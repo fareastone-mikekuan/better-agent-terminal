@@ -56,29 +56,66 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
         throw new Error('請先在設定中配置 GitHub Copilot')
       }
 
-      // 簡化驗證：只確認 API 可用，內容已保存即可
-      // 實際學習會在 CHAT 使用時動態加載完整內容
-      const testPrompt = `測試連線，請回覆 OK`
-
-      const response = await window.electronAPI.copilot.chat(`learn-${entry.id}`, {
-        messages: [
-          { role: 'user', content: testPrompt }
-        ]
-      })
-
-      if (response.error) {
-        throw new Error(response.error)
-      }
-
-      // 成功學習（標記為已學習，完整內容已保存在 store 中）
-      knowledgeStore.markAsLearned(entry.id)
-      const sizeKB = (entry.content.length / 1024).toFixed(1)
-      setLearningStatus(`✅ 已成功學習「${entry.name}」 (${sizeKB} KB)\n內容已保存，在對話中會自動提供給 AI 參考`)
+      // 智能提取：讓 AI 總結和提取關鍵信息
+      const contentSizeKB = (entry.content.length / 1024).toFixed(1)
+      setLearningStatus(`正在分析「${entry.name}」(${contentSizeKB} KB)...\n使用 AI 提取關鍵信息中...`)
       
-      // 3秒後清除狀態
+      // 對於大文件，分批提取
+      const MAX_CHUNK_SIZE = 30000
+      const chunks: string[] = []
+      
+      for (let i = 0; i < entry.content.length; i += MAX_CHUNK_SIZE) {
+        chunks.push(entry.content.substring(i, i + MAX_CHUNK_SIZE))
+      }
+      
+      setLearningStatus(`正在分析「${entry.name}」...\n分成 ${chunks.length} 個部分進行提取`)
+      
+      const summaries: string[] = []
+      
+      for (let i = 0; i < chunks.length; i++) {
+        setLearningStatus(`正在分析「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
+        
+        const extractPrompt = `請分析以下文檔內容並提取關鍵信息。如果是 API 文檔，請列出 API 名稱、功能、參數等；如果是數據表，請總結結構和關鍵欄位；如果是說明文檔，請提取要點。
+
+文檔名稱：${entry.name}
+部分：${i + 1}/${chunks.length}
+
+內容：
+${chunks[i]}
+
+請以結構化格式輸出關鍵信息：`
+
+        const response = await window.electronAPI.copilot.chat(`extract-${entry.id}-${i}`, {
+          messages: [
+            { role: 'user', content: extractPrompt }
+          ]
+        })
+
+        if (response.error) {
+          throw new Error(response.error)
+        }
+
+        summaries.push(`=== 第 ${i + 1} 部分 ===\n${response.content}`)
+      }
+      
+      // 合併所有總結
+      const extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${summaries.join('\n\n')}`
+      
+      // 更新條目為提取後的內容
+      await knowledgeStore.updateEntry(entry.id, { content: extractedContent })
+      
+      // 標記為已學習
+      knowledgeStore.markAsLearned(entry.id)
+      
+      const newSizeKB = (extractedContent.length / 1024).toFixed(1)
+      const ratio = ((1 - extractedContent.length / entry.content.length) * 100).toFixed(1)
+      
+      setLearningStatus(`✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%\n\n內容已結構化，可在對話中高效使用！`)
+      
+      // 5秒後清除狀態
       setTimeout(() => {
         setLearningStatus('')
-      }, 3000)
+      }, 5000)
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
