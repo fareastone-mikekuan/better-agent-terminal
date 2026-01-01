@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { execSync } = require('child_process');
+const unzipper = require('unzipper');
 
 const POWERSHELL_VERSION = '7.5.4';
 const DOWNLOAD_URL = `https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/PowerShell-${POWERSHELL_VERSION}-win-x64.zip`;
@@ -105,39 +106,45 @@ function extractPowerShell() {
   console.log('📂 Extracting PowerShell...');
   
   try {
-    // Use PowerShell to extract (works on all Windows versions)
-    execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${ZIP_FILE}' -DestinationPath '${POWERSHELL_DIR}' -Force"`, {
-      stdio: 'inherit'
-    });
-    
-    console.log('✅ Extraction completed!');
-    
-    // Verify installation
-    if (fs.existsSync(PWSH_EXE)) {
-      try {
-        const version = execSync(`"${PWSH_EXE}" -NoProfile -Command "$PSVersionTable.PSVersion.ToString()"`, { 
-          encoding: 'utf8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        }).trim();
-        console.log(`✅ PowerShell ${version} is ready!`);
-        console.log(`   Location: packages/PowerShell/pwsh.exe`);
-      } catch (e) {
-        console.log('✅ PowerShell extracted successfully!');
-      }
-    } else {
-      console.error('❌ Error: pwsh.exe not found after extraction');
-      process.exit(1);
-    }
-    
-    // Clean up zip file
-    console.log('🧹 Cleaning up...');
-    fs.unlinkSync(ZIP_FILE);
-    console.log('✅ Setup complete!');
-    
+    // Use unzipper to extract (more reliable than PowerShell's Expand-Archive)
+    fs.createReadStream(ZIP_FILE)
+      .pipe(unzipper.Extract({ path: POWERSHELL_DIR }))
+      .on('close', () => {
+        console.log('✅ Extraction completed!');
+        verifyAndCleanup();
+      })
+      .on('error', (error) => {
+        console.error('❌ Failed to extract PowerShell:', error.message);
+        process.exit(1);
+      });
   } catch (error) {
     console.error('❌ Failed to extract PowerShell:', error.message);
     process.exit(1);
   }
+}
+
+function verifyAndCleanup() {
+  // Verify installation
+  if (fs.existsSync(PWSH_EXE)) {
+    try {
+      const version = execSync(`"${PWSH_EXE}" -NoProfile -Command "$PSVersionTable.PSVersion.ToString()"`, { 
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      }).trim();
+      console.log(`✅ PowerShell ${version} is ready!`);
+      console.log(`   Location: packages/PowerShell/pwsh.exe`);
+    } catch (e) {
+      console.log('✅ PowerShell extracted successfully!');
+    }
+  } else {
+    console.error('❌ Error: pwsh.exe not found after extraction');
+    process.exit(1);
+  }
+  
+  // Clean up zip file
+  console.log('🧹 Cleaning up...');
+  fs.unlinkSync(ZIP_FILE);
+  console.log('✅ Setup complete!');
 }
 
 function handleError(error) {

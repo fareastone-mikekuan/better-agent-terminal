@@ -205,11 +205,13 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       }
       
       // 检测 shell 提示符返回（表示命令结束）
-      // 你的提示符格式: kuanchiacheng@MacBook-Air-M1 better-agent-terminal %
+      // 支持多种格式: zsh (%), PowerShell (>), bash ($/#)
       const shellPromptPatterns = [
-        /\w+@[\w-]+\s+[\w~\/-]+\s*%/,        // macOS zsh: user@host path %
-        /\w+@[\w-]+:[\w~\/-]+[\$#]/,         // Linux bash: user@host:path$
-        /^\s*[\$#%>]\s*$/m,                  // 单独一行只有提示符
+        /\w+@[\w-]+\s+[\w~\/-]+\s*%\s*$/m,        // macOS zsh: user@host path %
+        /^PS\s+[A-Za-z]:[\\\/\w-]+>\s*$/m,        // Windows PowerShell: PS C:\path>
+        /\w+@[\w-]+:[\w~\/-]+[\$#]\s*$/m,         // Linux bash: user@host:path$
+        /^\s*[\$#>%]\s*$/m,                       // 单独一行只有提示符
+        /\d+\s+\d+\s+[\w\-:\.]+\s*$/m,           // 某些系统显示时间和命令号
       ]
       
       for (const pattern of shellPromptPatterns) {

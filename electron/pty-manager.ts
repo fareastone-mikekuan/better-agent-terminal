@@ -2,11 +2,11 @@ import { BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import type { CreatePtyOptions } from '../src/types'
 
-// Try to import node-pty, fall back to child_process if not available
-let pty: typeof import('node-pty') | null = null
+// Try to import @lydell/node-pty, fall back to child_process if not available
+let pty: typeof import('@lydell/node-pty') | null = null
 let ptyAvailable = false
 try {
-  pty = require('node-pty')
+  pty = require('@lydell/node-pty')
   // Test if native module works by checking if spawn function exists and module is properly built
   if (pty && typeof pty.spawn === 'function') {
     ptyAvailable = true
