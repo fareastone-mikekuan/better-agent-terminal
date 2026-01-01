@@ -19,6 +19,7 @@ interface CopilotChatPanelProps {
 export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse, focusedTerminalId }: Readonly<CopilotChatPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
+  const currentCopilotConfig = settingsStore.getCopilotConfig()
   const isShared = settings.sharedPanels?.copilot !== false
   const storageKey = isShared ? 'copilot-messages' : `copilot-messages-${workspaceId || 'default'}`
   
@@ -69,6 +70,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [effectiveModel, setEffectiveModel] = useState<string>('')
   const [targetTerminalId, setTargetTerminalId] = useState<string>('')
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   
@@ -542,9 +544,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     setIsLoading(true)
     setError(null)
 
-    try {
-      const copilotConfig = settingsStore.getCopilotConfig()
+    // 獲取 config 放在 try 外面，這樣 catch 也能訪問
+    const copilotConfig = settingsStore.getCopilotConfig()
 
+    try {
       if (!copilotConfig?.apiKey || !copilotConfig?.model) {
         throw new Error('請先在設定中配置 Copilot API Key 和模型')
       }
@@ -578,24 +581,45 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       const enabledSkills = settingsStore.getEnabledSkills()
       const skillsPrompt = buildSystemPromptFromSkills(enabledSkills)
       
+      // 根據當前模型獲取知識庫限制
+      const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
+      const modelLimits = getModelKnowledgeLimit(copilotConfig.model)
+      
       // 獲取啟用的知識庫內容（限制大小以避免 token 超限）
       const activeKnowledge = knowledgeStore.getActiveKnowledge()
       let knowledgePrompt = ''
+      const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
+      
+      const totalKnowledgeSize = activeKnowledge.reduce((sum, k) => sum + k.content.length, 0)
       
       console.log('[CopilotChat] Building knowledge prompt:', {
+        model: copilotConfig.model,
+        limits: modelLimits,
         activeKnowledgeCount: activeKnowledge.length,
+        totalKnowledgeSize: totalKnowledgeSize,
+        totalKnowledgeSizeKB: (totalKnowledgeSize / 1024).toFixed(1),
         entries: activeKnowledge.map(k => ({
           name: k.name,
           contentLength: k.content.length,
+          contentLengthKB: (k.content.length / 1024).toFixed(1),
           contentPreview: k.content.substring(0, 200)
         }))
       })
       
+      // 如果知識庫太大，提前警告
+      if (totalKnowledgeSize > modelLimits.maxTotal * 1.2) {
+        console.warn('[CopilotChat] 知識庫內容過大:', {
+          size: totalKnowledgeSize,
+          sizeKB: (totalKnowledgeSize / 1024).toFixed(1),
+          limit: modelLimits.maxTotal,
+          model: copilotConfig.model
+        })
+      }
+      
       if (activeKnowledge.length > 0) {
-        const MAX_KNOWLEDGE_LENGTH = 100000 // 提高限制到 100000 字元 (約 25k tokens)
-        const MAX_SINGLE_ENTRY = 80000 // 單個文件最多 80000 字元
+        const MAX_KNOWLEDGE_LENGTH = modelLimits.maxTotal
+        const MAX_SINGLE_ENTRY = modelLimits.maxSingle
         let totalLength = 0
-        const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
         
         for (const k of activeKnowledge) {
           let entryContent = k.content
@@ -691,13 +715,33 @@ ${skillsPrompt}${knowledgePrompt}
 
       console.log('[CopilotChat] Sending chat request:', {
         chatId: `chat-${Date.now()}`,
+        model: copilotConfig.model,
+        modelLimits: modelLimits,
         messageCount: options.messages.length,
         systemPromptLength: systemPrompt.length,
+        userMessagesLength: newMessages.reduce((sum, m) => sum + m.content.length, 0),
+        totalEstimatedLength: systemPrompt.length + newMessages.reduce((sum, m) => sum + m.content.length, 0),
         hasKnowledge: activeKnowledge.length > 0,
         knowledgeCount: activeKnowledge.length,
+        includedKnowledgeCount: includedKnowledge.length,
         knowledgePromptLength: knowledgePrompt.length,
         knowledgeEntries: activeKnowledge.map(k => ({ name: k.name, size: k.content.length }))
       })
+      
+      // 檢查總長度是否超過限制（根據模型動態調整）
+      const totalLength = systemPrompt.length + newMessages.reduce((sum, m) => sum + m.content.length, 0)
+      const maxTotalLength = modelLimits.tokenLimit * 3 // 1 token ≈ 3-4 字元，保守估計用 3
+      
+      if (totalLength > maxTotalLength) {
+        console.warn(
+          '[CopilotChat] Request length exceeds local estimate; sending anyway:',
+          {
+            model: copilotConfig.model,
+            totalLength,
+            maxTotalLength
+          }
+        )
+      }
       
       // 輸出 system prompt 的前 1000 字符以便調試
       console.log('[CopilotChat] System prompt preview:', systemPrompt.substring(0, 1000))
@@ -717,6 +761,13 @@ ${skillsPrompt}${knowledgePrompt}
         throw new Error(errorMsg)
       }
 
+      // Record the actual model used (Copilot may resolve to a versioned model id)
+      if (response?.model) {
+        setEffectiveModel(String(response.model))
+      } else if (copilotConfig.model) {
+        setEffectiveModel(String(copilotConfig.model))
+      }
+
       const assistantMessage: CopilotMessage = {
         role: 'assistant',
         content: response.content
@@ -732,7 +783,19 @@ ${skillsPrompt}${knowledgePrompt}
       // Commands will be shown with execute buttons inline, no need for extra messages
     } catch (error) {
       console.error('Send message error:', error)
-      setError((error as Error).message)
+      const errorMsg = (error as Error).message
+      
+      // 如果是 400 錯誤，提供更詳細的說明
+      if (errorMsg.includes('400')) {
+        const activeKnowledgeForError = knowledgeStore.getActiveKnowledge()
+        setError(`❌ API 請求格式錯誤 (400)。可能原因：
+• 模型名稱不正確（當前：${copilotConfig?.model || 'unknown'}）
+• 知識庫內容過多（當前 ${activeKnowledgeForError.length} 個文件）
+• 對話歷史過長（${messages.length} 條訊息）
+建議：嘗試切換模型為 gpt-4o，或暫時停用部分知識庫類別`)
+      } else {
+        setError(errorMsg)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -1300,6 +1363,24 @@ ${skillsPrompt}${knowledgePrompt}
             >
               {isLoading ? '⏳' : '發送'}
             </button>
+
+            <div style={{
+              marginTop: '6px',
+              fontSize: '11px',
+              color: '#888',
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: '8px'
+            }}>
+              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                使用模型：{effectiveModel || currentCopilotConfig?.model || '未選擇'}
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                {currentCopilotConfig?.model && effectiveModel && effectiveModel !== currentCopilotConfig.model
+                  ? `（選擇：${currentCopilotConfig.model}）`
+                  : ''}
+              </div>
+            </div>
           </div>
         </>
       )}

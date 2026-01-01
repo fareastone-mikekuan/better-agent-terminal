@@ -40,6 +40,7 @@ interface ElectronAPI {
     isEnabled: () => Promise<boolean>
     chat: (chatId: string, options: any) => Promise<any>
     cancelChat: (chatId: string) => Promise<boolean>
+    listModels: () => Promise<{ ids: string[]; error?: string }>
     openVSCodeTokenHelper: () => Promise<void>
     startDeviceFlow: () => Promise<{ userCode: string; verificationUri: string; deviceCode: string }>
     completeDeviceFlow: (deviceCode: string) => Promise<string>

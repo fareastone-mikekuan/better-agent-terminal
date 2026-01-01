@@ -539,6 +539,16 @@ ipcMain.handle('copilot:cancel-chat', async (_event, chatId: string) => {
   return true
 })
 
+ipcMain.handle('copilot:list-models', async () => {
+  try {
+    const ids = await copilotManager?.listModels()
+    return { ids: ids || [] }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { error: errorMessage, ids: [] }
+  }
+})
+
 ipcMain.handle('copilot:start-device-flow', async () => {
   try {
     return await copilotManager?.startDeviceFlow()

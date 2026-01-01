@@ -31,6 +31,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     apiKey: '',
     organizationSlug: ''
   })
+  const [availableCopilotModels, setAvailableCopilotModels] = useState<string[]>([])
+  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
+  const [copilotModelsError, setCopilotModelsError] = useState<string>('')
   const [gistToken, setGistToken] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [authMessage, setAuthMessage] = useState('')
@@ -78,6 +81,54 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
     checkFonts()
   }, [])
+
+  // Load Copilot models dynamically from api.githubcopilot.com/models
+  useEffect(() => {
+    const shouldLoad =
+      copilotConfig.enabled &&
+      copilotConfig.provider === 'github' &&
+      !!copilotConfig.apiKey &&
+      !authLoading
+
+    if (!shouldLoad) {
+      setAvailableCopilotModels([])
+      setCopilotModelsError('')
+      return
+    }
+
+    let cancelled = false
+
+    const loadModels = async () => {
+      try {
+        setCopilotModelsLoading(true)
+        setCopilotModelsError('')
+
+        const result = await window.electronAPI.copilot.listModels()
+        if (cancelled) return
+
+        if (result?.error) {
+          setAvailableCopilotModels([])
+          setCopilotModelsError(result.error)
+          return
+        }
+
+        const ids = Array.isArray(result?.ids) ? result.ids : []
+        setAvailableCopilotModels(ids)
+      } catch (e: any) {
+        if (cancelled) return
+        setAvailableCopilotModels([])
+        setCopilotModelsError(e?.message || String(e))
+      } finally {
+        if (!cancelled) setCopilotModelsLoading(false)
+      }
+    }
+
+    loadModels()
+
+    return () => {
+      cancelled = true
+    }
+  }, [copilotConfig.enabled, copilotConfig.provider, copilotConfig.apiKey, authLoading])
 
   const handleShellChange = (shell: ShellType) => {
     settingsStore.setShell(shell)
@@ -152,6 +203,22 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     await window.electronAPI.copilot.setConfig(newConfig)
     setAuthMessage('✅ 已登出 GitHub Copilot')
   }
+  
+    const handleCopyOAuthToken = async () => {
+      const token = (copilotConfig.apiKey || '').trim()
+      if (!token) {
+        setAuthMessage('❌ 目前沒有可複製的 OAuth token（請先完成 GitHub 登入）')
+        return
+      }
+  
+      try {
+        await navigator.clipboard.writeText(token)
+        setAuthMessage('✅ 已複製 OAuth token 到剪貼簿')
+      } catch {
+        // Fallback: allow manual copy if clipboard API is not available
+        window.prompt('請複製 OAuth token：', token)
+      }
+    }
 
   const handleManualComplete = async () => {
     if (!deviceCode) {
@@ -310,6 +377,23 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={e => e.stopPropagation()}>
         <div className="settings-header">
+                <button 
+                  onClick={handleCopyOAuthToken}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#7bbda4',
+                    color: '#1f1d1a',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    width: '100%',
+                    marginBottom: '10px'
+                  }}
+                >
+                  📋 複製 OAuth Token
+                </button>
+
           <h2>設定</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
@@ -397,6 +481,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   <select
                     value={copilotConfig.model || 'gpt-4o'}
                     onChange={e => handleCopilotModelChange(e.target.value)}
+                    disabled={copilotModelsLoading}
                     style={{
                       width: '100%',
                       padding: '8px',
@@ -407,31 +492,26 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       fontSize: '14px'
                     }}
                   >
-                    <optgroup label="🔥 推薦 (Recommended)">
-                      <option value="gpt-4o">GPT-4o (Default)</option>
-                      <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                      <option value="o1-preview">O1 Preview</option>
-                      <option value="o1-mini">O1 Mini</option>
-                    </optgroup>
-                    <optgroup label="🤖 GPT Models">
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="gpt-4">GPT-4</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                    </optgroup>
-                    <optgroup label="🚀 Claude Models">
-                      <option value="claude-3-opus">Claude 3 Opus</option>
-                      <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                      <option value="claude-3-haiku">Claude 3 Haiku</option>
-                    </optgroup>
-                    <optgroup label="🌟 Google Models">
-                      <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                    </optgroup>
+                    {(() => {
+                      const selected = copilotConfig.model || 'gpt-4o'
+                      const list = Array.isArray(availableCopilotModels) ? availableCopilotModels : []
+                      const merged = list.includes(selected) ? list : [selected, ...list]
+                      const unique = Array.from(new Set(merged.filter(Boolean)))
+                      return unique.map(id => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))
+                    })()}
                   </select>
                   <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
-                    💡 不同模型有不同特性與速度
+                    {copilotModelsLoading
+                      ? '⏳ 正在載入可用模型…'
+                      : copilotModelsError
+                        ? `⚠️ 無法載入模型列表：${copilotModelsError}`
+                        : availableCopilotModels.length
+                          ? `✅ 已載入 ${availableCopilotModels.length} 個模型`
+                          : '💡 尚未載入模型列表'}
                   </small>
                 </div>
 

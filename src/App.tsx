@@ -71,7 +71,7 @@ export default function App() {
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
   // Panel visibility and floating states
-  const [showSnippetSidebar, setShowSnippetSidebar] = useState(true)
+  const [showSnippetSidebar, setShowSnippetSidebar] = useState(false)
   const [isSnippetFloating, setIsSnippetFloating] = useState(false)
   const [showCopilot, setShowCopilot] = useState(false)
   const [copilotWidth, setCopilotWidth] = useState(() => {

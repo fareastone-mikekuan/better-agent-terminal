@@ -286,6 +286,80 @@ gh auth token
     }
   }
 
+  /**
+   * List available models for the current authenticated Copilot session.
+   */
+  async listModels(): Promise<string[]> {
+    if (!this.isEnabled()) {
+      throw new Error('GitHub Copilot is not configured or enabled')
+    }
+
+    const copilotToken = await this.getCopilotToken()
+
+    return new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'api.githubcopilot.com',
+        path: '/models',
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${copilotToken}`,
+          'User-Agent': 'Better-Agent-Terminal/1.0',
+          'Accept': 'application/json',
+          'Editor-Version': 'vscode/1.85.0',
+          'Editor-Plugin-Version': 'copilot-chat/0.11.0',
+          'Openai-Organization': this.config?.organizationSlug || 'github-copilot',
+          'Openai-Intent': 'conversation-panel',
+          'VScode-SessionId': Date.now().toString(),
+          'VScode-MachineId': 'better-agent-terminal'
+        }
+      }
+
+      const req = https.request(options, (res: any) => {
+        res.setEncoding('utf8')
+        let data = ''
+
+        res.on('data', (chunk: any) => {
+          data += chunk
+        })
+
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 401) {
+              reject(new Error('GitHub Copilot API key is invalid or expired'))
+              return
+            }
+
+            if (res.statusCode !== 200) {
+              console.error('Copilot models API error:', res.statusCode, data)
+              reject(new Error(`GitHub Copilot API error: ${res.statusCode}`))
+              return
+            }
+
+            const payload = JSON.parse(data)
+            const items = Array.isArray(payload) ? payload : payload.data
+            if (!Array.isArray(items)) {
+              reject(new Error('Unexpected /models response format'))
+              return
+            }
+
+            const ids = items
+              .map((m: any) => (typeof m === 'string' ? m : (m.id || m.model || m.name)))
+              .filter(Boolean)
+
+            // Dedupe + stable sort
+            const uniqueSorted = Array.from(new Set(ids)).sort()
+            resolve(uniqueSorted)
+          } catch (error) {
+            reject(error)
+          }
+        })
+      })
+
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
   private async makeRequest(request: CopilotChatRequest): Promise<CopilotChatResponse> {
     const copilotToken = await this.getCopilotToken()
     
@@ -326,6 +400,22 @@ gh auth token
 
             if (res.statusCode !== 200) {
               console.error('Copilot API error:', res.statusCode, data)
+              console.error('[CopilotManager] Request details:', {
+                model: request.model,
+                hostname: options.hostname,
+                path: options.path,
+                statusCode: res.statusCode
+              })
+              try {
+                const errorData = JSON.parse(data)
+                console.error('[CopilotManager] Error details:', errorData)
+                if (errorData.error) {
+                  reject(new Error(`GitHub Copilot API error: ${res.statusCode} - ${errorData.error.message || JSON.stringify(errorData.error)}`))
+                  return
+                }
+              } catch (e) {
+                // 無法解析錯誤 JSON，使用原始訊息
+              }
               reject(new Error(`GitHub Copilot API error: ${res.statusCode}`))
               return
             }
@@ -334,7 +424,14 @@ gh auth token
             console.log('[CopilotManager] API Response:', {
               model: response.model,
               requestedModel: request.model,
-              finishReason: response.choices?.[0]?.finish_reason
+              finishReason: response.choices?.[0]?.finish_reason,
+              statusCode: res.statusCode
+            })
+            console.log('[CopilotManager] Full response structure:', {
+              hasChoices: !!response.choices,
+              choicesLength: response.choices?.length,
+              hasModel: !!response.model,
+              modelValue: response.model
             })
             const content = response.choices?.[0]?.message?.content || ''
             const finishReason = response.choices?.[0]?.finish_reason || 'stop'
@@ -386,9 +483,8 @@ gh auth token
     let streamError: Error | null = null
 
     await new Promise<void>((resolve, reject) => {
-        
-        res.setEncoding('utf8')
       const req = https.request(options, (res: any) => {
+        res.setEncoding('utf8')
         let buffer = ''
 
         if (res.statusCode === 401) {

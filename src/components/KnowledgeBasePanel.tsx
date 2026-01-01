@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { knowledgeStore } from '../stores/knowledge-store'
 import { settingsStore } from '../stores/settings-store'
 import type { KnowledgeEntry } from '../types/knowledge-base'
-import { formatFileSize } from '../types/knowledge-base'
+import { formatFileSize, getModelKnowledgeLimit } from '../types/knowledge-base'
 import * as XLSX from 'xlsx'
 
 interface KnowledgeBasePanelProps {
@@ -101,11 +101,12 @@ ${chunks[i]}
       // 合併所有總結
       const extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${summaries.join('\n\n')}`
       
-      // 更新條目為提取後的內容
-      await knowledgeStore.updateEntry(entry.id, { content: extractedContent })
-      
-      // 標記為已學習
-      knowledgeStore.markAsLearned(entry.id)
+      // 更新條目為提取後的內容，並同時標記為已學習
+      await knowledgeStore.updateEntry(entry.id, { 
+        content: extractedContent,
+        isLearned: true,
+        learnedAt: Date.now()
+      })
       
       const newSizeKB = (extractedContent.length / 1024).toFixed(1)
       const ratio = ((1 - extractedContent.length / entry.content.length) * 100).toFixed(1)
@@ -257,6 +258,14 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
     : entries.filter(e => e.category === selectedCategory)
 
   const stats = knowledgeStore.getStats()
+  
+  // 獲取當前模型的知識庫限制
+  const copilotConfig = settingsStore.getCopilotConfig()
+  const modelLimits = getModelKnowledgeLimit(copilotConfig?.model)
+  const MAX_KNOWLEDGE_SIZE = modelLimits.maxTotal
+  
+  const usagePercent = Math.min(100, (stats.activeSize / MAX_KNOWLEDGE_SIZE * 100)).toFixed(1)
+  const usageColor = stats.activeSize > MAX_KNOWLEDGE_SIZE ? '#ef4444' : stats.activeSize > MAX_KNOWLEDGE_SIZE * 0.8 ? '#f59e0b' : '#7bbda4'
 
   return (
     <div className="settings-overlay" onClick={onClose}>
@@ -270,7 +279,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
           {/* 統計資訊 */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(5, 1fr)',
             gap: '10px',
             marginBottom: '20px'
           }}>
@@ -308,9 +317,24 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#dfdbc3' }}>
-                {formatFileSize(stats.totalSize)}
+                {formatFileSize(stats.learnedSize)}
               </div>
-              <div style={{ fontSize: '12px', color: '#888' }}>總大小</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>學習後大小</div>
+            </div>
+            <div style={{
+              padding: '12px',
+              backgroundColor: stats.activeSize > MAX_KNOWLEDGE_SIZE ? '#3a2826' : '#2a2836',
+              borderRadius: '6px',
+              textAlign: 'center',
+              border: stats.activeSize > MAX_KNOWLEDGE_SIZE ? '1px solid #ef4444' : 'none'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: usageColor }}>
+                {usagePercent}%
+              </div>
+              <div style={{ fontSize: '12px', color: '#888' }}>使用率</div>
+              <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                {formatFileSize(stats.activeSize)} / {formatFileSize(MAX_KNOWLEDGE_SIZE)}
+              </div>
             </div>
           </div>
 
@@ -529,6 +553,13 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                               e.stopPropagation()
                               if (confirm(`確定要刪除「${entry.name}」嗎？`)) {
                                 knowledgeStore.deleteEntry(entry.id)
+                                // 刷新列表
+                                setEntries(knowledgeStore.getEntries())
+                                setCategories(knowledgeStore.getCategories())
+                                // 如果刪除的是當前展開的條目，關閉展開
+                                if (selectedEntry === entry.id) {
+                                  setSelectedEntry(null)
+                                }
                               }
                             }}
                             style={{

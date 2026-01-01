@@ -98,14 +98,27 @@ class KnowledgeStore {
   updateEntry(id: string, updates: Partial<KnowledgeEntry>): void {
     const entry = this.entries.find(e => e.id === id)
     if (entry) {
+      // 保存原始的 isLearned 和 learnedAt 狀態
+      const wasLearned = entry.isLearned
+      const learnedAt = entry.learnedAt
+      
       Object.assign(entry, updates)
       
-      // 如果內容改變，重新計算 hash 並標記為未學習
-      if (updates.content) {
+      // 如果內容改變，重新計算 hash
+      if (updates.content !== undefined) {
         entry.hash = generateHash(updates.content)
-        entry.isLearned = false
-        entry.learnedAt = undefined
         entry.lastModified = Date.now()
+        
+        // 只有在不是「學習」過程中才重置學習狀態
+        // 如果 updates 中明確指定了 isLearned，則使用指定的值
+        if (updates.isLearned === undefined && !wasLearned) {
+          entry.isLearned = false
+          entry.learnedAt = undefined
+        } else if (updates.isLearned === undefined) {
+          // 如果是學習過程中的更新，保持原有學習狀態
+          entry.isLearned = wasLearned
+          entry.learnedAt = learnedAt
+        }
       }
       
       this.save()
@@ -181,11 +194,22 @@ class KnowledgeStore {
     const learned = this.entries.filter(e => e.isLearned).length
     const totalSize = this.entries.reduce((sum, e) => sum + e.size, 0)
     
+    // 計算已學習內容的實際大小（學習後會變小）
+    const learnedSize = this.entries
+      .filter(e => e.isLearned)
+      .reduce((sum, e) => sum + e.content.length, 0)
+    
+    // 計算啟用類別的已學習內容大小
+    const activeKnowledge = this.getActiveKnowledge()
+    const activeSize = activeKnowledge.reduce((sum, e) => sum + e.content.length, 0)
+    
     return {
       total,
       learned,
       pending: total - learned,
-      totalSize
+      totalSize,
+      learnedSize,
+      activeSize
     }
   }
 }
