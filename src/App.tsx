@@ -9,6 +9,7 @@ import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
+import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
 import type { AppState, EnvVariable } from './types'
 
 // Panel settings interface
@@ -67,6 +68,7 @@ export default function App() {
   const [state, setState] = useState<AppState>(workspaceStore.getState())
   const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  const [showKnowledgeBase, setShowKnowledgeBase] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
   // Panel visibility and floating states
   const [showSnippetSidebar, setShowSnippetSidebar] = useState(true)
@@ -278,6 +280,7 @@ export default function App() {
         onOpenEnvVars={(workspaceId) => setEnvDialogWorkspaceId(workspaceId)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
+        onOpenKnowledgeBase={() => setShowKnowledgeBase(true)}
         showCopilot={showCopilot}
         onToggleCopilot={() => setShowCopilot(!showCopilot)}
         showSnippets={showSnippetSidebar}
@@ -455,6 +458,9 @@ export default function App() {
       )}
       {showAbout && (
         <AboutPanel onClose={() => setShowAbout(false)} />
+      )}
+      {showKnowledgeBase && (
+        <KnowledgeBasePanel onClose={() => setShowKnowledgeBase(false)} />
       )}
       {envDialogWorkspace && (
         <WorkspaceEnvDialog

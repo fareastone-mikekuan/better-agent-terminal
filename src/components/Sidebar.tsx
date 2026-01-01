@@ -16,6 +16,7 @@ interface SidebarProps {
   onOpenEnvVars: (workspaceId: string) => void
   onOpenSettings: () => void
   onOpenAbout: () => void
+  onOpenKnowledgeBase?: () => void
   showCopilot?: boolean
   onToggleCopilot?: () => void
   showSnippets?: boolean
@@ -41,6 +42,7 @@ export function Sidebar({
   onOpenEnvVars,
   onOpenSettings,
   onOpenAbout,
+  onOpenKnowledgeBase,
   showCopilot = false,
   onToggleCopilot,
   showSnippets = true,
@@ -398,6 +400,19 @@ export function Sidebar({
           </button>
         )}
         <div className="sidebar-footer-buttons">
+          {onOpenKnowledgeBase && (
+            <button 
+              className="settings-btn" 
+              onClick={onOpenKnowledgeBase}
+              style={{
+                marginBottom: '4px',
+                backgroundColor: '#2a3826',
+                color: '#7bbda4'
+              }}
+            >
+              📚 知識庫
+            </button>
+          )}
           <button className="settings-btn" onClick={onOpenSettings}>
             設定
           </button>

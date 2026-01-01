@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
+import { knowledgeStore } from '../stores/knowledge-store'
 import { buildSystemPromptFromSkills } from '../types/copilot-skills'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 
@@ -28,6 +29,23 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     })
     return unsubscribe
   }, [])
+  
+  // 調試：輸出知識庫狀態
+  useEffect(() => {
+    if (isVisible) {
+      const activeKnowledge = knowledgeStore.getActiveKnowledge()
+      console.log('[CopilotChat] Panel opened, knowledge base status:', {
+        totalEntries: knowledgeStore.getEntries().length,
+        activeCount: activeKnowledge.length,
+        entries: activeKnowledge.map(k => ({ 
+          name: k.name, 
+          category: k.category,
+          isLearned: k.isLearned,
+          contentSize: k.content.length 
+        }))
+      })
+    }
+  }, [isVisible])
   
   const [isFloating, setIsFloating] = useState(() => {
     const saved = localStorage.getItem('copilot-floating')
@@ -560,11 +578,102 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       const enabledSkills = settingsStore.getEnabledSkills()
       const skillsPrompt = buildSystemPromptFromSkills(enabledSkills)
       
+      // 獲取啟用的知識庫內容（限制大小以避免 token 超限）
+      const activeKnowledge = knowledgeStore.getActiveKnowledge()
+      let knowledgePrompt = ''
+      
+      console.log('[CopilotChat] Building knowledge prompt:', {
+        activeKnowledgeCount: activeKnowledge.length,
+        entries: activeKnowledge.map(k => ({
+          name: k.name,
+          contentLength: k.content.length,
+          contentPreview: k.content.substring(0, 200)
+        }))
+      })
+      
+      if (activeKnowledge.length > 0) {
+        const MAX_KNOWLEDGE_LENGTH = 100000 // 提高限制到 100000 字元 (約 25k tokens)
+        const MAX_SINGLE_ENTRY = 80000 // 單個文件最多 80000 字元
+        let totalLength = 0
+        const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
+        
+        for (const k of activeKnowledge) {
+          let entryContent = k.content
+          let truncated = false
+          
+          // 如果單個文件太大，截斷它
+          if (entryContent.length > MAX_SINGLE_ENTRY) {
+            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
+            truncated = true
+            console.log('[CopilotChat] Entry too large, truncating:', {
+              name: k.name,
+              original: k.content.length,
+              truncated: entryContent.length
+            })
+          }
+          
+          const entryText = `【${k.name}】\n${entryContent}`
+          
+          console.log('[CopilotChat] Processing knowledge entry:', {
+            name: k.name,
+            entryLength: entryText.length,
+            currentTotal: totalLength,
+            willInclude: totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH,
+            wasTruncated: truncated
+          })
+          
+          if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
+            includedKnowledge.push({ name: k.name, content: entryContent, truncated })
+            totalLength += entryText.length
+          } else {
+            console.log('[CopilotChat] Would exceed limit, skipping remaining entries')
+            break
+          }
+        }
+        
+        console.log('[CopilotChat] Included knowledge:', {
+          count: includedKnowledge.length,
+          totalLength: totalLength
+        })
+        
+        if (includedKnowledge.length > 0) {
+          const knowledgeList = includedKnowledge
+            .map(item => {
+              const truncationNote = item.truncated 
+                ? `\n(註：此文件內容過長，已截取前 ${item.content.length.toLocaleString()} 字元)\n` 
+                : ''
+              return `### 【${item.name}】${truncationNote}\n${item.content}`
+            })
+            .join('\n\n---\n\n')
+          
+          knowledgePrompt = `
+
+===== 專業知識庫 (Knowledge Base) =====
+以下是用戶上傳的專業知識文檔，你必須優先參考這些內容來回答問題。
+這些知識包含了用戶的業務數據、API 文檔、會計資料等重要信息。
+當用戶提問時，請先搜索知識庫中的相關內容，然後基於這些內容回答。
+
+${knowledgeList}
+
+===== 知識庫結束 =====
+`
+          
+          console.log('[CopilotChat] Knowledge prompt built:', {
+            promptLength: knowledgePrompt.length,
+            preview: knowledgePrompt.substring(0, 500)
+          })
+          
+          if (includedKnowledge.length < activeKnowledge.length) {
+            knowledgePrompt += `\n(註：因內容過長，僅載入 ${includedKnowledge.length}/${activeKnowledge.length} 個知識條目)\n`
+          }
+        }
+      }
+      
       const systemPrompt = `${basePrompt}
 
 ---
 
-${skillsPrompt}
+${skillsPrompt}${knowledgePrompt}
 
 ---
 
@@ -580,11 +689,32 @@ ${skillsPrompt}
         ]
       }
 
+      console.log('[CopilotChat] Sending chat request:', {
+        chatId: `chat-${Date.now()}`,
+        messageCount: options.messages.length,
+        systemPromptLength: systemPrompt.length,
+        hasKnowledge: activeKnowledge.length > 0,
+        knowledgeCount: activeKnowledge.length,
+        knowledgePromptLength: knowledgePrompt.length,
+        knowledgeEntries: activeKnowledge.map(k => ({ name: k.name, size: k.content.length }))
+      })
+      
+      // 輸出 system prompt 的前 1000 字符以便調試
+      console.log('[CopilotChat] System prompt preview:', systemPrompt.substring(0, 1000))
+
       const chatId = `chat-${Date.now()}`
       const response = await window.electronAPI.copilot.chat(chatId, options)
 
+      console.log('[CopilotChat] Received response:', {
+        hasResponse: !!response,
+        hasContent: !!response?.content,
+        contentLength: response?.content?.length || 0,
+        error: response?.error
+      })
+
       if (!response || !response.content) {
-        throw new Error('未收到回應')
+        const errorMsg = response?.error || '未收到回應'
+        throw new Error(errorMsg)
       }
 
       const assistantMessage: CopilotMessage = {
@@ -654,6 +784,27 @@ ${skillsPrompt}
             }}>
               {modeLabel}
             </span>
+            {(() => {
+              const activeKnowledge = knowledgeStore.getActiveKnowledge()
+              if (activeKnowledge.length > 0) {
+                return (
+                  <span style={{ 
+                    fontSize: '11px', 
+                    color: '#7bbda4',
+                    backgroundColor: '#2a3826',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    📚 {activeKnowledge.length}
+                  </span>
+                )
+              }
+              return null
+            })()}
           </div>
           {onCollapse && !isFloating && (
             <button
