@@ -19,6 +19,7 @@ interface ContextMenu {
   x: number
   y: number
   hasSelection: boolean
+  selectedText?: string
 }
 
 export function TerminalPanel({ terminalId, isActive = true, terminalType = 'terminal', oracleQueryResult }: TerminalPanelProps) {
@@ -27,6 +28,10 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
   const [aiInsight, setAiInsight] = useState<{ type: 'error' | 'warning' | 'info' | 'success' | 'running', message: string, suggestion?: string, startTime?: number } | null>(null)
+  const [aiAnalyzing, setAiAnalyzing] = useState(false)  // AI 分析中
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<{ text: string, result: string } | null>(null)  // AI 分析结果
+  const [aiAnalysisMinimized, setAiAnalysisMinimized] = useState(false)  // AI 分析结果是否缩小显示
+  const aiAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null)
   const insightTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const commandStartTimeRef = useRef<number | null>(null)
   const currentCommandRef = useRef<string | null>(null)
@@ -392,6 +397,212 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
+  // AI 分析选中的文本
+  const performAIAnalysis = async (text: string) => {
+    if (!text.trim()) return
+    
+    setAiAnalyzing(true)
+    setAiAnalysisResult(null)
+    setAiAnalysisMinimized(false)
+    setContextMenu(null)
+    
+    // 清除之前的定时器
+    if (aiAnalysisTimerRef.current) {
+      clearTimeout(aiAnalysisTimerRef.current)
+    }
+    
+    try {
+      // 判断是文件名还是错误/命令
+      const isFilePath = /^[.\w\/-]+\.(ts|tsx|js|jsx|json|md|sh|py|css|html|txt|yml|yaml|toml|env|gitignore)$/i.test(text.trim())
+      const isExecutable = /\.(sh|py|js|ts|rb|pl)$/i.test(text.trim())  // 可执行文件
+      const isError = /error|failed|exception|not found|permission denied/i.test(text)
+      const isCommand = /^(npm|node|git|docker|python|pip|brew|curl|wget|make|cargo)\s+/i.test(text.trim())
+      
+      let promptContent: string
+      
+      // 只有在明确是文件路径时才尝试读取内容
+      let fileContent: string | null = null
+      if (isFilePath && terminalRef.current && !isError) {
+        try {
+          const buffer = terminalRef.current.buffer.active
+          const lines: string[] = []
+          // 只读取最近的50行，避免匹配到太旧的内容
+          const lineCount = Math.min(buffer.length, 50)
+          const startLine = Math.max(0, buffer.length - lineCount)
+          
+          for (let i = startLine; i < buffer.length; i++) {
+            const line = buffer.getLine(i)
+            if (line) {
+              lines.push(line.translateToString(true))
+            }
+          }
+          
+          const bufferText = lines.join('\n')
+          const fileName = text.trim()
+          
+          // 更严格的匹配：查找 cat/head 命令后紧跟的内容
+          // 必须在最近20行内，且命令行中明确包含该文件名
+          const recentLines = lines.slice(-20)
+          let foundCatCommand = false
+          let contentStartIndex = -1
+          
+          for (let i = 0; i < recentLines.length; i++) {
+            const line = recentLines[i]
+            // 匹配 cat/head 命令行
+            if (line.match(new RegExp(`^[^\\n]*\\$.*(?:cat|head|less|more|tail)\\s+["\']?${fileName.replace('.', '\\.')}["\']?(?:\\s|$)`, 'i'))) {
+              foundCatCommand = true
+              contentStartIndex = i + 1
+              break
+            }
+          }
+          
+          if (foundCatCommand && contentStartIndex >= 0 && contentStartIndex < recentLines.length) {
+            // 提取文件内容（从命令后一行开始，到下一个提示符为止）
+            const contentLines: string[] = []
+            for (let i = contentStartIndex; i < recentLines.length; i++) {
+              const line = recentLines[i]
+              // 遇到新的命令提示符就停止
+              if (line.match(/^[\w-]+@[\w-]+.*[$%#>]\s*$/)) {
+                break
+              }
+              contentLines.push(line)
+            }
+            
+            const content = contentLines.join('\n').trim()
+            if (content.length > 20 && content.length < 5000) {
+              fileContent = content
+            }
+          }
+        } catch (e) {
+          console.log('无法从缓冲区读取文件内容:', e)
+        }
+      }
+      
+      if (isFilePath && isExecutable) {
+        if (fileContent) {
+          promptContent = `分析可執行文件「${text}」，內容如下：
+
+\`\`\`
+${fileContent.substring(0, 1500)}
+\`\`\`
+
+請說明：
+1. 這個腳本做什麼
+2. 怎麼執行（含參數）
+3. 執行後會輸出什麼（根據代碼精確分析）
+4. 有什麼注意事項`
+        } else {
+          // 根据文件扩展名推测
+          const ext = text.trim().split('.').pop()?.toLowerCase()
+          let scriptType = 'Shell 腳本'
+          let runCmd = `./${text.trim()}`
+          
+          if (ext === 'py') {
+            scriptType = 'Python 腳本'
+            runCmd = `python3 ${text.trim()}`
+          } else if (ext === 'js') {
+            scriptType = 'Node.js 腳本'
+            runCmd = `node ${text.trim()}`
+          } else if (ext === 'ts') {
+            scriptType = 'TypeScript 腳本'
+            runCmd = `npx ts-node ${text.trim()}`
+          } else if (ext === 'rb') {
+            scriptType = 'Ruby 腳本'
+            runCmd = `ruby ${text.trim()}`
+          } else if (ext === 'pl') {
+            scriptType = 'Perl 腳本'
+            runCmd = `perl ${text.trim()}`
+          }
+
+          promptContent = `分析可執行文件「${text}」
+
+這是 ${scriptType}。
+
+請說明：
+1. 這類文件通常做什麼
+2. 執行方式：\`${runCmd}\`
+3. 常見參數（如 --help, -v 等）
+4. 執行前注意事項（權限、依賴）
+
+提示：建議用 \`cat ${text.trim()}\` 查看內容後再分析。`
+        }
+      } else if (isFilePath) {
+        promptContent = `分析文件「${text}」
+
+請說明：
+1. 這是什麼類型的文件
+2. 它的用途是什麼
+3. 如何查看或編輯`
+      } else if (isError) {
+        promptContent = `分析這個錯誤：「${text}」
+
+請說明：
+1. 錯誤含義
+2. 可能原因
+3. 如何解決`
+      } else if (isCommand) {
+        promptContent = `分析這個命令：「${text}」
+
+請說明：
+1. 這個命令做什麼
+2. 參數含義
+3. 注意事項`
+      } else {
+        promptContent = `分析：「${text}」
+
+這是什麼？有什麼含義？`
+      }
+      
+      const copilotConfig = await window.electronAPI.copilot.getConfig()
+      const response = await window.electronAPI.copilot.chat('terminal-analysis', {
+        messages: [
+          { role: 'system', content: '你是終端助手。用戶會給你一個文件名、命令或錯誤信息，請直接分析它。用繁體中文回答，簡潔明瞭。' },
+          { role: 'user', content: promptContent }
+        ],
+        model: copilotConfig?.model || 'gpt-4'
+      })
+      
+      if (response.error) {
+        setAiAnalysisResult({
+          text: text.length > 50 ? text.substring(0, 50) + '...' : text,
+          result: `分析失敗：${response.error}`
+        })
+      } else {
+        setAiAnalysisResult({
+          text: text.length > 50 ? text.substring(0, 50) + '...' : text,
+          result: response.content || '無法獲取分析結果'
+        })
+        
+        // 5秒后自动缩小
+        aiAnalysisTimerRef.current = setTimeout(() => {
+          setAiAnalysisMinimized(true)
+        }, 5000)
+      }
+    } catch (error) {
+      setAiAnalysisResult({
+        text: text.length > 50 ? text.substring(0, 50) + '...' : text,
+        result: '分析失敗：' + (error instanceof Error ? error.message : String(error))
+      })
+    } finally {
+      setAiAnalyzing(false)
+    }
+  }
+  
+  // 双击选中的文本进行 AI 分析
+  const handleDoubleClick = () => {
+    if (terminalRef.current) {
+      const selection = terminalRef.current.getSelection()
+      if (selection && selection.trim()) {
+        // 双击分析时，不要触发错误检测
+        const trimmed = selection.trim()
+        // 只分析单个词或短语（避免误触发大段文本）
+        if (trimmed.split('\n').length <= 3 && trimmed.length < 200) {
+          performAIAnalysis(trimmed)
+        }
+      }
+    }
+  }
+
   // Handle terminal resize and focus when becoming active
   useEffect(() => {
     if (isActive && fitAddonRef.current && terminalRef.current) {
@@ -627,8 +838,14 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
-        hasSelection: !!selection
+        hasSelection: !!selection,
+        selectedText: selection || undefined
       })
+    })
+    
+    // Double-click for AI analysis
+    containerRef.current.addEventListener('dblclick', () => {
+      handleDoubleClick()
     })
 
     // Handle terminal output
@@ -860,6 +1077,149 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           )}
         </div>
       )}
+      
+      {/* AI 分析中的 loading */}
+      {aiAnalyzing && (
+        <div style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          background: 'rgba(30, 64, 95, 0.95)',
+          border: '1px solid #3b82f6',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          maxWidth: '300px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+          backdropFilter: 'blur(10px)',
+          animation: 'slideIn 0.3s ease-out',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <span style={{
+            display: 'inline-block',
+            width: '16px',
+            height: '16px',
+            border: '2px solid #93c5fd',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <span style={{ color: '#93c5fd', fontSize: '12px' }}>AI 分析中...</span>
+        </div>
+      )}
+      
+      {/* AI 分析结果 */}
+      {aiAnalysisResult && !aiAnalyzing && (
+        <div 
+          onMouseEnter={() => {
+            setAiAnalysisMinimized(false)
+            // 清除定时器，防止鼠标悬停时缩小
+            if (aiAnalysisTimerRef.current) {
+              clearTimeout(aiAnalysisTimerRef.current)
+            }
+          }}
+          onMouseLeave={() => {
+            // 鼠标离开后，3秒后再次缩小
+            aiAnalysisTimerRef.current = setTimeout(() => {
+              setAiAnalysisMinimized(true)
+            }, 3000)
+          }}
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            background: 'rgba(30, 58, 95, 0.95)',
+            border: '1px solid #3b82f6',
+            borderRadius: '8px',
+            padding: aiAnalysisMinimized ? '8px 12px' : '12px 16px',
+            maxWidth: aiAnalysisMinimized ? '200px' : '450px',
+            maxHeight: aiAnalysisMinimized ? '60px' : '400px',
+            overflow: aiAnalysisMinimized ? 'hidden' : 'auto',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(10px)',
+            animation: 'slideIn 0.3s ease-out',
+            zIndex: 100,
+            cursor: aiAnalysisMinimized ? 'pointer' : 'default',
+            transition: 'all 0.3s ease-in-out'
+          }}
+        >
+          {/* 关闭按钮 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setAiAnalysisResult(null)
+              if (aiAnalysisTimerRef.current) {
+                clearTimeout(aiAnalysisTimerRef.current)
+              }
+            }}
+            style={{
+              position: 'absolute',
+              top: '4px',
+              right: '6px',
+              background: 'transparent',
+              border: 'none',
+              color: '#9ca3af',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '2px 6px',
+              opacity: aiAnalysisMinimized ? 0.5 : 1
+            }}
+          >
+            ✕
+          </button>
+          
+          {/* 标题 */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: aiAnalysisMinimized ? '0' : '8px',
+            paddingRight: '20px'
+          }}>
+            <span style={{ fontSize: aiAnalysisMinimized ? '14px' : '16px' }}>🤖</span>
+            <span style={{ 
+              fontSize: aiAnalysisMinimized ? '11px' : '12px', 
+              fontWeight: 'bold', 
+              color: '#93c5fd',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {aiAnalysisMinimized ? `AI 分析：${aiAnalysisResult.text}` : 'AI 分析結果'}
+            </span>
+          </div>
+          
+          {!aiAnalysisMinimized && (
+            <>
+              {/* 分析的文本 */}
+              <div style={{
+                fontSize: '11px',
+                color: '#a5b4fc',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                padding: '6px 8px',
+                borderRadius: '4px',
+                marginBottom: '8px',
+                fontFamily: 'monospace',
+                wordBreak: 'break-all'
+              }}>
+                {aiAnalysisResult.text}
+              </div>
+              
+              {/* 分析结果 */}
+              <div style={{
+                fontSize: '12px',
+                color: '#e2e8f0',
+                lineHeight: '1.6',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {aiAnalysisResult.result}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div ref={containerRef} className="terminal-panel" style={{ height: '100%', width: '100%' }} />
       
@@ -874,9 +1234,22 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           }}
         >
           {contextMenu.hasSelection && (
-            <button onClick={handleCopy} className="context-menu-item">
-              複製
-            </button>
+            <>
+              <button 
+                onClick={() => {
+                  if (contextMenu.selectedText) {
+                    performAIAnalysis(contextMenu.selectedText)
+                  }
+                }} 
+                className="context-menu-item"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span>🤖</span> AI 分析
+              </button>
+              <button onClick={handleCopy} className="context-menu-item">
+                複製
+              </button>
+            </>
           )}
           <button onClick={handlePaste} className="context-menu-item">
             貼上
