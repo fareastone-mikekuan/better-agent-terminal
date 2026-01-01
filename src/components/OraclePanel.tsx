@@ -374,6 +374,64 @@ EMPLOYEE_ID  FIRST_NAME    LAST_NAME     EMAIL           HIRE_DATE    SALARY
 
 6 行已選取。
 執行時間: 0.08 秒`
+      } else if (queryLower.includes('pbk_offer') || queryLower.includes('pbk_config') || queryLower.includes('fy_tb_pbk')) {
+        mockResult = `查詢結果 (PBK_CONFIG 模擬資料):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OFFER_ID  OFFER_NAME                    OFFER_TYPE              PRODUCT  PKG_ID    PKG_NAME                      PKG_TYPE_DTL  RC_ID  RC_CHARGE_CODE  RC_CHARGE_NAME          OC_ID  UC_SERVICE_FILTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9397001   AWS基本方案_4G_299              PP--PRICE/RATE PLAN(RC)  A--AWS   1001001   4G基本費用包_299             RC            1      RC001           4G月稟費                   -      -
+9397002   AWS進階方案_4G_499              PP--PRICE/RATE PLAN(RC)  A--AWS   1001002   4G進階費用包_499             RC            2      RC002           4G進階月稟費                 -      -
+9397003   AWS商務方案_4G_799              PP--PRICE/RATE PLAN(RC)  A--AWS   1001003   4G商務費用包_799             RC            3      RC003           4G商務月稟費                 -      -
+9397004   AWS企業方案_4G_999              PP--PRICE/RATE PLAN(RC)  A--AWS   1001004   4G企業費用包_999             RC            4      RC004           4G企業月稟費                 -      -
+9397005   AWS專案方案_5G_599              PP--PRICE/RATE PLAN(RC)  A--AWS   1001005   5G專案費用包_599             RC            5      RC005           5G月稟費                   -      -
+9397006   AWS頂級方案_5G_1399             PP--PRICE/RATE PLAN(RC)  A--AWS   1001006   5G頂級費用包_1399            RC            6      RC006           5G頂級月稟費                 -      -
+9397007   IOT基本方案_M2M_99              PP--PRICE/RATE PLAN(RC)  I--IOT   1001007   M2M基本費用包_99              RC            7      RC007           M2M基本月稟                 -      -
+9397008   IOT進階方案_M2M_199             PP--PRICE/RATE PLAN(RC)  I--IOT   1001008   M2M進階費用包_199             RC            8      RC008           M2M進階月稟                 -      -
+9397009   IOT企業方案_M2M_399             PP--PRICE/RATE PLAN(RC)  I--IOT   1001009   M2M企業費用包_399             RC            9      RC009           M2M企業月稟                 -      -
+9397010   IOT智慧方案_NB_149              PP--PRICE/RATE PLAN(RC)  I--IOT   1001010   NB-IoT費用包_149             RC            10     RC010           NB-IoT月稟                 -      -
+9397011   AWS加值服務_來電顯示             AD--ADDITIONAL OFFER     A--AWS   2001001   來電顯示服務包               OC            -      -               -                      101    -
+9397012   AWS加值服務_留言信箱             AD--ADDITIONAL OFFER     A--AWS   2001002   留言信箱服務包               OC            -      -               -                      102    -
+9397013   AWS加值服務_來電答鈴             AD--ADDITIONAL OFFER     A--AWS   2001003   來電答鈴服務包               OC            -      -               -                      103    -
+9397014   AWS加值服務_國際漫遊             AD--ADDITIONAL OFFER     A--AWS   2001004   國際漫遊服務包               OC            -      -               -                      104    -
+9397015   AWS加值服務_安心保障             AD--ADDITIONAL OFFER     A--AWS   2001005   安心保障服務包               OC            -      -               -                      105    -
+9397016   AWS流量加購_1GB                 AD--ADDITIONAL OFFER     A--AWS   3001001   1GB流量加購包                UC            -      -               -                      -      DATA_1GB
+9397017   AWS流量加購_3GB                 AD--ADDITIONAL OFFER     A--AWS   3001002   3GB流量加購包                UC            -      -               -                      -      DATA_3GB
+9397018   AWS流量加購_5GB                 AD--ADDITIONAL OFFER     A--AWS   3001003   5GB流量加購包                UC            -      -               -                      -      DATA_5GB
+9397019   AWS流量加購_10GB                AD--ADDITIONAL OFFER     A--AWS   3001004   10GB流量加購包               UC            -      -               -                      -      DATA_10GB
+9397020   AWS流量加購_無限                AD--ADDITIONAL OFFER     A--AWS   3001005   無限流量加購包               UC            -      -               -                      -      DATA_UNLIM
+9397021   企業優惠_年繳折扣_10%          DS--DISCOUNT             A--AWS   4001001   年繳折扣包_10%              BDN           -      -               -                      -      -
+9397022   企業優惠_年繳折扣_15%          DS--DISCOUNT             A--AWS   4001002   年繳折扣包_15%              BDN           -      -               -                      -      -
+9397023   企業優惠_年繳折扣_20%          DS--DISCOUNT             A--AWS   4001003   年繳折扣包_20%              BDN           -      -               -                      -      -
+9397024   企業優惠_量大折扣_5%           DS--DISCOUNT             A--AWS   4001004   量大折扣包_5%               BDX           -      -               -                      -      -
+9397025   企業優惠_量大折扣_8%           DS--DISCOUNT             A--AWS   4001005   量大折扣包_8%               BDX           -      -               -                      -      -
+9397026   市場推廣_新客戶優惠              MK--MARKET LEVEL         A--AWS   5001001   新客戶首月免費                RC            11     RC011           新客戶優惠月稟                 -      -
+9397027   市場推廣_續約優惠               MK--MARKET LEVEL         A--AWS   5001002   續約購機優惠                 RC            12     RC012           續約優惠月稟                 -      -
+9397028   市場推廣_節日優惠               MK--MARKET LEVEL         A--AWS   5001003   節日流量加碼                 UC            -      -               -                      -      FEST_DATA
+9397029   市場推廣_生日優惠               MK--MARKET LEVEL         A--AWS   5001004   生日紀念流量                 UC            -      -               -                      -      BDAY_DATA
+9397030   市場推廣_VIP優惠               MK--MARKET LEVEL         A--AWS   5001005   VIP專屬優惠                  BDN           -      -               -                      -      -
+9397031   SD-WAN_基本方案_S             PP--PRICE/RATE PLAN(RC)  I--IOT   6001001   SD-WAN基本包_S              RC            13     RC013           SD-WAN_S月稟               -      -
+9397032   SD-WAN_進階方案_M             PP--PRICE/RATE PLAN(RC)  I--IOT   6001002   SD-WAN進階包_M              RC            14     RC014           SD-WAN_M月稟               -      -
+9397033   SD-WAN_企業方案_L             PP--PRICE/RATE PLAN(RC)  I--IOT   6001003   SD-WAN企業包_L              RC            15     RC015           SD-WAN_L月稟               -      -
+9397034   SD-WAN_加值_流量加購           AD--ADDITIONAL OFFER     I--IOT   6001004   SD-WAN流量加購包             UC            -      -               -                      -      SDWAN_DATA
+9397035   SD-WAN_加值_QoS保證           AD--ADDITIONAL OFFER     I--IOT   6001005   SD-WAN_QoS保證包             OC            -      -               -                      106    -
+9397036   新安東京_折扣方案_A            DS--DISCOUNT             A--AWS   7001001   新安東京專案折扣_A            BDN           -      -               -                      -      -
+9397037   新安東京_折扣方案_B            DS--DISCOUNT             A--AWS   7001002   新安東京專案折扣_B            BDX           -      -               -                      -      -
+9397038   新安東京_折扣方案_C            DS--DISCOUNT             A--AWS   7001003   新安東京專案折扣_C            BDN           -      -               -                      -      -
+9397039   AWS_5G_入門方案_399            PP--PRICE/RATE PLAN(RC)  A--AWS   1001011   5G入門費用包_399             RC            16     RC016           5G入門月稟                  -      -
+9397040   AWS_5G_進階方案_699            PP--PRICE/RATE PLAN(RC)  A--AWS   1001012   5G進階費用包_699             RC            17     RC017           5G進階月稟                  -      -
+9397041   AWS_5G_商務方案_999            PP--PRICE/RATE PLAN(RC)  A--AWS   1001013   5G商務費用包_999             RC            18     RC018           5G商務月稟                  -      -
+9397042   AWS_5G_專案方案_1199           PP--PRICE/RATE PLAN(RC)  A--AWS   1001014   5G專案費用包_1199            RC            19     RC019           5G專案月稟                  -      -
+9397043   IOT_車聯網_基本方案            PP--PRICE/RATE PLAN(RC)  I--IOT   1001015   車聯網基本包                  RC            20     RC020           車聯網基本月稟                -      -
+9397044   IOT_車聯網_進階方案            PP--PRICE/RATE PLAN(RC)  I--IOT   1001016   車聯網進階包                  RC            21     RC021           車聯網進階月稟                -      -
+9397045   IOT_智慧家庭_基本方案          PP--PRICE/RATE PLAN(RC)  I--IOT   1001017   智慧家庭基本包                RC            22     RC022           智慧家庭基本月稟              -      -
+9397046   IOT_智慧家庭_進階方案          PP--PRICE/RATE PLAN(RC)  I--IOT   1001018   智慧家庭進階包                RC            23     RC023           智慧家庭進階月稟              -      -
+9397047   AWS_短代碼_行銷簡訊           AD--ADDITIONAL OFFER     A--AWS   2001006   行銷簡訊服務包               OC            -      -               -                      107    -
+9397048   AWS_短代碼_驗證簡訊           AD--ADDITIONAL OFFER     A--AWS   2001007   驗證簡訊服務包               OC            -      -               -                      108    -
+9397049   AWS_雲端備份_基本              AD--ADDITIONAL OFFER     A--AWS   2001008   雲端備份基本包               OC            -      -               -                      109    -
+9397050   AWS_雲端備份_進階              AD--ADDITIONAL OFFER     A--AWS   2001009   雲端備份進階包               OC            -      -               -                      110    -
+
+50 行已選取。
+執行時間: 0.35 秒`
       } else if (queryLower.includes('count')) {
         mockResult = `查詢結果 (模擬資料):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -423,88 +481,185 @@ Value7       Value8       Value9
     }
   }
 
-  // AI Analysis functions
+  // AI Analysis functions - using ref to track current hovered text
+  const currentHoveredTextRef = useRef<string | null>(null)
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  
+  // Click outside to close tooltip
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (hoveredData && tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setHoveredData(null)
+        setAiAnalysis('')
+        setIsAnalyzing(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [hoveredData])
+  
   const handleDataHover = (text: string, event: React.MouseEvent) => {
+    // If tooltip is already showing, don't interrupt
+    if (hoveredData) {
+      return
+    }
+
     // Clear previous timeout
     if (analysisTimeoutRef.current) {
       clearTimeout(analysisTimeoutRef.current)
+      analysisTimeoutRef.current = null
     }
+    
+    // Track current hovered text
+    currentHoveredTextRef.current = text
 
-    // Set hovered data position
+    // Get position for later use
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    setHoveredData({
-      text,
+    const position = {
       x: rect.left + rect.width / 2,
       y: rect.top
-    })
+    }
 
-    // Delay AI analysis to avoid too many requests
+    // Wait 1 second before showing tooltip and starting analysis
     analysisTimeoutRef.current = setTimeout(() => {
-      performAIAnalysis(text)
-    }, 500)
+      // Only proceed if still hovering on the same text
+      if (currentHoveredTextRef.current !== text) {
+        return
+      }
+      
+      // Show tooltip with loading state
+      setHoveredData({
+        text,
+        x: position.x,
+        y: position.y
+      })
+      setIsAnalyzing(true)
+      
+      // Get current SQL from active tab
+      const activeTab = tabs.find(t => t.id === activeTabId)
+      const currentSQL = activeTab?.query || ''
+      
+      performAIAnalysis(text, currentSQL)
+    }, 1000) // 1 second delay
   }
 
   const handleDataLeave = () => {
-    if (analysisTimeoutRef.current) {
+    // Clear the tracked text
+    currentHoveredTextRef.current = null
+    
+    // Clear analysis timeout if user moves away before 1 second (tooltip not shown yet)
+    if (analysisTimeoutRef.current && !hoveredData) {
       clearTimeout(analysisTimeoutRef.current)
+      analysisTimeoutRef.current = null
     }
+    // Don't hide tooltip on mouse leave - only hide on click outside
+  }
+
+  const closeTooltip = () => {
     setHoveredData(null)
     setAiAnalysis('')
     setIsAnalyzing(false)
   }
 
-  const performAIAnalysis = async (data: string) => {
-    setIsAnalyzing(true)
-    
+  const performAIAnalysis = async (data: string, sqlQuery: string) => {
     try {
-      // Simulate AI analysis - in real implementation, this would call Copilot or LLM API
-      await new Promise(resolve => setTimeout(resolve, 800))
+      // Check if Copilot is enabled
+      const copilotEnabled = await window.electronAPI.copilot.isEnabled()
       
-      // Generate contextual analysis based on data type
-      let analysis = ''
-      
-      // Detect data type and generate appropriate analysis
-      if (!isNaN(Number(data))) {
-        const num = Number(data)
-        analysis = `📊 數值分析:
+      if (copilotEnabled) {
+        // Use real Copilot API
+        const systemPrompt = {
+          role: 'system' as const,
+          content: 'You are a database expert analyzing data values from Oracle SQL query results. Use the SQL query context to provide more accurate and relevant analysis. Keep it brief, practical, and actionable. Answer in Traditional Chinese.'
+        }
+        
+        const userPrompt = {
+          role: 'user' as const,
+          content: `## SQL 查詢語句
+\`\`\`sql
+${sqlQuery || '未提供 SQL 語句'}
+\`\`\`
+
+## 需要分析的數據值
+"${data}"
+
+請根據 SQL 語句的上下文分析這個數據值：
+1. 📊 這個值可能來自哪個欄位/表
+2. 🔍 數據類型和格式分析
+3. 💡 可能的業務含義
+4. ⚠️ 任何需要注意的地方
+
+保持簡潔，使用表情符號增加可讀性。`
+        }
+        
+        const copilotConfig = await window.electronAPI.copilot.getConfig()
+        const response = await window.electronAPI.copilot.chat('oracle-analysis', {
+          messages: [systemPrompt, userPrompt],
+          model: copilotConfig?.model || 'gpt-4'
+        })
+        
+        if (response.error) {
+          setAiAnalysis(`❌ Copilot 分析失敗: ${response.error}`)
+        } else {
+          setAiAnalysis(response.content)
+        }
+      } else {
+        // Fallback to rule-based analysis
+        await performRuleBasedAnalysis(data, sqlQuery)
+      }
+    } catch (err) {
+      console.error('AI analysis error:', err)
+      // Fallback to rule-based analysis on error
+      await performRuleBasedAnalysis(data, sqlQuery)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const performRuleBasedAnalysis = async (data: string, sqlQuery: string) => {
+    // Original rule-based logic as fallback
+    await new Promise(resolve => setTimeout(resolve, 300))
+    
+    let analysis = ''
+    const sqlContext = sqlQuery ? `
+📝 SQL 參考: ${sqlQuery.substring(0, 100)}${sqlQuery.length > 100 ? '...' : ''}
+` : ''
+    
+    if (!isNaN(Number(data))) {
+      const num = Number(data)
+      analysis = `📊 數值分析:
 • 數值: ${num.toLocaleString()}
 • 類型: ${Number.isInteger(num) ? '整數' : '浮點數'}
 ${num > 1000 ? `• 格式化: ${(num / 1000).toFixed(2)}K` : ''}
 ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
 💡 建議: ${num > 10000 ? '此為較大數值，建議檢查數據合理性' : '數值在正常範圍內'}`
-      } else if (data.match(/^\d{2}-[A-Z]{3}-\d{2}$/)) {
-        // Date format
-        analysis = `📅 日期分析:
+    } else if (data.match(/^\d{2}-[A-Z]{3}-\d{2}$/)) {
+      analysis = `📅 日期分析:
 • 日期: ${data}
 • 格式: Oracle DD-MON-YY
 💡 建議: 考慮使用完整年份格式以避免歧義`
-      } else if (data.includes('@')) {
-        // Email
-        analysis = `📧 Email 分析:
+    } else if (data.includes('@')) {
+      analysis = `📧 Email 分析:
 • 類型: 電子郵件地址
 • 格式: ${data.toLowerCase() === data ? '小寫' : '混合大小寫'}
 💡 建議: 確保郵件格式符合RFC標準`
-      } else if (data.length > 20) {
-        // Long text
-        analysis = `📝 文本分析:
+    } else if (data.length > 20) {
+      analysis = `📝 文本分析:
 • 長度: ${data.length} 字元
 • 類型: 長文本
 💡 建議: 考慮建立索引以優化查詢性能`
-      } else {
-        // General text
-        analysis = `🔤 數據分析:
+    } else {
+      analysis = `🔤 數據分析:
 • 內容: ${data}
 • 長度: ${data.length} 字元
 • 類型: ${/^[A-Z_]+$/.test(data) ? '常量/代碼' : '一般文本'}
 💡 可能的用途: ${/^[A-Z_]+$/.test(data) ? '資料表名稱、欄位名稱或狀態代碼' : '使用者輸入的數據'}`
-      }
-      
-      setAiAnalysis(analysis)
-    } catch (err) {
-      setAiAnalysis('❌ 分析失敗')
-    } finally {
-      setIsAnalyzing(false)
     }
+    
+    setAiAnalysis(analysis)
   }
 
   // Parse result to make data interactive
@@ -1005,6 +1160,49 @@ ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
                   >
                     COUNT
                   </button>
+                  <button
+                    onClick={() => updateTab(activeTab.id, { query: `-- HGB_PBK_CONFIG_SQL
+SELECT DISTINCT a.offer_id, a.offer_name,
+  CASE WHEN a.offer_type = 'AD' THEN 'AD--ADDITIONAL OFFER'
+       WHEN a.offer_type = 'DS' THEN 'DS--DISCOUNT'
+       WHEN a.offer_type = 'MK' THEN 'MK--MARKET LEVEL'
+       WHEN a.offer_type = 'PP' THEN 'PP--PRICE/RATE PLAN(RC)'
+       ELSE TO_CHAR(a.offer_type) END offer_type,
+  a.eff_date offer_eff_date, a.end_date offer_end_date,
+  CASE WHEN a.product_type = 'A' THEN 'A--AWS'
+       WHEN a.product_type = 'I' THEN 'I--IOT'
+       ELSE TO_CHAR(a.product_type) END product_type,
+  a.offer_level, a.deployment "deployment(OU)", a.overwrite,
+  c.pkg_id, c.pkg_name, c.pkg_type_dtl,
+  e.rc_id, e.rc_charge_code, e.rc_charge_name,
+  f.oc_id, f.oc_charge_code, f.oc_charge_name,
+  g.service_filter "UC_ID/SERVICE_FILTER", g.uc_charge_code
+FROM fy_tb_pbk_offer a,
+     fy_tb_pbk_offer_package b,
+     fy_tb_pbk_package c,
+     fy_tb_pbk_package_rc e,
+     fy_tb_pbk_package_oc f,
+     fy_tb_pbk_package_uc g
+WHERE a.offer_id = b.offer_id
+  AND b.pkg_id = c.pkg_id(+)
+  AND b.pkg_id = e.pkg_id(+)
+  AND b.pkg_id = f.pkg_id(+)
+  AND b.pkg_id = g.pkg_id(+)
+  AND c.pkg_type_dtl IN ('RC', 'OC', 'UC', 'BDN', 'BDX')
+ORDER BY c.pkg_type_dtl, a.offer_id, c.pkg_id` })}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#1e3a5f',
+                      color: '#60a5fa',
+                      border: '1px solid #3b82f6',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    PBK_CONFIG
+                  </button>
                 </div>
               </div>
               
@@ -1122,6 +1320,7 @@ ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
               {/* AI Analysis Tooltip */}
               {hoveredData && createPortal(
                 <div
+                  ref={tooltipRef}
                   style={{
                     position: 'fixed',
                     left: `${hoveredData.x}px`,
@@ -1133,14 +1332,38 @@ ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
                     padding: '12px',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
                     zIndex: 10000,
-                    maxWidth: '300px',
+                    maxWidth: '400px',
                     minWidth: '200px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
                     color: '#e2e8f0',
                     fontSize: '12px',
                     lineHeight: '1.5',
-                    whiteSpace: 'pre-wrap'
+                    whiteSpace: 'pre-wrap',
+                    cursor: 'default'
                   }}
                 >
+                  {/* Close button */}
+                  <button
+                    onClick={closeTooltip}
+                    style={{
+                      position: 'absolute',
+                      top: '4px',
+                      right: '4px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '16px',
+                      padding: '2px 6px',
+                      borderRadius: '4px'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#e2e8f0')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#64748b')}
+                  >
+                    ✕
+                  </button>
+                  
                   {isAnalyzing ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div className="loading-spinner" style={{
