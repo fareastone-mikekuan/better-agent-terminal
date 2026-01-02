@@ -7,6 +7,7 @@ import { settingsStore } from '../stores/settings-store'
 import type { KnowledgeEntry } from '../types/knowledge-base'
 import { formatFileSize, getModelKnowledgeLimit } from '../types/knowledge-base'
 import * as XLSX from 'xlsx'
+import { unzipSync, strFromU8 } from 'fflate'
 
 interface KnowledgeBasePanelProps {
   onClose: () => void
@@ -21,6 +22,220 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+
+  const extractVsdxToText = (arrayBuffer: ArrayBuffer, fileName: string): string => {
+    const now = new Date().toLocaleString('zh-TW')
+
+    const parseXml = (xml: string): Document | null => {
+      const doc = new DOMParser().parseFromString(xml, 'application/xml')
+      const parseError = doc.getElementsByTagName('parsererror')?.[0]
+      return parseError ? null : doc
+    }
+
+    const normalizePath = (p: string) => p.replace(/\\/g, '/')
+
+    const decodeXml = (u8: Uint8Array): string => {
+      // VSDX is UTF-8 XML inside a ZIP
+      return strFromU8(u8)
+    }
+
+    let zipFiles: Record<string, Uint8Array>
+    try {
+      zipFiles = unzipSync(new Uint8Array(arrayBuffer))
+    } catch {
+      return `# ${fileName}\n檔案類型：Visio (.vsdx)\n提取時間：${now}\n\n⚠️ 無法解壓縮此 VSDX（可能是檔案損壞或不是標準 VSDX 格式）。`
+    }
+
+    const files: Record<string, Uint8Array> = {}
+    for (const [rawPath, data] of Object.entries(zipFiles)) {
+      files[normalizePath(rawPath)] = data
+    }
+
+    // Try build page name mapping: pages.xml + rels
+    const pageNameByTarget = new Map<string, string>()
+    const pagesXml = files['visio/pages/pages.xml']
+    const pagesRelsXml = files['visio/pages/_rels/pages.xml.rels']
+
+    if (pagesXml && pagesRelsXml) {
+      const pagesDoc = parseXml(decodeXml(pagesXml))
+      const relsDoc = parseXml(decodeXml(pagesRelsXml))
+
+      if (pagesDoc && relsDoc) {
+        const relTargetById = new Map<string, string>()
+        const relEls = Array.from(relsDoc.getElementsByTagName('*')).filter(el => (el as Element).localName === 'Relationship') as Element[]
+        for (const rel of relEls) {
+          const id = rel.getAttribute('Id')
+          const target = rel.getAttribute('Target')
+          if (id && target) {
+            // Typical target: "page1.xml" or "../pages/page1.xml" (normalize to file name)
+            const base = normalizePath(target).split('/').pop() || target
+            relTargetById.set(id, base)
+          }
+        }
+
+        const pageEls = Array.from(pagesDoc.getElementsByTagName('*')).filter(el => (el as Element).localName === 'Page') as Element[]
+        for (const page of pageEls) {
+          const name = page.getAttribute('Name') || page.getAttribute('NameU') || ''
+          const relId = page.getAttribute('Rel') || page.getAttribute('r:id') || page.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || ''
+          const targetBase = relId ? relTargetById.get(relId) : undefined
+          if (name && targetBase) {
+            pageNameByTarget.set(targetBase, name)
+          }
+        }
+      }
+    }
+
+    const pagePaths = Object.keys(files)
+      .filter(p => p.startsWith('visio/pages/page') && p.endsWith('.xml') && !p.includes('/_rels/'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+
+    const extractTextLinesFromPage = (doc: Document): string[] => {
+      const lines: string[] = []
+
+      // Prefer per-shape text, so we don't lose structure
+      const shapeEls = Array.from(doc.getElementsByTagName('*')).filter(el => (el as Element).localName === 'Shape') as Element[]
+      if (shapeEls.length > 0) {
+        for (const shape of shapeEls) {
+          const textEls = Array.from(shape.getElementsByTagName('*')).filter(el => (el as Element).localName === 'Text') as Element[]
+          for (const t of textEls) {
+            const raw = (t.textContent || '').replace(/\s+/g, ' ').trim()
+            if (raw) lines.push(raw)
+          }
+        }
+      }
+
+      // Fallback: any Text nodes
+      if (lines.length === 0) {
+        const textEls = Array.from(doc.getElementsByTagName('*')).filter(el => (el as Element).localName === 'Text') as Element[]
+        for (const t of textEls) {
+          const raw = (t.textContent || '').replace(/\s+/g, ' ').trim()
+          if (raw) lines.push(raw)
+        }
+      }
+
+      // Dedupe while preserving order
+      const seen = new Set<string>()
+      return lines.filter(x => {
+        if (seen.has(x)) return false
+        seen.add(x)
+        return true
+      })
+    }
+
+    const parts: string[] = []
+    let totalLines = 0
+
+    for (const pagePath of pagePaths) {
+      const xml = decodeXml(files[pagePath])
+      const doc = parseXml(xml)
+      if (!doc) continue
+
+      const fileBase = pagePath.split('/').pop() || pagePath
+      const pageName = pageNameByTarget.get(fileBase) || fileBase
+      const lines = extractTextLinesFromPage(doc)
+      totalLines += lines.length
+
+      parts.push(`## ${pageName}\n${lines.length ? lines.map(l => `- ${l}`).join('\n') : '(此頁未偵測到可讀文字)'}\n`)
+    }
+
+    if (parts.length === 0) {
+      return `# ${fileName}\n檔案類型：Visio (.vsdx)\n提取時間：${now}\n\n⚠️ 這個 VSDX 內找不到可解析的頁面 XML（或格式非標準 Visio VSDX）。`
+    }
+
+    return `# ${fileName}\n檔案類型：Visio (.vsdx)\n提取時間：${now}\n\n提取頁數：${parts.length}\n提取文字條數：${totalLines}\n\n${parts.join('\n')}`
+  }
+
+  const extractDocxToText = (arrayBuffer: ArrayBuffer, fileName: string): string => {
+    const now = new Date().toLocaleString('zh-TW')
+
+    const parseXml = (xml: string): Document | null => {
+      const doc = new DOMParser().parseFromString(xml, 'application/xml')
+      const parseError = doc.getElementsByTagName('parsererror')?.[0]
+      return parseError ? null : doc
+    }
+
+    const normalizeWhitespace = (s: string) => s.replace(/\s+/g, ' ').trim()
+
+    let zipFiles: Record<string, Uint8Array>
+    try {
+      zipFiles = unzipSync(new Uint8Array(arrayBuffer))
+    } catch {
+      return `# ${fileName}\n檔案類型：Word (.docx)\n提取時間：${now}\n\n⚠️ 無法解壓縮此 DOCX（可能是檔案損壞或不是標準 DOCX 格式）。`
+    }
+
+    const docXml = zipFiles['word/document.xml']
+    if (!docXml) {
+      return `# ${fileName}\n檔案類型：Word (.docx)\n提取時間：${now}\n\n⚠️ DOCX 內找不到 word/document.xml（格式非標準或被保護）。`
+    }
+
+    const xml = strFromU8(docXml)
+    const doc = parseXml(xml)
+    if (!doc) {
+      return `# ${fileName}\n檔案類型：Word (.docx)\n提取時間：${now}\n\n⚠️ 無法解析 document.xml。`
+    }
+
+    // Extract text by paragraph (w:p) and run text (w:t)
+    const paragraphs: string[] = []
+    const pEls = Array.from(doc.getElementsByTagName('*')).filter(el => (el as Element).localName === 'p') as Element[]
+    for (const p of pEls) {
+      const tEls = Array.from(p.getElementsByTagName('*')).filter(el => (el as Element).localName === 't') as Element[]
+      const text = normalizeWhitespace(tEls.map(t => t.textContent || '').join(''))
+      if (text) paragraphs.push(text)
+    }
+
+    if (paragraphs.length === 0) {
+      const tEls = Array.from(doc.getElementsByTagName('*')).filter(el => (el as Element).localName === 't') as Element[]
+      const all = normalizeWhitespace(tEls.map(t => t.textContent || '').join(' '))
+      if (all) paragraphs.push(all)
+    }
+
+    const MAX_PARAGRAPHS = 20000
+    const limited = paragraphs.slice(0, MAX_PARAGRAPHS)
+    const truncatedNote = paragraphs.length > MAX_PARAGRAPHS
+      ? `\n\n⚠️ 段落過多，僅保留前 ${MAX_PARAGRAPHS} 段（避免瀏覽器/模型負擔過大）。`
+      : ''
+
+    return `# ${fileName}\n檔案類型：Word (.docx)\n提取時間：${now}\n\n提取段落數：${paragraphs.length}\n\n${limited.map(p => `- ${p}`).join('\n')}${truncatedNote}`
+  }
+
+  const estimateTokens = (text: string): number => {
+    // Conservative heuristic to avoid model prompt overflow.
+    // tokens ~= utf8Bytes / 3.2
+    const bytes = new TextEncoder().encode(text).length
+    return Math.ceil(bytes / 3.2)
+  }
+
+  const sliceToTokenBudget = (text: string, maxTokens: number): string => {
+    if (!text) return ''
+    if (estimateTokens(text) <= maxTokens) return text
+
+    // Proportional first cut
+    let end = Math.min(text.length, Math.max(1, Math.floor(maxTokens * 4)))
+    let slice = text.slice(0, end)
+
+    // Back off until under budget
+    while (end > 1 && estimateTokens(slice) > maxTokens) {
+      end = Math.floor(end * 0.8)
+      slice = text.slice(0, end)
+    }
+
+    // Fine tune upward (light binary search)
+    let low = end
+    let high = Math.min(text.length, Math.floor(end * 1.5))
+    while (low + 100 < high) {
+      const mid = Math.floor((low + high) / 2)
+      const midSlice = text.slice(0, mid)
+      if (estimateTokens(midSlice) <= maxTokens) {
+        low = mid
+      } else {
+        high = mid
+      }
+    }
+
+    let finalSlice = text.slice(0, low)
+    finalSlice = finalSlice.replace(/[\uD800-\uDBFF]$/, '')
+    return finalSlice
+  }
 
   const downloadJson = (fileName: string, data: unknown) => {
     const json = JSON.stringify(data, null, 2)
@@ -147,7 +362,12 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   }, [])
 
   // 學習知識（使用 Copilot API 驗證）
-  const learnKnowledge = async (entry: KnowledgeEntry) => {
+  // sourceContent: optional override so we can learn large files without persisting the raw content into localStorage.
+  const learnKnowledge = async (
+    entry: KnowledgeEntry,
+    sourceContent?: string,
+    sourceContentBytes?: number
+  ) => {
     setIsLearning(true)
     setLearningStatus(`正在學習「${entry.name}」...`)
 
@@ -159,18 +379,27 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       }
 
       // 智能提取：讓 AI 總結和提取關鍵信息（偏向壓縮版）
+      const contentForLearning = typeof sourceContent === 'string' ? sourceContent : entry.content
+      const learningBytes = typeof sourceContentBytes === 'number'
+        ? sourceContentBytes
+        : new Blob([contentForLearning]).size
+
       const originalBytes = typeof entry.originalSize === 'number'
         ? entry.originalSize
-        : (typeof entry.size === 'number' ? entry.size : new Blob([entry.content]).size)
+        : (typeof entry.size === 'number' ? entry.size : learningBytes)
       const contentSizeKB = (originalBytes / 1024).toFixed(1)
       setLearningStatus(`正在分析「${entry.name}」(${contentSizeKB} KB)...\n使用 AI 提取關鍵信息中...`)
       
-      // 對於大文件，分批提取
-      const MAX_CHUNK_SIZE = 30000
+      // 對於大文件，分批提取（以 token 預算切分，避免 400 prompt token count exceeds limit）
       const chunks: string[] = []
-      
-      for (let i = 0; i < entry.content.length; i += MAX_CHUNK_SIZE) {
-        chunks.push(entry.content.substring(i, i + MAX_CHUNK_SIZE))
+      let offset = 0
+      while (offset < contentForLearning.length) {
+        const remaining = contentForLearning.slice(offset)
+        // Keep each chunk comfortably sized; final prompt will be clamped again below.
+        const chunk = sliceToTokenBudget(remaining, 22000)
+        if (!chunk) break
+        chunks.push(chunk)
+        offset += chunk.length
       }
       
       setLearningStatus(`正在分析「${entry.name}」...\n分成 ${chunks.length} 個部分進行提取`)
@@ -184,7 +413,7 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       for (let i = 0; i < chunks.length; i++) {
         setLearningStatus(`正在分析「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
         
-        const extractPrompt = `請分析以下文檔內容並「精簡但保留足夠細節」提取關鍵信息：
+        const promptPrefix = `請分析以下文檔內容並「精簡但保留足夠細節」提取關鍵信息：
       - 只移除冗詞/重複，避免把關鍵細節濃縮掉
       - 請以條列/小節輸出（不要長篇敘述），保留專有名詞、代碼、欄位名、錯誤碼
       - 每一部分輸出總長度不超過 ${MAX_EXTRACT_CHARS_PER_PART} 個字元
@@ -198,9 +427,20 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
 部分：${i + 1}/${chunks.length}
 
 內容：
-${chunks[i]}
+`
+
+  const promptSuffix = `
 
 請以結構化格式輸出關鍵信息：`
+
+  // Final safety clamp against model prompt limits.
+  const MODEL_PROMPT_TOKEN_LIMIT = 64000
+  const HEADROOM_TOKENS = 2500
+  const targetTotalTokens = MODEL_PROMPT_TOKEN_LIMIT - HEADROOM_TOKENS
+  const baseTokens = estimateTokens(promptPrefix + promptSuffix)
+  const chunkBudget = Math.max(2000, targetTotalTokens - baseTokens)
+  const safeChunk = sliceToTokenBudget(chunks[i], Math.min(22000, chunkBudget))
+  const extractPrompt = `${promptPrefix}${safeChunk}${promptSuffix}`
 
         const response = await window.electronAPI.copilot.chat(`extract-${entry.id}-${i}`, {
           messages: [
@@ -265,10 +505,21 @@ ${mergedSummaries}
       const learnedBytes = new Blob([extractedContent]).size
       const requestedModel = settingsStore.getCopilotConfig()?.model
       const learnedModel = lastResponseModel || requestedModel
+
+      // Avoid persisting huge originalContent into localStorage (quota risk).
+      // We still keep originalSize so UI can show the real file size.
+      const MAX_ORIGINAL_CONTENT_BYTES_TO_STORE = 200 * 1024
+      const shouldStoreOriginalContent = (
+        typeof entry.originalContent === 'string'
+          ? true
+          : learningBytes <= MAX_ORIGINAL_CONTENT_BYTES_TO_STORE
+      )
       
       // 更新條目為提取後的內容，並同時標記為已學習
       await knowledgeStore.updateEntry(entry.id, { 
-        originalContent: typeof entry.originalContent === 'string' ? entry.originalContent : entry.content,
+        originalContent: shouldStoreOriginalContent
+          ? (typeof entry.originalContent === 'string' ? entry.originalContent : contentForLearning)
+          : undefined,
         originalSize: typeof entry.originalSize === 'number' ? entry.originalSize : originalBytes,
         content: extractedContent,
         isLearned: true,
@@ -280,8 +531,11 @@ ${mergedSummaries}
       
       const newSizeKB = (learnedBytes / 1024).toFixed(1)
       const ratio = originalBytes > 0 ? ((1 - learnedBytes / originalBytes) * 100).toFixed(1) : '0.0'
-      
-      setLearningStatus(`✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%\n\n內容已結構化，可在對話中高效使用！`)
+
+      const note = shouldStoreOriginalContent
+        ? ''
+        : '\n\n⚠️ 原始內容過大，為避免儲存空間不足，僅保存學習後內容（可重新匯入原檔再學習）。'
+      setLearningStatus(`✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%\n\n內容已結構化，可在對話中高效使用！${note}`)
       
       // 5秒後清除狀態
       setTimeout(() => {
@@ -309,6 +563,19 @@ ${mergedSummaries}
         let content = ''
         const fileName = file.name
         const fileExt = fileName.toLowerCase().split('.').pop()
+        const originalBytes = file.size
+
+        // Legacy Visio .vsd is a binary format; we can't reliably extract text in-browser.
+        if (fileExt === 'vsd') {
+          setLearningStatus(`⚠️ Visio .vsd 為舊版二進位格式，無法直接提取流程圖文字。\n\n建議：用 Visio 另存為 .vsdx 後再上傳學習。`)
+          continue
+        }
+
+        // Legacy Word .doc is a binary format; convert to .docx first.
+        if (fileExt === 'doc') {
+          setLearningStatus(`⚠️ Word .doc 為舊版二進位格式，無法直接提取可讀文字。\n\n建議：用 Word 另存為 .docx 後再上傳學習。`)
+          continue
+        }
 
         // 處理 Excel 文件
         if (fileExt === 'xlsx' || fileExt === 'xls') {
@@ -349,24 +616,42 @@ ${mergedSummaries}
             setLearningStatus(`⚠️ Excel 文件「${fileName}」內容為空`)
             continue
           }
+        } else if (fileExt === 'vsdx') {
+          // Visio VSDX is a ZIP (OOXML). We must extract readable text from its XML parts.
+          const arrayBuffer = await file.arrayBuffer()
+          content = extractVsdxToText(arrayBuffer, fileName)
+        } else if (fileExt === 'docx') {
+          // Word DOCX is a ZIP (OOXML). Extract readable text from XML.
+          const arrayBuffer = await file.arrayBuffer()
+          content = extractDocxToText(arrayBuffer, fileName)
         } else {
           // 處理文本文件
           content = await file.text()
         }
         
-        // 檢查內容大小
-        const contentSizeKB = content.length / 1024
+        // 檢查內容大小（不再硬性限制；只提示）
+        const contentBytes = new Blob([content]).size
+        const contentSizeKB = contentBytes / 1024
         if (contentSizeKB > 500) {
-          setLearningStatus(`⚠️ 文件「${fileName}」太大 (${contentSizeKB.toFixed(1)} KB)，建議拆分成多個較小的文件`)
-          continue
+          const originalKB = (originalBytes / 1024).toFixed(1)
+          setLearningStatus(`⚠️ 文件「${fileName}」提取後內容較大 (${contentSizeKB.toFixed(1)} KB；原檔 ${originalKB} KB)。\n\n仍可學習：系統會分段提取並在學習後生成精簡內容；學習後也可隨時取消「提供給 AI」。`)
         }
         
         const category: KnowledgeEntry['category'] = 'custom'
-        
-        const entry = await knowledgeStore.addEntry(fileName, content, category)
-        
-        // 自動學習
-        await learnKnowledge(entry)
+
+        // Avoid persisting huge raw content before learning (localStorage quota risk).
+        // We'll create a small placeholder entry and learn using sourceContent override.
+        const LARGE_CONTENT_BYTES = 200 * 1024
+        const placeholder = `# ${fileName}\n原始大小：${(originalBytes / 1024).toFixed(1)} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n(內容提取中，完成學習後將以精簡內容取代...)\n\n_id=${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+        const initialContent = contentBytes > LARGE_CONTENT_BYTES ? placeholder : content
+        const entry = await knowledgeStore.addEntry(fileName, initialContent, category)
+
+        // Ensure "原始大小" 使用檔案 bytes，而非字元估算
+        knowledgeStore.updateEntry(entry.id, { originalSize: originalBytes, size: originalBytes })
+
+        // 自動學習（使用 sourceContent，避免先把超大原文寫入 storage）
+        await learnKnowledge(entry, content, contentBytes)
         
       } catch (error) {
         console.error('Failed to upload file:', error)

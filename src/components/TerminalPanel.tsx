@@ -580,6 +580,14 @@ ${fileContent.substring(0, 1500)}
       const terminal = terminalRef.current
       const fitAddon = fitAddonRef.current
 
+      const shouldAutoFocusTerminal = () => {
+        const active = document.activeElement
+        if (!active) return true
+        if (active === document.body || active === document.documentElement) return true
+        const container = containerRef.current
+        return !!(container && container.contains(active))
+      }
+
       // Use requestAnimationFrame to ensure DOM is fully rendered
       const rafId = requestAnimationFrame(() => {
         if (!fitAddon || !terminal) return
@@ -592,7 +600,9 @@ ${fileContent.substring(0, 1500)}
         // Call refresh after another frame to ensure layout is complete
         requestAnimationFrame(() => {
           terminal.refresh(0, terminal.rows - 1)
-          terminal.focus()
+          if (shouldAutoFocusTerminal()) {
+            terminal.focus()
+          }
         })
       })
 
