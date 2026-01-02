@@ -103,20 +103,22 @@ export function getModelKnowledgeLimit(model?: string): { maxTotal: number; maxS
     }
   }
   
-  if (modelName.includes('o1-')) {
-    // O1 models: 128K context window
+  if (modelName.includes('o1-') || modelName.startsWith('o3') || modelName.startsWith('o4') || modelName.includes('o3-') || modelName.includes('o4-')) {
+    // O-series models (o1/o3/o4): typically large context window (estimate)
     return {
-      maxTotal: 100000,      // 100KB
-      maxSingle: 80000,      // 80KB
-      tokenLimit: 128000     // 128K tokens
+      maxTotal: 150000,      // 150KB (conservative)
+      maxSingle: 120000,     // 120KB
+      tokenLimit: 128000     // 128K tokens (estimate)
     }
   }
   
-  // 預設：GPT-3.5 or unknown (4K context)
+  // 預設：unknown
+  // 避免對新模型 ID 直接落到 10KB 造成「使用率」誤判。
+  // 若真的遇到小 context 模型，後續可再依實際情況調小。
   return {
-    maxTotal: 10000,         // 10KB
-    maxSingle: 8000,         // 8KB
-    tokenLimit: 4000         // 4K tokens
+    maxTotal: 60000,         // 60KB
+    maxSingle: 45000,        // 45KB
+    tokenLimit: 32000        // 32K tokens (estimate)
   }
 }
 
@@ -125,11 +127,16 @@ export interface KnowledgeEntry {
   name: string
   content: string
   category: 'billing' | 'business' | 'technical' | 'custom'
+  enabled: boolean // 是否提供給 AI（以個別文件控制）
+  originalContent?: string // 保留上傳原文（用於「忘記」後還原）
+  originalSize?: number // 上傳原文大小（bytes）
   size: number
   uploadedAt: number
   lastModified: number
   isLearned: boolean
   learnedAt?: number
+  learnedSize?: number // 學習後內容大小（bytes）
+  learnedModel?: string // 學習時使用/實際採用的模型（model id）
   hash: string  // 用於檢測文件是否有變更
 }
 

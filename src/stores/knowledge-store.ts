@@ -29,7 +29,7 @@ class KnowledgeStore {
 
   // 獲取所有知識條目
   getEntries(): KnowledgeEntry[] {
-    return this.entries
+    return [...this.entries]
   }
 
   // 獲取啟用的類別
@@ -39,7 +39,7 @@ class KnowledgeStore {
 
   // 獲取所有類別
   getCategories(): KnowledgeCategory[] {
-    return this.categories
+    return [...this.categories]
   }
 
   // 切換類別啟用狀態
@@ -54,12 +54,21 @@ class KnowledgeStore {
 
   // 獲取已學習且啟用的知識內容
   getActiveKnowledge(): KnowledgeEntry[] {
-    const enabledCategoryIds = this.getEnabledCategories().map(c => c.id)
     const activeEntries = this.entries.filter(
-      e => e.isLearned && enabledCategoryIds.includes(e.category)
+      e => e.isLearned && e.enabled !== false
     )
 
-    return activeEntries
+    return [...activeEntries]
+  }
+
+  // 切換單筆文件是否提供給 AI
+  toggleEntryEnabled(id: string, enabled: boolean): void {
+    const entry = this.entries.find(e => e.id === id)
+    if (entry) {
+      entry.enabled = enabled
+      this.save()
+      this.notify()
+    }
   }
 
   // 添加知識條目
@@ -81,10 +90,13 @@ class KnowledgeStore {
       name,
       content,
       category,
+      enabled: true,
       size: new Blob([content]).size,
       uploadedAt: Date.now(),
       lastModified: Date.now(),
       isLearned: false,
+      learnedSize: undefined,
+      learnedModel: undefined,
       hash
     }
 
@@ -92,6 +104,62 @@ class KnowledgeStore {
     this.save()
     this.notify()
     return entry
+  }
+
+  // 匯入知識條目（以 hash 合併；hash 相同則更新內容與學習資訊）
+  importEntries(importedEntries: KnowledgeEntry[]): { imported: number; updated: number } {
+    let imported = 0
+    let updated = 0
+
+    for (const importedEntry of importedEntries) {
+      if (!importedEntry || typeof importedEntry !== 'object') continue
+      if (typeof importedEntry.name !== 'string' || typeof importedEntry.content !== 'string') continue
+
+      const content = importedEntry.content
+      const hash = importedEntry.hash && typeof importedEntry.hash === 'string'
+        ? importedEntry.hash
+        : generateHash(content)
+
+      const existing = this.entries.find(e => e.hash === hash)
+      if (existing) {
+        // preserve original file metadata
+        this.updateEntry(existing.id, {
+          name: importedEntry.name,
+          content: content,
+          category: importedEntry.category,
+          isLearned: importedEntry.isLearned,
+          learnedAt: importedEntry.learnedAt,
+          learnedSize: importedEntry.learnedSize,
+          learnedModel: importedEntry.learnedModel
+        })
+        updated++
+      } else {
+        const newEntry: KnowledgeEntry = {
+          id: `kb-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          name: importedEntry.name,
+          content: content,
+          category: importedEntry.category,
+          enabled: typeof (importedEntry as any).enabled === 'boolean' ? (importedEntry as any).enabled : true,
+          size: typeof importedEntry.size === 'number' ? importedEntry.size : new Blob([content]).size,
+          uploadedAt: typeof importedEntry.uploadedAt === 'number' ? importedEntry.uploadedAt : Date.now(),
+          lastModified: typeof importedEntry.lastModified === 'number' ? importedEntry.lastModified : Date.now(),
+          isLearned: typeof importedEntry.isLearned === 'boolean' ? importedEntry.isLearned : true,
+          learnedAt: typeof importedEntry.learnedAt === 'number' ? importedEntry.learnedAt : undefined,
+          learnedSize: typeof importedEntry.learnedSize === 'number'
+            ? importedEntry.learnedSize
+            : (importedEntry.isLearned ? new Blob([content]).size : undefined),
+          learnedModel: typeof importedEntry.learnedModel === 'string' ? importedEntry.learnedModel : undefined,
+          hash
+        }
+
+        this.entries.push(newEntry)
+        imported++
+      }
+    }
+
+    this.save()
+    this.notify()
+    return { imported, updated }
   }
 
   // 更新知識條目
@@ -103,11 +171,23 @@ class KnowledgeStore {
       const learnedAt = entry.learnedAt
       
       Object.assign(entry, updates)
+
+      // 若 caller 明確給了 learnedSize，就尊重它
+      if (updates.learnedSize !== undefined) {
+        entry.learnedSize = updates.learnedSize
+      }
       
       // 如果內容改變，重新計算 hash
       if (updates.content !== undefined) {
         entry.hash = generateHash(updates.content)
         entry.lastModified = Date.now()
+
+        // 若為已學習內容，更新學習後大小（bytes）
+        if (entry.isLearned) {
+          if (updates.learnedSize === undefined) {
+            entry.learnedSize = new Blob([entry.content]).size
+          }
+        }
         
         // 只有在不是「學習」過程中才重置學習狀態
         // 如果 updates 中明確指定了 isLearned，則使用指定的值
@@ -176,7 +256,29 @@ class KnowledgeStore {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
-        this.entries = JSON.parse(saved)
+        const parsed = JSON.parse(saved) as KnowledgeEntry[]
+        // Backfill/migration for older saved data
+        this.entries = parsed.map(e => {
+          const safeContent = typeof e.content === 'string' ? e.content : ''
+          const originalSize = typeof e.size === 'number' ? e.size : new Blob([safeContent]).size
+          const learnedSize = e.isLearned
+            ? (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([safeContent]).size)
+            : undefined
+
+          const originalContent = typeof (e as any).originalContent === 'string' ? (e as any).originalContent : undefined
+          const originalSizeField = typeof (e as any).originalSize === 'number' ? (e as any).originalSize : undefined
+
+          return {
+            ...e,
+            content: safeContent,
+            enabled: typeof (e as any).enabled === 'boolean' ? (e as any).enabled : true,
+            originalContent,
+            originalSize: originalSizeField ?? originalSize,
+            size: originalSize,
+            learnedSize,
+            learnedModel: typeof e.learnedModel === 'string' ? e.learnedModel : undefined
+          }
+        })
       }
 
       const savedCategories = localStorage.getItem(CATEGORIES_KEY)
@@ -197,11 +299,11 @@ class KnowledgeStore {
     // 計算已學習內容的實際大小（學習後會變小）
     const learnedSize = this.entries
       .filter(e => e.isLearned)
-      .reduce((sum, e) => sum + e.content.length, 0)
+      .reduce((sum, e) => sum + (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([e.content]).size), 0)
     
     // 計算啟用類別的已學習內容大小
     const activeKnowledge = this.getActiveKnowledge()
-    const activeSize = activeKnowledge.reduce((sum, e) => sum + e.content.length, 0)
+    const activeSize = activeKnowledge.reduce((sum, e) => sum + (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([e.content]).size), 0)
     
     return {
       total,

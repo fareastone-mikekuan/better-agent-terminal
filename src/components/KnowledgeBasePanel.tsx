@@ -14,17 +14,120 @@ interface KnowledgeBasePanelProps {
 
 export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [entries, setEntries] = useState(knowledgeStore.getEntries())
-  const [categories, setCategories] = useState(knowledgeStore.getCategories())
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [isLearning, setIsLearning] = useState(false)
   const [learningStatus, setLearningStatus] = useState<string>('')
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<'uploadedAt' | 'name' | 'size' | 'learnedAt' | 'learnedSize'>('uploadedAt')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const downloadJson = (fileName: string, data: unknown) => {
+    const json = JSON.stringify(data, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportLearnedDocuments = () => {
+    const learnedEntries = knowledgeStore.getEntries().filter(e => e.isLearned)
+    downloadJson(`knowledge-learned-${new Date().toISOString().slice(0, 10)}.json`, {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      type: 'knowledge-learned',
+      entries: learnedEntries
+    })
+  }
+
+  const exportSingleDocument = (entry: KnowledgeEntry) => {
+    downloadJson(`knowledge-${entry.name.replace(/[\\/:*?"<>|]/g, '_')}.json`, {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      type: 'knowledge-entry',
+      entry
+    })
+  }
+
+  const isValidCategory = (category: unknown): category is KnowledgeEntry['category'] =>
+    category === 'billing' || category === 'business' || category === 'technical' || category === 'custom'
+
+  const sanitizeImportedEntry = (raw: any): KnowledgeEntry | null => {
+    if (!raw || typeof raw !== 'object') return null
+    if (typeof raw.name !== 'string' || typeof raw.content !== 'string') return null
+
+    const category: KnowledgeEntry['category'] = isValidCategory(raw.category) ? raw.category : 'custom'
+    const content = raw.content
+    const originalContent = typeof raw.originalContent === 'string' ? raw.originalContent : undefined
+    const originalSize = typeof raw.originalSize === 'number' ? raw.originalSize : undefined
+
+    return {
+      id: typeof raw.id === 'string' ? raw.id : `kb-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name: raw.name,
+      content,
+      category,
+      enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+      originalContent,
+      originalSize,
+      size: typeof raw.size === 'number' ? raw.size : new Blob([content]).size,
+      uploadedAt: typeof raw.uploadedAt === 'number' ? raw.uploadedAt : Date.now(),
+      lastModified: typeof raw.lastModified === 'number' ? raw.lastModified : Date.now(),
+      isLearned: typeof raw.isLearned === 'boolean' ? raw.isLearned : true,
+      learnedAt: typeof raw.learnedAt === 'number' ? raw.learnedAt : (typeof raw.isLearned === 'boolean' && !raw.isLearned ? undefined : Date.now()),
+      learnedSize: typeof raw.learnedSize === 'number' ? raw.learnedSize : (typeof raw.isLearned === 'boolean' && !raw.isLearned ? undefined : new Blob([content]).size),
+      learnedModel: typeof raw.learnedModel === 'string' ? raw.learnedModel : undefined,
+      hash: typeof raw.hash === 'string' ? raw.hash : ''
+    }
+  }
+
+  const importLearnedDocuments = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+
+      const rawEntries: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.entries)
+          ? parsed.entries
+          : parsed?.entry
+            ? [parsed.entry]
+            : []
+
+      if (rawEntries.length === 0) {
+        throw new Error('匯入檔案格式不正確（找不到 entries/entry）')
+      }
+
+      let imported = 0
+      let updated = 0
+
+      const sanitized: KnowledgeEntry[] = rawEntries
+        .map(raw => sanitizeImportedEntry(raw))
+        .filter((e): e is KnowledgeEntry => !!e)
+
+      const result = knowledgeStore.importEntries(sanitized)
+      imported = result.imported
+      updated = result.updated
+
+      setLearningStatus(`✅ 匯入完成：新增 ${imported}、更新 ${updated}`)
+      setTimeout(() => setLearningStatus(''), 5000)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setLearningStatus(`❌ 匯入失敗：${msg}`)
+      setTimeout(() => setLearningStatus(''), 5000)
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
+  }
 
   useEffect(() => {
     const unsubscribe = knowledgeStore.subscribe(() => {
       setEntries(knowledgeStore.getEntries())
-      setCategories(knowledgeStore.getCategories())
     })
     
     // 調試：檢查知識庫狀態
@@ -32,11 +135,10 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       totalEntries: knowledgeStore.getEntries().length,
       learnedEntries: knowledgeStore.getEntries().filter(e => e.isLearned).length,
       activeKnowledge: knowledgeStore.getActiveKnowledge().length,
-      categories: knowledgeStore.getCategories().map(c => ({ id: c.id, enabled: c.enabled })),
       entries: knowledgeStore.getEntries().map(e => ({
         name: e.name,
         isLearned: e.isLearned,
-        category: e.category,
+        enabled: e.enabled,
         size: e.content.length
       }))
     })
@@ -56,8 +158,11 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
         throw new Error('請先在設定中配置 GitHub Copilot')
       }
 
-      // 智能提取：讓 AI 總結和提取關鍵信息
-      const contentSizeKB = (entry.content.length / 1024).toFixed(1)
+      // 智能提取：讓 AI 總結和提取關鍵信息（偏向壓縮版）
+      const originalBytes = typeof entry.originalSize === 'number'
+        ? entry.originalSize
+        : (typeof entry.size === 'number' ? entry.size : new Blob([entry.content]).size)
+      const contentSizeKB = (originalBytes / 1024).toFixed(1)
       setLearningStatus(`正在分析「${entry.name}」(${contentSizeKB} KB)...\n使用 AI 提取關鍵信息中...`)
       
       // 對於大文件，分批提取
@@ -71,11 +176,23 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       setLearningStatus(`正在分析「${entry.name}」...\n分成 ${chunks.length} 個部分進行提取`)
       
       const summaries: string[] = []
+      let lastResponseModel: string | undefined
       
+      // Balanced compression: keep enough detail to be useful.
+      const MAX_EXTRACT_CHARS_PER_PART = 12000
+
       for (let i = 0; i < chunks.length; i++) {
         setLearningStatus(`正在分析「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
         
-        const extractPrompt = `請分析以下文檔內容並提取關鍵信息。如果是 API 文檔，請列出 API 名稱、功能、參數等；如果是數據表，請總結結構和關鍵欄位；如果是說明文檔，請提取要點。
+        const extractPrompt = `請分析以下文檔內容並「精簡但保留足夠細節」提取關鍵信息：
+      - 只移除冗詞/重複，避免把關鍵細節濃縮掉
+      - 請以條列/小節輸出（不要長篇敘述），保留專有名詞、代碼、欄位名、錯誤碼
+      - 每一部分輸出總長度不超過 ${MAX_EXTRACT_CHARS_PER_PART} 個字元
+      - 盡量包含：規則/限制、例外情況、常見錯誤、最小可用範例（若有）
+
+如果是 API 文檔：列出 API 名稱、用途、關鍵參數/回傳、注意事項與範例（若有）
+如果是數據表：列出表/欄位結構、主鍵/索引、關鍵規則與例子（若有）
+如果是說明文檔：列出規則、流程、限制、常見錯誤與例子（若有）
 
 文檔名稱：${entry.name}
 部分：${i + 1}/${chunks.length}
@@ -95,21 +212,74 @@ ${chunks[i]}
           throw new Error(response.error)
         }
 
+        if (response.model) {
+          lastResponseModel = String(response.model)
+        }
+
         summaries.push(`=== 第 ${i + 1} 部分 ===\n${response.content}`)
       }
       
-      // 合併所有總結
-      const extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${summaries.join('\n\n')}`
+      // 合併所有總結（先合併，再做一次整體壓縮）
+      const mergedSummaries = summaries.join('\n\n')
+      let extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${mergedSummaries}`
+
+      // 若合併後仍偏大，做第二次「整體壓縮」
+      // Only do the second pass when the merged result is clearly too large.
+      const SHOULD_COMPRESS = chunks.length > 2 || extractedContent.length > 60000
+      if (SHOULD_COMPRESS) {
+        setLearningStatus(`正在壓縮「${entry.name}」...\n整合所有部分並生成更精簡版本`)
+
+        const MAX_FINAL_CHARS = 35000
+        const compressPrompt = `你將收到一份已分段提取的重點，請再「整體整理與適度精簡」成一份更好用的知識卡：
+- 僅保留關鍵規則/介面/欄位/流程/限制/注意事項
+- 盡量用條列與小節
+- 最終輸出總長度不超過 ${MAX_FINAL_CHARS} 個字元
+- 不要加入與原文無關的推測
+
+文檔名稱：${entry.name}
+
+分段重點：
+${mergedSummaries}
+
+請輸出最終壓縮版：`
+
+        const compressResponse = await window.electronAPI.copilot.chat(`compress-${entry.id}`, {
+          messages: [{ role: 'user', content: compressPrompt }]
+        })
+
+        if (compressResponse.error) {
+          throw new Error(compressResponse.error)
+        }
+
+        if (compressResponse.model) {
+          lastResponseModel = String(compressResponse.model)
+        }
+
+        const compressed = String(compressResponse.content || '').trim()
+        // Safety: if compress becomes too short (often loses useful detail), keep merged summaries.
+        extractedContent = compressed.length < 5000
+          ? `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${mergedSummaries}`
+          : `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${compressed}`
+      }
+
+      const learnedBytes = new Blob([extractedContent]).size
+      const requestedModel = settingsStore.getCopilotConfig()?.model
+      const learnedModel = lastResponseModel || requestedModel
       
       // 更新條目為提取後的內容，並同時標記為已學習
       await knowledgeStore.updateEntry(entry.id, { 
+        originalContent: typeof entry.originalContent === 'string' ? entry.originalContent : entry.content,
+        originalSize: typeof entry.originalSize === 'number' ? entry.originalSize : originalBytes,
         content: extractedContent,
         isLearned: true,
-        learnedAt: Date.now()
+        enabled: true,
+        learnedAt: Date.now(),
+        learnedSize: learnedBytes,
+        learnedModel
       })
       
-      const newSizeKB = (extractedContent.length / 1024).toFixed(1)
-      const ratio = ((1 - extractedContent.length / entry.content.length) * 100).toFixed(1)
+      const newSizeKB = (learnedBytes / 1024).toFixed(1)
+      const ratio = originalBytes > 0 ? ((1 - learnedBytes / originalBytes) * 100).toFixed(1) : '0.0'
       
       setLearningStatus(`✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%\n\n內容已結構化，可在對話中高效使用！`)
       
@@ -191,7 +361,7 @@ ${chunks[i]}
           continue
         }
         
-        const category = selectedCategory === 'all' ? 'custom' : selectedCategory as KnowledgeEntry['category']
+        const category: KnowledgeEntry['category'] = 'custom'
         
         const entry = await knowledgeStore.addEntry(fileName, content, category)
         
@@ -253,9 +423,30 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
     }
   }
 
-  const filteredEntries = selectedCategory === 'all' 
-    ? entries 
-    : entries.filter(e => e.category === selectedCategory)
+  const filteredEntries = [...entries].sort((a, b) => {
+    const direction = sortDir === 'asc' ? 1 : -1
+
+    const getNumeric = (e: KnowledgeEntry): number => {
+      switch (sortKey) {
+        case 'uploadedAt':
+          return e.uploadedAt
+        case 'size':
+          return e.size
+        case 'learnedAt':
+          return e.learnedAt ?? 0
+        case 'learnedSize':
+          return e.learnedSize ?? (e.isLearned ? new Blob([e.content]).size : 0)
+        default:
+          return 0
+      }
+    }
+
+    if (sortKey === 'name') {
+      return direction * a.name.localeCompare(b.name, 'zh-TW', { numeric: true, sensitivity: 'base' })
+    }
+
+    return direction * (getNumeric(a) - getNumeric(b))
+  })
 
   const stats = knowledgeStore.getStats()
   
@@ -269,7 +460,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', width: '90%' }}>
+      <div className="settings-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '1100px', width: '92%' }}>
         <div className="settings-header">
           <h2>📚 知識庫管理</h2>
           <button className="settings-close" onClick={onClose}>✕</button>
@@ -279,7 +470,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
           {/* 統計資訊 */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
+            gridTemplateColumns: 'repeat(6, 1fr)',
             gap: '10px',
             marginBottom: '20px'
           }}>
@@ -317,9 +508,20 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#dfdbc3' }}>
+                {formatFileSize(stats.totalSize)}
+              </div>
+              <div style={{ fontSize: '12px', color: '#888' }}>學習前</div>
+            </div>
+            <div style={{
+              padding: '12px',
+              backgroundColor: '#2a2836',
+              borderRadius: '6px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#dfdbc3' }}>
                 {formatFileSize(stats.learnedSize)}
               </div>
-              <div style={{ fontSize: '12px', color: '#888' }}>學習後大小</div>
+              <div style={{ fontSize: '12px', color: '#888' }}>學習後</div>
             </div>
             <div style={{
               padding: '12px',
@@ -335,43 +537,9 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
                 {formatFileSize(stats.activeSize)} / {formatFileSize(MAX_KNOWLEDGE_SIZE)}
               </div>
-            </div>
-          </div>
-
-          {/* 類別篩選 */}
-          <div style={{ marginBottom: '15px' }}>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => setSelectedCategory('all')}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: selectedCategory === 'all' ? '#3a5836' : '#2a2826',
-                  color: selectedCategory === 'all' ? '#7bbda4' : '#dfdbc3',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '13px'
-                }}
-              >
-                📋 全部
-              </button>
-              {categories.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: selectedCategory === cat.id ? '#3a5836' : '#2a2826',
-                    color: selectedCategory === cat.id ? '#7bbda4' : '#dfdbc3',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '13px'
-                  }}
-                >
-                  {cat.icon} {cat.name}
-                </button>
-              ))}
+              <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                基於模型：{copilotConfig?.model || '未選擇'}
+              </div>
             </div>
           </div>
 
@@ -391,7 +559,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
           )}
 
           {/* 操作按鈕 */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -414,7 +582,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                 fontSize: '13px'
               }}
             >
-              📤 上傳文檔
+              📤 上傳學習文件
             </button>
             <button
               onClick={async () => {
@@ -434,16 +602,60 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                 opacity: isLearning ? 0.5 : 1,
                 fontSize: '13px'
               }}
+              title="將所有待學習文檔進行學習"
             >
-              🎓 學習全部
+              🎓 學習全部文件
+            </button>
+
+            <button
+              onClick={() => {
+                const learnedEntries = entries.filter(e => e.isLearned)
+                if (learnedEntries.length === 0) return
+
+                if (confirm(`確定要全部忘記嗎？\n\n將會把 ${learnedEntries.length} 筆文檔變回「待學習」，並且不再提供給 AI。`)) {
+                  for (const entry of learnedEntries) {
+                    const restoredContent = typeof entry.originalContent === 'string' ? entry.originalContent : entry.content
+                    const restoredSize = typeof entry.originalSize === 'number' ? entry.originalSize : entry.size
+                    knowledgeStore.updateEntry(entry.id, {
+                      content: restoredContent,
+                      size: restoredSize,
+                      isLearned: false,
+                      learnedAt: undefined,
+                      learnedSize: undefined,
+                      learnedModel: undefined,
+                      enabled: false,
+                      originalContent: undefined,
+                      originalSize: undefined
+                    })
+                  }
+                  setLearningStatus(`✅ 已全部忘記：${learnedEntries.length} 筆`)
+                  setTimeout(() => setLearningStatus(''), 5000)
+                }
+              }}
+              disabled={isLearning || entries.filter(e => e.isLearned).length === 0}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#2a2836',
+                color: '#dfdbc3',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isLearning ? 'not-allowed' : 'pointer',
+                opacity: isLearning ? 0.5 : 1,
+                fontSize: '13px'
+              }}
+              title="全部忘記：全部回到待學習並取消提供給 AI"
+            >
+              ❌ 忘記全部文件
             </button>
             <button
               onClick={() => {
                 const active = knowledgeStore.getActiveKnowledge()
-                const msg = active.length > 0 
-                  ? `✅ 知識庫狀態正常\n\n可用知識: ${active.length} 個\n${active.map(k => `• ${k.name} (${(k.content.length/1024).toFixed(1)} KB)`).join('\n')}`
-                  : `⚠️ 知識庫為空\n\n請確認：\n1. 文件已上傳並標記為「已學習」\n2. 對應的類別已啟用（見下方設定）`
-                alert(msg)
+                const msg = active.length > 0
+                  ? `✅ 知識庫狀態正常\n\n可用知識: ${active.length} 個\n${active.map(k => `• ${k.name} (${(k.content.length / 1024).toFixed(1)} KB)`).join('\n')}`
+                  : `⚠️ 知識庫為空\n\n請確認：\n1. 文件已上傳並標記為「已學習」\n2. 文件已勾選「提供給 AI」`
+
+                setLearningStatus(msg)
+                setTimeout(() => setLearningStatus(''), 8000)
               }}
               style={{
                 padding: '8px 16px',
@@ -454,9 +666,99 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                 cursor: 'pointer',
                 fontSize: '13px'
               }}
+              title="檢查目前可提供給 AI 的知識"
             >
-              🔍 檢查狀態
+              🔍 檢查文件狀態
             </button>
+
+            <button
+              onClick={exportLearnedDocuments}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#2a2836',
+                color: '#dfdbc3',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+              title="匯出所有已學習的文檔（JSON）"
+            >
+              💾 全部匯出知識
+            </button>
+
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={importLearnedDocuments}
+              style={{ display: 'none' }}
+            />
+            <button
+              onClick={() => importInputRef.current?.click()}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#2a2836',
+                color: '#dfdbc3',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+              title="匯入先前匯出的 JSON（會以 hash 合併）"
+            >
+              📥 匯入知識
+            </button>
+
+            <label
+              style={{
+                marginLeft: 'auto',
+                flex: 1,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                backgroundColor: '#2a2826',
+                borderRadius: '4px',
+                color: '#dfdbc3',
+                fontSize: '13px'
+              }}
+              title="變更列表排序方式"
+            >
+              ⇅
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                style={{
+                  backgroundColor: '#2a2826',
+                  color: '#dfdbc3',
+                  border: '1px solid #2a2836',
+                  borderRadius: '4px',
+                  padding: '4px 8px'
+                }}
+              >
+                <option value="uploadedAt">上傳時間</option>
+                <option value="name">檔名</option>
+                <option value="size">原始大小</option>
+                <option value="learnedAt">學習時間</option>
+                <option value="learnedSize">學習後大小</option>
+              </select>
+              <button
+                onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: '#2a2826',
+                  color: '#dfdbc3',
+                  border: '1px solid #2a2836',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                title={sortDir === 'asc' ? '目前：由小到大（點擊切換）' : '目前：由大到小（點擊切換）'}
+              >
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </label>
           </div>
 
           {/* 知識列表 */}
@@ -475,7 +777,6 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {filteredEntries.map(entry => {
-                  const category = categories.find(c => c.id === entry.category)
                   return (
                     <div
                       key={entry.id}
@@ -489,26 +790,56 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                       onClick={() => setSelectedEntry(selectedEntry === entry.id ? null : entry.id)}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '20px' }}>{category?.icon}</span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 'bold', color: '#dfdbc3', marginBottom: '4px' }}>
-                            {entry.name}
+                          <div style={{ fontWeight: 'bold', color: '#dfdbc3', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span>{entry.name}</span>
+                            {entry.isLearned && entry.learnedAt && (
+                              <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#7bbda4' }}>
+                                ✅ {new Date(entry.learnedAt).toLocaleString('zh-TW')} 已學習
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '11px', color: '#888', display: 'flex', gap: '10px' }}>
-                            <span>{formatFileSize(entry.size)}</span>
-                            <span>•</span>
-                            <span>{new Date(entry.uploadedAt).toLocaleString('zh-TW')}</span>
-                            {entry.isLearned && entry.learnedAt && (
+                            <span>學習前：{formatFileSize(entry.size)}</span>
+                            {entry.isLearned && (
                               <>
                                 <span>•</span>
-                                <span style={{ color: '#7bbda4' }}>
-                                  ✅ {new Date(entry.learnedAt).toLocaleString('zh-TW')} 已學習
-                                </span>
+                                <span>學習後：{formatFileSize(entry.learnedSize ?? new Blob([entry.content]).size)}</span>
                               </>
                             )}
+                            {entry.isLearned && (
+                              <>
+                                <span>•</span>
+                                <span>模型：{entry.learnedModel || '未知'}</span>
+                              </>
+                            )}
+                            <span>•</span>
+                            <span>{new Date(entry.uploadedAt).toLocaleString('zh-TW')}</span>
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
+                          <label
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 10px',
+                              backgroundColor: entry.enabled !== false ? '#2a3826' : '#2a2826',
+                              color: entry.enabled !== false ? '#7bbda4' : '#888',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                            title="是否提供此文件給 AI（只影響使用中大小與對話拼接）"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={entry.enabled !== false}
+                              onChange={(e) => knowledgeStore.toggleEntryEnabled(entry.id, e.target.checked)}
+                            />
+                            提供給 AI
+                          </label>
                           {!entry.isLearned ? (
                             <button
                               onClick={(e) => {
@@ -525,6 +856,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                                 cursor: isLearning ? 'not-allowed' : 'pointer',
                                 fontSize: '12px'
                               }}
+                              title="學習此文檔（提取重點以便對話使用）"
                             >
                               🎓 學習
                             </button>
@@ -544,18 +876,74 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                                 cursor: isLearning ? 'not-allowed' : 'pointer',
                                 fontSize: '12px'
                               }}
+                              title="驗證 AI 是否能正確使用此文檔內容"
                             >
                               ✓ 驗證
                             </button>
                           )}
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!entry.isLearned) return
+                              if (confirm(`確定要忘記「${entry.name}」嗎？\n\n忘記後會變成待學習，且不再提供給 AI。`)) {
+                                const restoredContent = typeof entry.originalContent === 'string' ? entry.originalContent : entry.content
+                                const restoredSize = typeof entry.originalSize === 'number' ? entry.originalSize : entry.size
+                                knowledgeStore.updateEntry(entry.id, {
+                                  content: restoredContent,
+                                  size: restoredSize,
+                                  isLearned: false,
+                                  learnedAt: undefined,
+                                  learnedSize: undefined,
+                                  learnedModel: undefined,
+                                  enabled: false,
+                                  originalContent: undefined,
+                                  originalSize: undefined
+                                })
+                              }
+                            }}
+                            disabled={!entry.isLearned}
+                            style={{
+                              padding: '4px 12px',
+                              backgroundColor: '#2a2836',
+                              color: entry.isLearned ? '#dfdbc3' : '#666',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: entry.isLearned ? 'pointer' : 'not-allowed',
+                              fontSize: '12px',
+                              opacity: entry.isLearned ? 1 : 0.6
+                            }}
+                            title="忘記：標記為待學習（不再提供給 AI）"
+                          >
+                            忘記
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!entry.isLearned) return
+                              exportSingleDocument(entry)
+                            }}
+                            disabled={!entry.isLearned}
+                            style={{
+                              padding: '4px 12px',
+                              backgroundColor: '#2a2836',
+                              color: entry.isLearned ? '#dfdbc3' : '#666',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: entry.isLearned ? 'pointer' : 'not-allowed',
+                              fontSize: '12px',
+                              opacity: entry.isLearned ? 1 : 0.6
+                            }}
+                            title={entry.isLearned ? '匯出此文檔（JSON）' : '尚未學習，無法匯出'}
+                          >
+                            💾
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
                               if (confirm(`確定要刪除「${entry.name}」嗎？`)) {
                                 knowledgeStore.deleteEntry(entry.id)
-                                // 刷新列表
-                                setEntries(knowledgeStore.getEntries())
-                                setCategories(knowledgeStore.getCategories())
                                 // 如果刪除的是當前展開的條目，關閉展開
                                 if (selectedEntry === entry.id) {
                                   setSelectedEntry(null)
@@ -571,6 +959,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                               cursor: 'pointer',
                               fontSize: '12px'
                             }}
+                            title="刪除此文檔"
                           >
                             🗑️
                           </button>
@@ -601,40 +990,6 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
             )}
           </div>
 
-          {/* 類別啟用設定 */}
-          <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #3a3836' }}>
-            <h4 style={{ marginBottom: '10px', fontSize: '14px', color: '#dfdbc3' }}>
-              啟用的知識類別
-            </h4>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {categories.map(cat => (
-                <label
-                  key={cat.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '6px 12px',
-                    backgroundColor: cat.enabled ? '#2a3826' : '#2a2826',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '13px'
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={cat.enabled}
-                    onChange={e => knowledgeStore.toggleCategory(cat.id, e.target.checked)}
-                  />
-                  <span>{cat.icon}</span>
-                  <span style={{ color: cat.enabled ? '#7bbda4' : '#888' }}>{cat.name}</span>
-                </label>
-              ))}
-            </div>
-            <p style={{ fontSize: '11px', color: '#888', marginTop: '8px' }}>
-              💡 只有已學習且啟用類別的知識會提供給 AI 使用
-            </p>
-          </div>
         </div>
       </div>
     </div>
