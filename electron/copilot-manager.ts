@@ -19,14 +19,41 @@ export class CopilotManager {
   private activeChats: Map<string, AbortController> = new Map()
   private copilotToken: string | null = null
   private tokenExpiry: number = 0
+  private lastAuthToken: string | null = null
   private githubDeviceToken: string | null = null
 
   constructor(window: BrowserWindow) {
     this.window = window
   }
 
+  private clearCachedTokens(): void {
+    this.copilotToken = null
+    this.tokenExpiry = 0
+    this.lastAuthToken = null
+  }
+
   setConfig(config: CopilotConfig): void {
+    const prevApiKey = this.config?.apiKey
+    const prevEnabled = this.config?.enabled
+    const prevProvider = this.config?.provider
+
     this.config = config
+
+    const apiKeyChanged = prevApiKey !== config.apiKey
+    const enabledChanged = prevEnabled !== config.enabled
+    const providerChanged = prevProvider !== config.provider
+
+    // Important: token is cached in-memory; if config changes (logout/login, token update),
+    // we must clear caches so requests use the newest token immediately.
+    if (apiKeyChanged || enabledChanged || providerChanged) {
+      this.clearCachedTokens()
+    }
+
+    // On logout/disable, also clear any device-flow token held in memory.
+    if (!config.enabled) {
+      this.githubDeviceToken = null
+      this.clearCachedTokens()
+    }
   }
 
   getConfig(): CopilotConfig | null {
@@ -170,6 +197,7 @@ gh auth token
             if (this.config) {
               this.config.apiKey = response.access_token
             }
+            this.clearCachedTokens()
             resolve(response.access_token)
           } else if (response.error === 'authorization_pending') {
             reject(new Error('PENDING'))
@@ -191,18 +219,19 @@ gh auth token
    * Use OAuth token from device flow or config
    */
   private async getCopilotToken(): Promise<string> {
-    // Check if we have a valid cached token
-    if (this.copilotToken && Date.now() < this.tokenExpiry) {
-      return this.copilotToken
-    }
-
     // Prefer OAuth token from device flow
     const authToken = this.githubDeviceToken || this.config?.apiKey
     if (!authToken) {
       throw new Error('No GitHub OAuth token available. Please use "🔐 GitHub 登入" button to authenticate.')
     }
 
+    // Check if we have a valid cached token for the same auth token
+    if (this.copilotToken && Date.now() < this.tokenExpiry && this.lastAuthToken === authToken) {
+      return this.copilotToken
+    }
+
     // Use the OAuth token directly
+    this.lastAuthToken = authToken
     this.copilotToken = authToken
     this.tokenExpiry = Date.now() + (25 * 60 * 1000)
     return this.copilotToken
@@ -215,10 +244,6 @@ gh auth token
   async chat(chatId: string, options: CopilotChatOptions): Promise<CopilotChatResponse> {
     if (!this.isEnabled()) {
       throw new Error('GitHub Copilot is not configured or enabled')
-    }
-
-    if (!this.config?.apiKey) {
-      throw new Error('GitHub Copilot API key is not set')
     }
 
     try {
@@ -249,10 +274,6 @@ gh auth token
   ): AsyncGenerator<string, void, unknown> {
     if (!this.isEnabled()) {
       throw new Error('GitHub Copilot is not configured or enabled')
-    }
-
-    if (!this.config?.apiKey) {
-      throw new Error('GitHub Copilot API key is not set')
     }
 
     const controller = new AbortController()
