@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
 import { knowledgeStore } from '../stores/knowledge-store'
 import { buildSystemPromptFromSkills } from '../types/copilot-skills'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
+import 'highlight.js/styles/github-dark.css'
 
 interface CopilotChatPanelProps {
   isVisible: boolean
@@ -83,6 +87,17 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
   const [loadedFile, setLoadedFile] = useState<{ content: string; fileName: string } | null>(null)
+  
+  // 样式控制状态
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('copilot-font-size')
+    return saved ? parseInt(saved) : 12
+  })
+  const [spacing, setSpacing] = useState(() => {
+    const saved = localStorage.getItem('copilot-spacing')
+    return saved ? parseInt(saved) : 3
+  })
+  
   const terminalOutputBuffer = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -921,8 +936,14 @@ ${skillsPrompt}${knowledgePrompt}
               className="copilot-toggle-btn"
               onClick={() => {
                 if (confirm('確定要清除所有聊天記錄嗎？\n\n建議先匯出保存！')) {
+                  isLoadingMessages.current = true
                   setMessages([])
                   localStorage.removeItem(storageKey)
+                  setError(null)
+                  setInput('')
+                  setTimeout(() => {
+                    isLoadingMessages.current = false
+                  }, 100)
                 }
               }}
               title="清除聊天記錄"
@@ -937,6 +958,77 @@ ${skillsPrompt}${knowledgePrompt}
           >
             {isFloating ? '📌' : '🔗'}
           </button>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '4px',
+            marginLeft: '8px',
+            padding: '4px 8px',
+            backgroundColor: '#2d2d2d',
+            borderRadius: '4px'
+          }}>
+            <span style={{ fontSize: '11px', color: '#888' }}>字体</span>
+            <button
+              className="copilot-toggle-btn"
+              onClick={() => {
+                const newSize = Math.max(10, fontSize - 1)
+                setFontSize(newSize)
+                localStorage.setItem('copilot-font-size', newSize.toString())
+              }}
+              title="减小字体"
+              style={{ padding: '2px 6px', fontSize: '12px' }}
+            >
+              A-
+            </button>
+            <span style={{ fontSize: '11px', color: '#ccc', minWidth: '25px', textAlign: 'center' }}>{fontSize}px</span>
+            <button
+              className="copilot-toggle-btn"
+              onClick={() => {
+                const newSize = Math.min(18, fontSize + 1)
+                setFontSize(newSize)
+                localStorage.setItem('copilot-font-size', newSize.toString())
+              }}
+              title="放大字体"
+              style={{ padding: '2px 6px', fontSize: '12px' }}
+            >
+              A+
+            </button>
+          </div>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '4px',
+            padding: '4px 8px',
+            backgroundColor: '#2d2d2d',
+            borderRadius: '4px'
+          }}>
+            <span style={{ fontSize: '11px', color: '#888' }}>间距</span>
+            <button
+              className="copilot-toggle-btn"
+              onClick={() => {
+                const newSpacing = Math.max(1, spacing - 1)
+                setSpacing(newSpacing)
+                localStorage.setItem('copilot-spacing', newSpacing.toString())
+              }}
+              title="减小间距"
+              style={{ padding: '2px 6px', fontSize: '12px' }}
+            >
+              −
+            </button>
+            <span style={{ fontSize: '11px', color: '#ccc', minWidth: '20px', textAlign: 'center' }}>{spacing}</span>
+            <button
+              className="copilot-toggle-btn"
+              onClick={() => {
+                const newSpacing = Math.min(8, spacing + 1)
+                setSpacing(newSpacing)
+                localStorage.setItem('copilot-spacing', newSpacing.toString())
+              }}
+              title="增加间距"
+              style={{ padding: '2px 6px', fontSize: '12px' }}
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
 
@@ -997,8 +1089,36 @@ ${skillsPrompt}${knowledgePrompt}
                       <span>GitHub Copilot</span>
                     </div>
                   )}
-                  <div className="copilot-message-content">
-                    {msg.content}
+                  <div className="copilot-message-content" style={{
+                    fontSize: `${fontSize}px`,
+                    ['--spacing' as any]: `${spacing}px`
+                  }}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeHighlight]}
+                      components={{
+                        code({ node, inline, className, children, ...props }) {
+                          return inline ? (
+                            <code className="inline-code" {...props}>
+                              {children}
+                            </code>
+                          ) : (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          )
+                        },
+                        pre({ node, children, ...props }) {
+                          return (
+                            <pre className="code-block" {...props}>
+                              {children}
+                            </pre>
+                          )
+                        }
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
                   </div>
                   {commands.length > 0 && (
                     <div style={{ 
