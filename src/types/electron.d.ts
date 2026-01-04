@@ -45,6 +45,9 @@ interface ElectronAPI {
     startDeviceFlow: () => Promise<{ userCode: string; verificationUri: string; deviceCode: string }>
     completeDeviceFlow: (deviceCode: string) => Promise<string>
   }
+  webpage: {
+    fetch: (url: string) => Promise<string>
+  }
   system: {
     getInfo: () => Promise<{ username: string; hostname: string }>
   }

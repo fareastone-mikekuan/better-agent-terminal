@@ -92,17 +92,30 @@ export const BUILTIN_SKILLS: CopilotSkill[] = [
     enabled: true,
     requiresToolCall: true,
     systemPromptAddition: `
-**網頁內容讀取能力已啟用**
+**⚠️ 網頁內容抓取能力已啟用 - 必須使用以下格式**
 
-你可以分析真實的網頁內容：
-1. 用戶在網頁面板中點擊「讀取網頁內容」
-2. 系統會抓取實際的網頁內容
-3. 你會收到真實的 HTML/文本
-4. 提供基於實際內容的分析
+當用戶要求查詢、搜尋、抓取、獲取任何網頁內容時，**必須**使用以下格式：
 
-**這不是模擬，是真實抓取的網頁。**
+\`\`\`fetch
+網址URL
+\`\`\`
+
+範例：
+用戶：「查詢 Amy Macdonald 的維基百科」
+你必須回應：
+
+\`\`\`fetch
+https://en.wikipedia.org/wiki/Amy_Macdonald
+\`\`\`
+
+用戶會看到 🌐 抓取按鈕，點擊後系統會：
+1. 自動抓取網頁內容
+2. 將內容傳給你
+3. 你再分析並回答
+
+**不要只說「我會幫你查」，必須提供 \`\`\`fetch 代碼塊！**
 `,
-    examples: ['分析這個網頁的主要內容']
+    examples: ['查詢維基百科上的最新資訊']
   },
   {
     id: 'api-testing',

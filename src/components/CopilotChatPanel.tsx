@@ -517,6 +517,27 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Extract fetch URLs from message content
+  const extractFetchUrls = (content: string): string[] => {
+    const fetchRegex = /```fetch\n([\s\S]*?)```/g
+    const urls: string[] = []
+    let match
+    
+    while ((match = fetchRegex.exec(content)) !== null) {
+      const urlText = match[1].trim()
+      // Extract valid URLs
+      const lines = urlText.split('\n')
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+          urls.push(trimmed)
+        }
+      }
+    }
+    
+    return urls
+  }
+
   // Extract bash commands from message content
   const extractCommands = (content: string): string[] => {
     // Extract code blocks - prefer those marked as terminal/shell
@@ -669,6 +690,76 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   }
 
   // Execute command in terminal
+  const executeFetch = async (url: string) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      
+      // 使用 Electron IPC 抓取網頁內容（繞過 CORS）
+      const html = await window.electronAPI.webpage.fetch(url)
+      
+      // 簡單提取文本內容（移除 HTML 標籤）
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      const textContent = doc.body.textContent || ''
+      
+      // 限制內容長度
+      const maxLength = 50000
+      const content = textContent.length > maxLength 
+        ? textContent.substring(0, maxLength) + '\n\n(內容過長，已截斷...)'
+        : textContent
+      
+      // 直接構建 API 消息，不顯示中間過程
+      const copilotConfig = settingsStore.getCopilotConfig()
+      
+      if (!copilotConfig?.apiKey || !copilotConfig?.model) {
+        throw new Error('請先在設定中配置 Copilot API Key 和模型')
+      }
+      
+      // 構建完整的上下文消息（包含網頁內容）
+      const contextMessage = {
+        role: 'user',
+        content: `請分析以下網頁內容：\n\n【來源】${url}\n\n【內容】\n${content}`
+      }
+      
+      const systemPrompt = `你是一個智能助手。用戶剛剛抓取了一個網頁的內容，請分析這個網頁並回答用戶的問題。`
+      
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.slice(-10).map(m => ({
+          role: m.role,
+          content: m.content
+        })),
+        contextMessage
+      ]
+      
+      const result = await window.electronAPI.copilot.chat('copilot-chat', {
+        messages: apiMessages,
+        model: copilotConfig.model || 'gpt-4o'
+      })
+      
+      // 只顯示 AI 的分析結果
+      const assistantMessage: CopilotMessage = {
+        role: 'assistant',
+        content: result.content
+      }
+      
+      const finalMessages = [...messages, assistantMessage]
+      setMessages(finalMessages)
+      
+      // 保存到 localStorage
+      if (!isLoadingMessages.current) {
+        localStorage.setItem(storageKey, JSON.stringify(finalMessages))
+      }
+      
+    } catch (error: any) {
+      console.error('Failed to fetch URL:', error)
+      setError(`抓取網頁失敗: ${error.message}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const executeCommand = async (command: string) => {
     try {
       if (!targetTerminalId) {
@@ -1332,6 +1423,7 @@ ${skillsPrompt}${knowledgePrompt}
             )}
             {messages.map((msg, idx) => {
               const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
+              const fetchUrls = msg.role === 'assistant' ? extractFetchUrls(msg.content) : []
               return (
                 <div key={idx} className={`copilot-message ${msg.role}`}>
                   {msg.role === 'user' && userInfo.username && (
@@ -1351,6 +1443,80 @@ ${skillsPrompt}${knowledgePrompt}
                       __html: DOMPurify.sanitize(marked.parse(msg.content) as string)
                     }}
                   />
+                  {fetchUrls.length > 0 && (
+                    <div style={{ 
+                      marginTop: '6px', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      gap: '4px',
+                      padding: '8px',
+                      backgroundColor: '#1e1e1e',
+                      borderRadius: '6px',
+                      border: '1px solid #2d2d2d',
+                      maxWidth: '90%'
+                    }}>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        color: '#8c8c8c', 
+                        fontWeight: '500',
+                        marginBottom: '2px'
+                      }}>
+                        偵測到 {fetchUrls.length} 個網頁
+                      </div>
+                      {fetchUrls.map((url, urlIdx) => (
+                        <div key={urlIdx} style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '6px',
+                          fontSize: '11px'
+                        }}>
+                          <code style={{ 
+                            flex: 1, 
+                            padding: '6px 8px', 
+                            backgroundColor: '#2d2d2d',
+                            color: '#58a6ff',
+                            borderRadius: '4px',
+                            fontFamily: 'Consolas, Monaco, monospace',
+                            fontSize: '11px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {url}
+                          </code>
+                          <button
+                            onClick={() => executeFetch(url)}
+                            disabled={isLoading}
+                            style={{
+                              padding: '5px 10px',
+                              backgroundColor: isLoading ? '#404040' : '#16a34a',
+                              color: isLoading ? '#8c8c8c' : '#ffffff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isLoading ? 'not-allowed' : 'pointer',
+                              fontSize: '11px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title={isLoading ? '處理中...' : '抓取網頁內容'}
+                            onMouseOver={(e) => {
+                              if (!isLoading) {
+                                e.currentTarget.style.backgroundColor = '#15803d'
+                              }
+                            }}
+                            onMouseOut={(e) => {
+                              if (!isLoading) {
+                                e.currentTarget.style.backgroundColor = '#16a34a'
+                              }
+                            }}
+                          >
+                            🌐 抓取
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {commands.length > 0 && (
                     <div style={{ 
                       marginTop: '6px', 

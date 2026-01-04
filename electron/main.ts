@@ -459,23 +459,58 @@ ipcMain.handle('webpage:fetch', async (_event, url: string) => {
   try {
     const https = await import('https')
     const http = await import('http')
+    const { URL } = await import('url')
     
     return new Promise((resolve, reject) => {
+      // Use URL constructor to properly parse and encode the URL
+      const parsedUrl = new URL(url)
       const client = url.startsWith('https') ? https : http
       
-      client.get(url, (res) => {
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: parsedUrl.pathname + parsedUrl.search, // This is already properly encoded
+        method: 'GET',
+        headers: {
+          'User-Agent': 'AI-Agent-Terminal/1.0 (https://github.com/fareastone-mikekuan/better-agent-terminal; AI assistant for operations)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Accept-Encoding': 'gzip, deflate',
+          'Connection': 'keep-alive'
+        }
+      }
+      
+      const req = client.request(options, (res) => {
         let data = ''
         
-        res.on('data', (chunk) => {
+        // Handle gzip/deflate encoding
+        let stream = res
+        if (res.headers['content-encoding'] === 'gzip') {
+          const zlib = require('zlib')
+          stream = res.pipe(zlib.createGunzip())
+        } else if (res.headers['content-encoding'] === 'deflate') {
+          const zlib = require('zlib')
+          stream = res.pipe(zlib.createInflate())
+        }
+        
+        stream.on('data', (chunk) => {
           data += chunk
         })
         
-        res.on('end', () => {
+        stream.on('end', () => {
           resolve(data)
         })
-      }).on('error', (err) => {
+        
+        stream.on('error', (err) => {
+          reject(err.message)
+        })
+      })
+      
+      req.on('error', (err) => {
         reject(err.message)
       })
+      
+      req.end()
     })
   } catch (error) {
     throw new Error(`Failed to fetch webpage: ${error}`)
