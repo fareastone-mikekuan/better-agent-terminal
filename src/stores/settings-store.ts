@@ -289,7 +289,8 @@ class SettingsStore {
 
   // Copilot Skills methods
   getCopilotSkills(): CopilotSkill[] {
-    return this.copilotSkills
+    // 返回新陣列副本，確保 React 能檢測到變化
+    return [...this.copilotSkills]
   }
 
   getEnabledSkills(): CopilotSkill[] {

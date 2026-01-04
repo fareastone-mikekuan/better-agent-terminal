@@ -1,252 +1,195 @@
 /**
  * Copilot Skills 定義
- * 為 AI 賦予不同的能力
+ * 為 AI 提供特定上下文和工具調用能力
+ * 
+ * 設計理念：
+ * - Skills 不是「能力聲明」（GPT 本身就會寫代碼、分析數據等）
+ * - Skills 是「上下文提供者」和「工具調用器」
+ * - 只有需要實際工具/API 調用的才算真正的 Skill
  */
 
 export interface CopilotSkill {
   id: string
   name: string
   description: string
-  category: 'terminal' | 'database' | 'web' | 'file' | 'code' | 'system'
+  category: 'context' | 'tool-call'  // context: 提供上下文, tool-call: 需要工具調用
   icon: string
   enabled: boolean
   systemPromptAddition: string
   examples?: string[]
+  requiresToolCall?: boolean  // 是否需要實際的工具調用
 }
 
 export const BUILTIN_SKILLS: CopilotSkill[] = [
   {
     id: 'terminal-commands',
     name: '終端命令執行',
-    description: '執行 Shell 命令並分析輸出',
-    category: 'terminal',
+    description: '執行實際的 Shell 命令',
+    category: 'tool-call',
     icon: '💻',
     enabled: true,
+    requiresToolCall: true,
     systemPromptAddition: `
-你可以執行終端命令：
-- 提供命令代碼塊（\`\`\`bash 或 \`\`\`powershell）
-- 用戶點擊執行按鈕後，命令會在終端中執行
-- 自動獲取輸出並分析結果
-- 根據輸出提供下一步建議
+**終端命令執行能力已啟用**
 
-範例：
-- 檢查文件：\`ls\`, \`dir\`, \`Get-ChildItem\`
-- 搜索內容：\`grep\`, \`Select-String\`
-- Git 操作：\`git status\`, \`git log\`
-`,
-    examples: [
-      'ls -la',
-      'git status',
-      'npm install'
-    ]
-  },
-  {
-    id: 'file-operations',
-    name: '文件操作',
-    description: '讀取、分析文件內容',
-    category: 'file',
-    icon: '📁',
-    enabled: true,
-    systemPromptAddition: `
-你可以操作文件：
-- 讀取文件內容並分析
-- 搜索文件中的特定內容
-- 提供文件結構建議
-- 分析代碼文件
+你可以執行實際的終端命令：
+1. 提供命令代碼塊（\`\`\`bash 或 \`\`\`powershell）
+2. 用戶點擊執行按鈕後，命令會在真實終端中執行
+3. 你會收到實際的輸出結果
+4. 根據輸出提供分析和下一步建議
 
-用戶可以：
-- 在文件面板右鍵點擊文件選擇「AI 分析」
-- 直接在聊天中請求分析特定文件
+**這不是模擬，是真實的命令執行。**
 `,
-    examples: [
-      'cat package.json',
-      'type README.md',
-      'Get-Content config.ts'
-    ]
+    examples: ['ls -la', 'git status', 'npm install']
   },
   {
     id: 'database-query',
     name: '資料庫查詢',
-    description: 'Oracle 資料庫查詢與分析',
-    category: 'database',
+    description: '連接並查詢真實的 Oracle 資料庫',
+    category: 'tool-call',
     icon: '🗄️',
     enabled: true,
+    requiresToolCall: true,
     systemPromptAddition: `
-你可以執行資料庫操作：
-- 提供 SQL 查詢語句
-- 分析查詢結果
-- 優化 SQL 性能
-- 解釋資料結構
+**資料庫查詢能力已啟用**
 
-支援的資料庫：
-- Oracle Database
+你可以執行真實的資料庫查詢：
+1. 提供 SQL 查詢語句
+2. 連接實際的 Oracle Database
+3. 獲取真實的查詢結果
+4. 分析並解釋結果
 
-範例查詢：
-- SELECT * FROM users WHERE status = 'active'
-- EXPLAIN PLAN FOR SELECT ...
+**這不是模擬，是真實的資料庫連接。**
 `,
-    examples: [
-      'SELECT * FROM users LIMIT 10',
-      'DESCRIBE table_name',
-      'SHOW TABLES'
-    ]
+    examples: ['SELECT * FROM users LIMIT 10', 'DESCRIBE table_name']
+  },
+  {
+    id: 'file-operations',
+    name: '文件讀取',
+    description: '讀取用戶本地的實際文件',
+    category: 'tool-call',
+    icon: '📁',
+    enabled: true,
+    requiresToolCall: true,
+    systemPromptAddition: `
+**文件讀取能力已啟用**
+
+你可以讀取用戶本地的實際文件：
+1. 用戶可以在文件面板右鍵選擇「AI 分析」
+2. 你會收到真實的文件內容
+3. 提供基於實際內容的分析
+
+**這不是模擬，是真實的文件內容。**
+`,
+    examples: ['cat package.json', 'type README.md']
   },
   {
     id: 'web-content',
-    name: '網頁內容分析',
-    description: '讀取並分析網頁內容',
-    category: 'web',
+    name: '網頁內容讀取',
+    description: '讀取實際的網頁內容',
+    category: 'tool-call',
     icon: '🌐',
     enabled: true,
+    requiresToolCall: true,
     systemPromptAddition: `
-你可以分析網頁內容：
-- 用戶可以導入網頁內容供你分析
-- 提供網頁摘要與關鍵信息提取
-- 分析網頁結構與技術
-- 提供相關建議
+**網頁內容讀取能力已啟用**
 
-用戶操作：
-- 在網頁面板中點擊「讀取網頁內容」
-- 網頁內容會自動發送給你分析
-`,
-    examples: [
-      '分析這個網頁的主要內容',
-      '提取網頁中的技術資訊',
-      '總結網頁重點'
-    ]
-  },
-  {
-    id: 'code-analysis',
-    name: '代碼分析',
-    description: '分析代碼、提供重構建議',
-    category: 'code',
-    icon: '🔍',
-    enabled: true,
-    systemPromptAddition: `
-你可以分析代碼：
-- 理解代碼邏輯與架構
-- 發現潛在問題與 bugs
-- 提供重構建議
-- 優化性能
-- 解釋複雜代碼段
+你可以分析真實的網頁內容：
+1. 用戶在網頁面板中點擊「讀取網頁內容」
+2. 系統會抓取實際的網頁內容
+3. 你會收到真實的 HTML/文本
+4. 提供基於實際內容的分析
 
-支援語言：
-- TypeScript/JavaScript
-- Python
-- Java
-- C/C++
-- Shell Script
-- SQL
+**這不是模擬，是真實抓取的網頁。**
 `,
-    examples: [
-      '分析這段代碼的性能問題',
-      '重構這個函數',
-      '解釋這段代碼在做什麼'
-    ]
+    examples: ['分析這個網頁的主要內容']
   },
   {
     id: 'api-testing',
-    name: 'API 測試',
-    description: '構建和測試 HTTP API 請求',
-    category: 'system',
+    name: 'API 測試執行',
+    description: '執行真實的 HTTP API 請求',
+    category: 'tool-call',
     icon: '🔌',
     enabled: true,
+    requiresToolCall: true,
     systemPromptAddition: `
-你可以幫助 API 測試：
-- 構建 HTTP 請求（GET、POST、PUT、DELETE）
-- 分析 API 響應
-- 提供 API 使用建議
-- 幫助調試 API 問題
+**API 測試能力已啟用**
 
-用戶可以在 API 測試面板中：
-- 設定 URL、方法、Headers、Body
-- 執行請求並查看結果
+你可以執行真實的 HTTP 請求：
+1. 構建 API 請求（GET、POST 等）
+2. 實際發送到目標服務器
+3. 獲取真實的響應
+4. 分析響應結果
+
+**這不是模擬，是真實的 API 調用。**
 `,
-    examples: [
-      '如何測試這個 REST API',
-      '這個 API 響應有什麼問題',
-      '構建一個 POST 請求'
-    ]
+    examples: ['如何測試這個 REST API']
   },
   {
-    id: 'environment-config',
-    name: '環境配置管理',
-    description: '管理環境變數和配置',
-    category: 'system',
-    icon: '⚙️',
+    id: 'workspace-context',
+    name: '工作區上下文',
+    description: '提供當前工作區的環境信息',
+    category: 'context',
+    icon: '📂',
     enabled: true,
+    requiresToolCall: false,
     systemPromptAddition: `
-你可以幫助管理環境配置：
-- 建議環境變數設定
-- 解釋配置文件
-- 提供最佳實踐
-- 幫助調試環境問題
+**工作區上下文已加載**
 
-系統支援：
-- 全域環境變數
-- 工作區專屬環境變數
-- Shell 路徑配置
-`,
-    examples: [
-      '如何設定 NODE_ENV',
-      'PATH 環境變數配置',
-      '.env 文件最佳實踐'
-    ]
-  },
-  {
-    id: 'git-operations',
-    name: 'Git 操作',
-    description: 'Git 版本控制協助',
-    category: 'terminal',
-    icon: '📦',
-    enabled: true,
-    systemPromptAddition: `
-你可以協助 Git 操作：
-- 提供 Git 命令建議
-- 解決合併衝突
-- 分析 Git 歷史
-- Commit 訊息建議
-- 分支管理策略
+你知道以下信息：
+- 當前工作目錄路徑
+- 環境變數設定
+- Shell 類型（bash/zsh/PowerShell）
+- 作業系統類型
 
-常用命令：
-- git status, git log
-- git add, git commit
-- git branch, git merge
-- git push, git pull
+根據這些上下文提供更準確的建議。
 `,
-    examples: [
-      'git log --oneline -10',
-      'git diff HEAD~1',
-      'git branch -a'
-    ]
-  },
-  {
-    id: 'package-management',
-    name: '套件管理',
-    description: 'npm/pip/等套件管理協助',
-    category: 'terminal',
-    icon: '📦',
-    enabled: true,
-    systemPromptAddition: `
-你可以協助套件管理：
-- npm/yarn/pnpm 操作
-- pip/poetry (Python)
-- 套件版本管理
-- 依賴問題解決
-- package.json 優化
-
-常用命令：
-- npm install/update/uninstall
-- npm run scripts
-- package.json 配置
-`,
-    examples: [
-      'npm install express',
-      'npm outdated',
-      'npm run build'
-    ]
+    examples: ['當前工作目錄是什麼']
   }
 ]
+
+// 移除的技能（這些是 GPT 的固有能力，不需要"啟用"）：
+// - 代碼分析：GPT 本身就會
+// - 調試支援：GPT 本身就會
+// - 環境配置：只是建議，不需要工具調用
+// - Git 操作：只是建議 Git 命令，可以併入終端命令執行
+// - 套件管理：只是建議套件命令，可以併入終端命令執行
+// - 系統分析：GPT 本身就會
+
+/**
+ * 從啟用的 skills 構建 system prompt
+ */
+export function buildSystemPromptFromSkills(skills: CopilotSkill[]): string {
+  if (skills.length === 0) {
+    return '你是一個通用 AI 助手。'
+  }
+
+  const toolCallSkills = skills.filter(s => s.requiresToolCall)
+  const contextSkills = skills.filter(s => !s.requiresToolCall)
+
+  let prompt = '你是一個 AI 助手，具備以下能力：\n\n'
+  
+  if (toolCallSkills.length > 0) {
+    prompt += '## 工具調用能力（真實操作）\n\n'
+    toolCallSkills.forEach(skill => {
+      prompt += skill.systemPromptAddition + '\n'
+    })
+  }
+  
+  if (contextSkills.length > 0) {
+    prompt += '\n## 上下文信息\n\n'
+    contextSkills.forEach(skill => {
+      prompt += skill.systemPromptAddition + '\n'
+    })
+  }
+
+  prompt += `\n---\n\n重要提醒：
+- 只有上述列出的能力需要實際的工具/API 調用
+- 其他一般任務（寫代碼、分析數據、創作文字等）你本身就具備
+- 不要因為某個技能未啟用就拒絕回答，評估是否真的需要工具調用`
+
+  return prompt
+}
 
 export function getEnabledSkills(skills: CopilotSkill[]): CopilotSkill[] {
   return skills.filter(skill => skill.enabled)
@@ -254,21 +197,4 @@ export function getEnabledSkills(skills: CopilotSkill[]): CopilotSkill[] {
 
 export function getSkillById(id: string): CopilotSkill | undefined {
   return BUILTIN_SKILLS.find(skill => skill.id === id)
-}
-
-export function buildSystemPromptFromSkills(enabledSkills: CopilotSkill[]): string {
-  if (enabledSkills.length === 0) {
-    return '你是一個智能助手。'
-  }
-
-  // 簡化版本：只列出能力名稱和簡短描述，不包含詳細的 systemPromptAddition
-  const skillsList = enabledSkills
-    .map(skill => `• ${skill.icon} **${skill.name}**：${skill.description}`)
-    .join('\n')
-
-  return `你擁有以下能力：
-
-${skillsList}
-
-請根據用戶需求靈活運用這些能力。`
 }
