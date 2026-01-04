@@ -84,6 +84,9 @@ const electronAPI = {
     read: (path: string) => ipcRenderer.invoke('ftp:read', path),
     download: (remotePath: string, localPath: string) => ipcRenderer.invoke('ftp:download', remotePath, localPath),
     isConnected: () => ipcRenderer.invoke('ftp:is-connected')
+  },
+  system: {
+    getInfo: () => ipcRenderer.invoke('system:get-info') as Promise<{ username: string; hostname: string }>
   }
 }
 

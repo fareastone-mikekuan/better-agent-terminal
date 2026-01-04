@@ -394,6 +394,15 @@ ipcMain.handle('shell:open-external', async (_event, url: string) => {
   await shell.openExternal(url)
 })
 
+// System info handler
+ipcMain.handle('system:get-info', async () => {
+  const os = await import('os')
+  return {
+    username: os.userInfo().username || 'user',
+    hostname: os.hostname() || 'localhost'
+  }
+})
+
 // Update checker handlers
 ipcMain.handle('update:check', async () => {
   try {

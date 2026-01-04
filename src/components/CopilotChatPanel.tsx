@@ -1,13 +1,51 @@
-import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
+import { useEffect, useRef, useState, useMemo } from 'react'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import hljs from 'highlight.js'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
 import { knowledgeStore } from '../stores/knowledge-store'
 import { buildSystemPromptFromSkills } from '../types/copilot-skills'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 import 'highlight.js/styles/github-dark.css'
+
+// Configure marked with syntax highlighting
+const renderer = new marked.Renderer()
+renderer.code = function(token) {
+  // Handle both old (string) and new (token object) API
+  const codeString = typeof token === 'string' ? token : (token.text || '')
+  const language = typeof token === 'string' ? arguments[1] : (token.lang || '')
+  const validLanguage = language && hljs.getLanguage(language) ? language : 'plaintext'
+  
+  // Language display name
+  const languageLabel = language ? language.toUpperCase() : 'CODE'
+  
+  try {
+    const highlighted = hljs.highlight(codeString, { language: validLanguage }).value
+    return `<div class="code-block-wrapper">
+      <div class="code-block-header">
+        <span class="code-block-language">${languageLabel}</span>
+      </div>
+      <pre><code class="hljs language-${validLanguage}">${highlighted}</code></pre>
+    </div>`
+  } catch (err) {
+    console.error('Highlight error:', err)
+    // Fallback to plain text with HTML escaping
+    const escaped = codeString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `<div class="code-block-wrapper">
+      <div class="code-block-header">
+        <span class="code-block-language">${languageLabel}</span>
+      </div>
+      <pre><code class="language-${validLanguage}">${escaped}</code></pre>
+    </div>`
+  }
+}
+
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  renderer: renderer
+})
 
 interface CopilotChatPanelProps {
   isVisible: boolean
@@ -87,22 +125,35 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
   const [loadedFile, setLoadedFile] = useState<{ content: string; fileName: string } | null>(null)
+  const [userInfo, setUserInfo] = useState<{ username: string; hostname: string }>({ username: '', hostname: '' })
   
   // 样式控制状态
   const [fontSize, setFontSize] = useState(() => {
     const saved = localStorage.getItem('copilot-font-size')
     return saved ? parseInt(saved) : 12
   })
-  const [spacing, setSpacing] = useState(() => {
-    const saved = localStorage.getItem('copilot-spacing')
-    return saved ? parseInt(saved) : 3
-  })
   
   const terminalOutputBuffer = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const isDragging = useRef(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const isLoadingMessages = useRef(false)
+  const shouldFocusInput = useRef(false)
+
+  // Get system user info
+  useEffect(() => {
+    const getSystemInfo = async () => {
+      try {
+        const info = await window.electronAPI.system.getInfo()
+        setUserInfo(info)
+      } catch (err) {
+        console.error('Failed to get system info:', err)
+        setUserInfo({ username: 'user', hostname: 'localhost' })
+      }
+    }
+    getSystemInfo()
+  }, [])
 
   // 匯出對話為 JSON 檔案
   const exportMessages = () => {
@@ -280,6 +331,14 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     localStorage.setItem('copilot-floating', JSON.stringify(isFloating))
   }, [isFloating])
 
+  // Focus input when requested (e.g., after clearing messages)
+  useEffect(() => {
+    if (shouldFocusInput.current) {
+      shouldFocusInput.current = false
+      inputRef.current?.focus()
+    }
+  }, [messages])
+
   useEffect(() => {
     localStorage.setItem('copilot-position', JSON.stringify(position))
   }, [position])
@@ -412,14 +471,103 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 
   // Extract bash commands from message content
   const extractCommands = (content: string): string[] => {
-    const codeBlockRegex = /```(?:bash|sh|shell|powershell|pwsh|cmd|ps1)?\n([\s\S]*?)```/g
+    // Extract code blocks - prefer those marked as terminal/shell
+    const specificCommandRegex = /```(?:bash|sh|shell|powershell|pwsh|cmd|ps1|terminal)\n([\s\S]*?)```/g
+    const genericCodeBlockRegex = /```(?:\w+)?\n([\s\S]*?)```/g
     const commands: string[] = []
+    
+    // First, try to get specifically marked terminal commands
     let match
-    while ((match = codeBlockRegex.exec(content)) !== null) {
-      const cmd = match[1].trim()
-      if (cmd) commands.push(cmd)
+    while ((match = specificCommandRegex.exec(content)) !== null) {
+      const block = match[1].trim()
+      // Extract actual commands (skip comments and empty lines)
+      const blockCommands = extractCommandsFromBlock(block)
+      commands.push(...blockCommands)
     }
+    
+    // If no specifically marked commands found, check generic blocks (but with strict filtering)
+    if (commands.length === 0) {
+      while ((match = genericCodeBlockRegex.exec(content)) !== null) {
+        const block = match[1].trim()
+        // Only accept if it looks like a real terminal command (not code)
+        if (block && !isCodeSnippet(block)) {
+          const blockCommands = extractCommandsFromBlock(block)
+          commands.push(...blockCommands)
+        }
+      }
+    }
+    
     return commands
+  }
+
+  // Extract actual executable commands from a code block
+  const extractCommandsFromBlock = (block: string): string[] => {
+    const commands: string[] = []
+    const lines = block.split('\n')
+    
+    for (const line of lines) {
+      const trimmed = line.trim()
+      
+      // Skip empty lines and pure comment lines
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) {
+        continue
+      }
+      
+      // Check for inline comments and extract only the command part
+      const commentIndex = trimmed.indexOf(' #')
+      const actualCommand = commentIndex > 0 ? trimmed.substring(0, commentIndex).trim() : trimmed
+      
+      // Skip if it's code-like patterns
+      if (isCodeSnippet(actualCommand)) {
+        continue
+      }
+      
+      // Check if it's a valid command
+      if (actualCommand && looksLikeCommand(actualCommand)) {
+        commands.push(actualCommand)
+      }
+    }
+    
+    return commands
+  }
+
+  // Check if text looks like a terminal command
+  const looksLikeCommand = (text: string): boolean => {
+    if (!text) return false
+    
+    // Must not be a comment or code pattern
+    if (text.startsWith('#') || text.startsWith('//') || text.startsWith('/*')) return false
+    if (text.startsWith('{') || text.startsWith('[')) return false
+    
+    // Check if starts with common command
+    const commonCommands = /^(cd|ls|dir|pwd|echo|cat|grep|find|npm|git|node|python|pip|cargo|go|docker|kubectl|terraform|az|aws|yarn|pnpm|curl|wget|cp|mv|rm|mkdir|touch|chmod|ps|kill|tail|head|sed|awk|which|whereis|type|Get-|Set-|New-|Remove-|Invoke-|Select-|Where-Object|ForEach-Object)\b/i
+    return commonCommands.test(text.trim())
+  }
+
+  // Check if content looks like code snippet rather than terminal command
+  const isCodeSnippet = (text: string): boolean => {
+    // Check for common programming patterns
+    const codePatterns = [
+      /SELECT\s+.*\s+FROM/i,  // SQL
+      /INSERT\s+INTO/i,  // SQL
+      /UPDATE\s+.*\s+SET/i,  // SQL
+      /DELETE\s+FROM/i,  // SQL
+      /public\s+class\s+/i,  // Java
+      /public\s+static\s+void\s+main/i,  // Java main
+      /function\s+\w+\s*\(/i,  // JavaScript/TypeScript
+      /const\s+\w+\s*=\s*\(/i,  // Arrow functions
+      /def\s+\w+\s*\(/i,  // Python
+      /class\s+\w+/i,  // Class definition
+      /^\s*{[\s\S]*".*"[\s\S]*}/,  // JSON object
+      /^\s*\[[\s\S]*{[\s\S]*}[\s\S]*\]/,  // JSON array
+      /import\s+.*\s+from/i,  // ES6 imports
+      /#include\s*</i,  // C/C++
+      /package\s+\w+/i,  // Java/Go package
+      /\/\/.*JSON/i,  // Comments mentioning JSON/SQL/etc
+      /\/\/.*SQL/i,
+      /\/\/.*Java/i,
+    ]
+    return codePatterns.some(pattern => pattern.test(text))
   }
 
   // Auto-analyze command output
@@ -937,13 +1085,16 @@ ${skillsPrompt}${knowledgePrompt}
               onClick={() => {
                 if (confirm('確定要清除所有聊天記錄嗎？\n\n建議先匯出保存！')) {
                   isLoadingMessages.current = true
-                  setMessages([])
                   localStorage.removeItem(storageKey)
                   setError(null)
                   setInput('')
+                  setMessages([])
+                  // Mark that we should focus input after state updates
+                  shouldFocusInput.current = true
+                  // Reset loading flag after a brief delay to allow save effect to skip
                   setTimeout(() => {
                     isLoadingMessages.current = false
-                  }, 100)
+                  }, 50)
                 }
               }}
               title="清除聊天記錄"
@@ -958,77 +1109,6 @@ ${skillsPrompt}${knowledgePrompt}
           >
             {isFloating ? '📌' : '🔗'}
           </button>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '4px',
-            marginLeft: '8px',
-            padding: '4px 8px',
-            backgroundColor: '#2d2d2d',
-            borderRadius: '4px'
-          }}>
-            <span style={{ fontSize: '11px', color: '#888' }}>字体</span>
-            <button
-              className="copilot-toggle-btn"
-              onClick={() => {
-                const newSize = Math.max(10, fontSize - 1)
-                setFontSize(newSize)
-                localStorage.setItem('copilot-font-size', newSize.toString())
-              }}
-              title="减小字体"
-              style={{ padding: '2px 6px', fontSize: '12px' }}
-            >
-              A-
-            </button>
-            <span style={{ fontSize: '11px', color: '#ccc', minWidth: '25px', textAlign: 'center' }}>{fontSize}px</span>
-            <button
-              className="copilot-toggle-btn"
-              onClick={() => {
-                const newSize = Math.min(18, fontSize + 1)
-                setFontSize(newSize)
-                localStorage.setItem('copilot-font-size', newSize.toString())
-              }}
-              title="放大字体"
-              style={{ padding: '2px 6px', fontSize: '12px' }}
-            >
-              A+
-            </button>
-          </div>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '4px',
-            padding: '4px 8px',
-            backgroundColor: '#2d2d2d',
-            borderRadius: '4px'
-          }}>
-            <span style={{ fontSize: '11px', color: '#888' }}>间距</span>
-            <button
-              className="copilot-toggle-btn"
-              onClick={() => {
-                const newSpacing = Math.max(1, spacing - 1)
-                setSpacing(newSpacing)
-                localStorage.setItem('copilot-spacing', newSpacing.toString())
-              }}
-              title="减小间距"
-              style={{ padding: '2px 6px', fontSize: '12px' }}
-            >
-              −
-            </button>
-            <span style={{ fontSize: '11px', color: '#ccc', minWidth: '20px', textAlign: 'center' }}>{spacing}</span>
-            <button
-              className="copilot-toggle-btn"
-              onClick={() => {
-                const newSpacing = Math.min(8, spacing + 1)
-                setSpacing(newSpacing)
-                localStorage.setItem('copilot-spacing', newSpacing.toString())
-              }}
-              title="增加间距"
-              style={{ padding: '2px 6px', fontSize: '12px' }}
-            >
-              +
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1039,7 +1119,12 @@ ${skillsPrompt}${knowledgePrompt}
         </div>
       ) : (
         <>
-          <div className="copilot-chat-messages">
+          <div
+            className="copilot-chat-messages"
+            style={{
+              ['--copilot-font-size' as any]: `${fontSize}px`
+            } as any}
+          >
             {messages.length === 0 && (
               <div className="copilot-chat-empty">
                 <p>👋 嗨！我是 AI 助手</p>
@@ -1050,76 +1135,23 @@ ${skillsPrompt}${knowledgePrompt}
               const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
               return (
                 <div key={idx} className={`copilot-message ${msg.role}`}>
-                  {msg.role === 'user' && (
-                    <div style={{ 
-                      fontSize: '11px', 
-                      color: '#8c8c8c',
+                  {msg.role === 'user' && userInfo.username && (
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#58a6ff',
                       marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      justifyContent: 'flex-end'
+                      fontWeight: '600',
+                      fontFamily: 'Consolas, Monaco, monospace'
                     }}>
-                      <span>你</span>
+                      {userInfo.username}@{userInfo.hostname}
                     </div>
                   )}
-                  {msg.role === 'assistant' && (
-                    <div style={{ 
-                      fontSize: '11px', 
-                      color: '#8c8c8c',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}>
-                      <span style={{ 
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '4px',
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        color: 'white'
-                      }}>
-                        AI
-                      </span>
-                      <span>GitHub Copilot</span>
-                    </div>
-                  )}
-                  <div className="copilot-message-content" style={{
-                    fontSize: `${fontSize}px`,
-                    ['--spacing' as any]: `${spacing}px`
-                  }}>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                      components={{
-                        code({ node, inline, className, children, ...props }) {
-                          return inline ? (
-                            <code className="inline-code" {...props}>
-                              {children}
-                            </code>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          )
-                        },
-                        pre({ node, children, ...props }) {
-                          return (
-                            <pre className="code-block" {...props}>
-                              {children}
-                            </pre>
-                          )
-                        }
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+                  <div 
+                    className="copilot-message-content markdown-body"
+                    dangerouslySetInnerHTML={{
+                      __html: DOMPurify.sanitize(marked.parse(msg.content) as string)
+                    }}
+                  />
                   {commands.length > 0 && (
                     <div style={{ 
                       marginTop: '6px', 
@@ -1208,8 +1240,9 @@ ${skillsPrompt}${knowledgePrompt}
             })}
             {isLoading && (
               <div className="copilot-message assistant">
-                <div className="copilot-message-content">
-                  ⏳ 思考中...
+                <div className="copilot-message-content copilot-loading">
+                  <span className="loading-spinner"></span>
+                  <span>思考中...</span>
                 </div>
               </div>
             )}
@@ -1464,6 +1497,7 @@ ${skillsPrompt}${knowledgePrompt}
               </div>
             )}
             <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
