@@ -6,6 +6,7 @@ import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
 import { knowledgeStore } from '../stores/knowledge-store'
 import { buildSystemPromptFromSkills } from '../types/copilot-skills'
+import { smartSelect } from '../types/skill-selector'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 import 'highlight.js/styles/github-dark.css'
 
@@ -740,33 +741,56 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 5. **主動建議**：根據情境主動建議下一步操作
 6. **保持簡潔**：回應要專業、準確、直接`
 
-      // 獲取啟用的技能並構建完整 system prompt
-      const enabledSkills = settingsStore.getEnabledSkills()
-      const skillsPrompt = buildSystemPromptFromSkills(enabledSkills)
+      // 使用智能選擇器分析用戶問題，自動選擇相關的 skills 和 knowledge
+      const userQuestion = userMessage.content
+      const allSkills = settingsStore.getCopilotSkills()
+      const allKnowledge = knowledgeStore.getActiveKnowledge()
+      
+      const { analysis, selectedSkills, selectedKnowledge } = smartSelect(
+        userQuestion,
+        allSkills,
+        allKnowledge
+      )
+      
+      console.log('[CopilotChat] Smart selection result:', {
+        userQuestion: userQuestion.substring(0, 100),
+        intent: analysis.intent,
+        confidence: analysis.confidence,
+        skillsSelected: selectedSkills.length,
+        knowledgeSelected: selectedKnowledge.length
+      })
+      
+      // 如果啟用了智能選擇且置信度足夠，在消息前顯示選擇的 skills
+      if (analysis.confidence > 0.5 && selectedSkills.length > 0) {
+        const skillsList = selectedSkills.map(s => `${s.icon} **${s.name}**`).join(', ')
+        const knowledgeInfo = selectedKnowledge.length > 0 ? `\n📚 相關知識：${selectedKnowledge.length} 個文檔` : ''
+        
+        const selectionInfo: CopilotMessage = {
+          role: 'info',
+          content: `🎯 **智能選擇** (置信度: ${(analysis.confidence * 100).toFixed(0)}%)\n\n已啟用能力：${skillsList}${knowledgeInfo}`
+        }
+        setMessages(prev => [...prev, selectionInfo])
+      }
+      
+      // 構建 skills prompt
+      const skillsPrompt = buildSystemPromptFromSkills(selectedSkills)
       
       // 根據當前模型獲取知識庫限制
       const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
       const modelLimits = getModelKnowledgeLimit(copilotConfig.model)
       
-      // 獲取啟用的知識庫內容（限制大小以避免 token 超限）
-      const activeKnowledge = knowledgeStore.getActiveKnowledge()
+      // 使用智能選擇的知識（已經過濾過相關的）
       let knowledgePrompt = ''
       const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
       
-      const totalKnowledgeSize = activeKnowledge.reduce((sum, k) => sum + k.content.length, 0)
+      const totalKnowledgeSize = selectedKnowledge.reduce((sum, k) => sum + k.content.length, 0)
       
-      console.log('[CopilotChat] Building knowledge prompt:', {
+      console.log('[CopilotChat] Building knowledge prompt (smart selected):', {
         model: copilotConfig.model,
         limits: modelLimits,
-        activeKnowledgeCount: activeKnowledge.length,
+        selectedKnowledgeCount: selectedKnowledge.length,
         totalKnowledgeSize: totalKnowledgeSize,
-        totalKnowledgeSizeKB: (totalKnowledgeSize / 1024).toFixed(1),
-        entries: activeKnowledge.map(k => ({
-          name: k.name,
-          contentLength: k.content.length,
-          contentLengthKB: (k.content.length / 1024).toFixed(1),
-          contentPreview: k.content.substring(0, 200)
-        }))
+        totalKnowledgeSizeKB: (totalKnowledgeSize / 1024).toFixed(1)
       })
       
       // 如果知識庫太大，提前警告
@@ -779,12 +803,12 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         })
       }
       
-      if (activeKnowledge.length > 0) {
+      if (selectedKnowledge.length > 0) {
         const MAX_KNOWLEDGE_LENGTH = modelLimits.maxTotal
         const MAX_SINGLE_ENTRY = modelLimits.maxSingle
         let totalLength = 0
         
-        for (const k of activeKnowledge) {
+        for (const k of selectedKnowledge) {
           let entryContent = k.content
           let truncated = false
           
@@ -850,8 +874,13 @@ ${knowledgeList}
             preview: knowledgePrompt.substring(0, 500)
           })
           
-          if (includedKnowledge.length < activeKnowledge.length) {
-            knowledgePrompt += `\n(註：因內容過長，僅載入 ${includedKnowledge.length}/${activeKnowledge.length} 個知識條目)\n`
+          if (includedKnowledge.length < selectedKnowledge.length) {
+            knowledgePrompt += `\n(註：因內容過長，僅載入 ${includedKnowledge.length}/${selectedKnowledge.length} 個知識條目)\n`
+          }
+          
+          // 顯示智能選擇的統計信息
+          if (analysis.confidence > 0.5) {
+            knowledgePrompt += `\n(智能選擇：根據問題"${analysis.intent}"自動篩選了相關知識)\n`
           }
         }
       }
@@ -869,10 +898,26 @@ ${skillsPrompt}${knowledgePrompt}
   ${isWindows ? 'PowerShell: \`\`\`bash\nGet-ChildItem\n\`\`\`' : 'Bash: \`\`\`bash\nls -la\n\`\`\`'}
 - 看到輸出後，你："目錄中有 X 個檔案，包括..."`
 
+      // 限制對話歷史長度，避免 context 過大
+      // 只保留最近的真實對話（user + assistant），過濾掉 info 消息
+      const conversationMessages = newMessages.filter(m => m.role === 'user' || m.role === 'assistant')
+      const MAX_HISTORY_MESSAGES = 6
+      const recentMessages = conversationMessages.length > MAX_HISTORY_MESSAGES 
+        ? conversationMessages.slice(-MAX_HISTORY_MESSAGES) 
+        : conversationMessages
+      
+      console.log('[CopilotChat] Message history management:', {
+        totalMessages: newMessages.length,
+        conversationOnly: conversationMessages.length,
+        infoMessages: newMessages.length - conversationMessages.length,
+        keepingRecent: recentMessages.length,
+        droppedOldest: conversationMessages.length - recentMessages.length
+      })
+
       const options: CopilotChatOptions = {
         messages: [
           { role: 'system', content: systemPrompt },
-          ...newMessages
+          ...recentMessages
         ]
       }
 
@@ -882,17 +927,17 @@ ${skillsPrompt}${knowledgePrompt}
         modelLimits: modelLimits,
         messageCount: options.messages.length,
         systemPromptLength: systemPrompt.length,
-        userMessagesLength: newMessages.reduce((sum, m) => sum + m.content.length, 0),
-        totalEstimatedLength: systemPrompt.length + newMessages.reduce((sum, m) => sum + m.content.length, 0),
-        hasKnowledge: activeKnowledge.length > 0,
-        knowledgeCount: activeKnowledge.length,
+        userMessagesLength: recentMessages.reduce((sum, m) => sum + m.content.length, 0),
+        totalEstimatedLength: systemPrompt.length + recentMessages.reduce((sum, m) => sum + m.content.length, 0),
+        hasKnowledge: selectedKnowledge.length > 0,
+        knowledgeCount: selectedKnowledge.length,
         includedKnowledgeCount: includedKnowledge.length,
         knowledgePromptLength: knowledgePrompt.length,
-        knowledgeEntries: activeKnowledge.map(k => ({ name: k.name, size: k.content.length }))
+        knowledgeEntries: selectedKnowledge.map(k => ({ name: k.name, size: k.content.length }))
       })
       
       // 檢查總長度是否超過限制（根據模型動態調整）
-      const totalLength = systemPrompt.length + newMessages.reduce((sum, m) => sum + m.content.length, 0)
+      const totalLength = systemPrompt.length + recentMessages.reduce((sum, m) => sum + m.content.length, 0)
       const maxTotalLength = modelLimits.tokenLimit * 3 // 1 token ≈ 3-4 字元，保守估計用 3
       
       if (totalLength > maxTotalLength) {
@@ -937,6 +982,19 @@ ${skillsPrompt}${knowledgePrompt}
       }
 
       const updatedMessages = [...newMessages, assistantMessage]
+      
+      // 如果使用了知識庫，添加知識來源信息
+      if (includedKnowledge.length > 0) {
+        const knowledgeNames = includedKnowledge.map(k => `📄 **${k.name}**`).join('\n')
+        const skillNames = selectedSkills.map(s => `${s.icon} ${s.name}`).join(', ')
+        
+        const sourceInfo: CopilotMessage = {
+          role: 'info',
+          content: `📚 **使用的知識來源** (${includedKnowledge.length} 個文檔)\n\n${knowledgeNames}\n\n🎯 **啟用能力**：${skillNames}`
+        }
+        updatedMessages.push(sourceInfo)
+      }
+      
       setMessages(updatedMessages)
       
       // 清除已读取的数据标记

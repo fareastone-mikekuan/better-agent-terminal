@@ -1084,7 +1084,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: '11px', color: '#888', display: 'flex', gap: '10px' }}>
+                          <div style={{ fontSize: '11px', color: '#888', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                             <span>學習前：{formatFileSize(entry.size)}</span>
                             {entry.isLearned && (
                               <>
@@ -1101,6 +1101,18 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                             <span>•</span>
                             <span>{new Date(entry.uploadedAt).toLocaleString('zh-TW')}</span>
                           </div>
+                          {entry.suggestedSkills && entry.suggestedSkills.length > 0 && (
+                            <div style={{ fontSize: '10px', color: '#58a6ff', marginTop: '6px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {entry.suggestedSkills.map((skillId) => {
+                                const skill = settingsStore.getCopilotSkills().find(s => s.id === skillId)
+                                return skill ? (
+                                  <span key={skillId} style={{ backgroundColor: 'rgba(88, 166, 255, 0.1)', padding: '2px 6px', borderRadius: '3px' }}>
+                                    {skill.icon} {skill.name}
+                                  </span>
+                                ) : null
+                              })}
+                            </div>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <label

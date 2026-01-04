@@ -261,13 +261,14 @@ export function buildSystemPromptFromSkills(enabledSkills: CopilotSkill[]): stri
     return '你是一個智能助手。'
   }
 
-  const skillsPrompt = enabledSkills
-    .map(skill => skill.systemPromptAddition.trim())
-    .join('\n\n')
+  // 簡化版本：只列出能力名稱和簡短描述，不包含詳細的 systemPromptAddition
+  const skillsList = enabledSkills
+    .map(skill => `• ${skill.icon} **${skill.name}**：${skill.description}`)
+    .join('\n')
 
   return `你擁有以下能力：
 
-${skillsPrompt}
+${skillsList}
 
-請根據用戶需求選擇合適的能力來協助。`
+請根據用戶需求靈活運用這些能力。`
 }

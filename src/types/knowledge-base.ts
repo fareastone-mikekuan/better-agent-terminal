@@ -138,6 +138,8 @@ export interface KnowledgeEntry {
   learnedSize?: number // 學習後內容大小（bytes）
   learnedModel?: string // 學習時使用/實際採用的模型（model id）
   hash: string  // 用於檢測文件是否有變更
+  suggestedSkills?: string[] // 建議關聯的 skill IDs
+  tags?: string // 標籤（用於搜索和分類）
 }
 
 export interface KnowledgeCategory {

@@ -16,6 +16,26 @@ class KnowledgeStore {
 
   constructor() {
     this.load()
+    // 遷移：為舊的知識條目生成 suggestedSkills
+    this.migrateOldEntries()
+  }
+  
+  // 為沒有 suggestedSkills 的舊條目自動生成
+  private async migrateOldEntries() {
+    let needsSave = false
+    const { suggestSkillsForKnowledge } = await import('../types/skill-selector')
+    
+    for (const entry of this.entries) {
+      if (!entry.suggestedSkills) {
+        entry.suggestedSkills = suggestSkillsForKnowledge(entry.name, entry.content, entry.category)
+        needsSave = true
+      }
+    }
+    
+    if (needsSave) {
+      console.log('[KnowledgeStore] Migrated old entries with suggested skills')
+      this.save()
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -85,6 +105,10 @@ class KnowledgeStore {
       return existing
     }
 
+    // 自動分析並建議相關 skills
+    const { suggestSkillsForKnowledge } = await import('../types/skill-selector')
+    const suggestedSkills = suggestSkillsForKnowledge(name, content, category)
+
     const entry: KnowledgeEntry = {
       id: `kb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name,
@@ -97,12 +121,21 @@ class KnowledgeStore {
       isLearned: false,
       learnedSize: undefined,
       learnedModel: undefined,
-      hash
+      hash,
+      suggestedSkills, // 自動建議的 skills
+      tags: '' // 初始標籤為空
     }
 
     this.entries.push(entry)
     this.save()
     this.notify()
+    
+    console.log('[KnowledgeStore] Added entry with suggested skills:', {
+      name,
+      category,
+      suggestedSkills
+    })
+    
     return entry
   }
 
