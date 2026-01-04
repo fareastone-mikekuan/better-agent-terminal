@@ -215,6 +215,9 @@ export interface CopilotConfig {
     tokenExpiry?: number; // Token 過期時間
     endpoint?: string; // M365 Copilot API endpoint
   };
+  
+  // 知識庫選擇策略
+  knowledgeSelectionMode?: 'keyword' | 'ai'; // keyword: 關鍵詞匹配, ai: 用AI模型選擇
 }
 
 export interface CopilotMessage {

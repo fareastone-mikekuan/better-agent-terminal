@@ -88,7 +88,7 @@ const INTENT_TO_SKILLS: Record<string, string[]> = {
  */
 export function analyzeQuestion(question: string): QuestionAnalysis {
   const lowerQuestion = question.toLowerCase()
-  const words = question.split(/\s+/)
+  const words = question.split(/[\s,，。、]+/).filter(w => w.length > 0) // 改进中文分词
   
   // 計算每個意圖的匹配分數
   const intentScores: Record<string, number> = {}
@@ -106,6 +106,27 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
       intentScores[intent] = score
     }
   }
+  
+  // 额外提取用户问题中的关键词（去除停用词）
+  const stopWords = new Set([
+    // 中文停用詞（只保留最基本的）
+    '是', '的', '了', '在', '有', '和', '與', '或', '但',
+    '我', '你', '他', '她', '它', '這', '那', '哪',
+    // 英文停用詞（只保留最基本的）
+    'the', 'a', 'an', 'is', 'are', 'was', 'were',
+    'i', 'you', 'he', 'she', 'it', 'this', 'that'
+  ])
+  
+  // 提取用戶問題中的所有有意義詞彙
+  words.forEach(word => {
+    const lowerWord = word.toLowerCase()
+    // 長度至少 2，且不是停用詞
+    if (word.length >= 2 && !stopWords.has(lowerWord)) {
+      matchedKeywords.add(word)
+    }
+  })
+  
+  console.log('[SmartSelect] Extracted keywords:', Array.from(matchedKeywords))
   
   // 找出最高分的意圖
   const sortedIntents = Object.entries(intentScores)
@@ -150,13 +171,36 @@ function extractKnowledgeCategories(question: string, keywords: Set<string>): st
   const lowerQuestion = question.toLowerCase()
   const categories: Set<string> = new Set()
   
+  // 先檢查是否為創意/非技術類問題（如：寫歌、詩詞、故事等）
+  const creativeKeywords = [
+    '歌', '詩', '故事', '小說', '文章', '作文',
+    'song', 'poem', 'story', 'novel', 'essay',
+    '周杰倫', '音樂', '旋律', '歌詞', '韻腳',
+    '創作', '創意', '想像', '虛構'
+  ]
+  
+  const isCreativeQuestion = creativeKeywords.some(kw => 
+    lowerQuestion.includes(kw.toLowerCase())
+  )
+  
+  // 如果是創意類問題，不推薦任何知識庫類別（讓 AI 自由發揮）
+  if (isCreativeQuestion) {
+    console.log('[SmartSelect] Detected creative/non-technical question, not suggesting knowledge')
+    return []
+  }
+  
   // 檢查常見的業務/技術領域關鍵詞
   const categoryKeywords: Record<string, string[]> = {
     'api': ['api', 'endpoint', 'rest', 'graphql', '接口', '端點'],
-    'database': ['資料庫', 'database', 'sql', 'oracle', 'mysql', '表', 'table'],
-    'accounting': ['會計', '帳務', '發票', '報表', 'accounting', 'invoice', 'billing'],
+    'database': ['資料庫', 'database', 'sql', 'oracle', 'mysql', '表', 'table', 'query', '查詢'],
+    'accounting': [
+      '會計', '帳務', '發票', '報表', 'accounting', 'invoice', 'billing',
+      '預繳', '餘額', '金額', '付款', '收款', '帳戶', '交易', 
+      '財務', '費用', '成本', '帳單',
+      'payment', 'balance', 'amount', 'transaction', 'finance'
+    ],
     'system': ['系統', '架構', 'system', 'architecture', '配置', 'config'],
-    'code': ['代碼', '函數', 'code', 'function', '類', 'class'],
+    'code': ['代碼', '函數', 'code', 'function', '類', 'class', '程式', 'program'],
     'document': ['文檔', '說明', 'document', 'documentation', '手冊', 'manual']
   }
   
@@ -166,8 +210,8 @@ function extractKnowledgeCategories(question: string, keywords: Set<string>): st
     }
   }
   
-  // 如果沒有匹配到特定類別，返回所有（讓後續邏輯根據知識條目的標籤進一步過濾）
-  return categories.size > 0 ? Array.from(categories) : []
+  // 只有匹配到特定技術類別時才返回
+  return Array.from(categories)
 }
 
 /**
@@ -210,16 +254,15 @@ export function selectRelevantKnowledge(
     return []
   }
   
-  // 極低置信度時，不返回任何知識（讓 AI 用模型知識回答）
-  if (analysis.confidence < 0.2) {
-    console.log('[SmartSelect] Confidence too low, using model knowledge only')
+  // 極低置信度或無關鍵詞時，不返回任何知識
+  if (analysis.confidence < 0.2 || analysis.keywords.length === 0) {
+    console.log('[SmartSelect] Very low confidence or no keywords, not selecting any knowledge')
     return []
   }
   
-  // 如果沒有推薦類別但有關鍵詞，仍然嘗試基於關鍵詞匹配
-  if (analysis.suggestedKnowledge.length === 0 && analysis.keywords.length === 0) {
-    console.log('[SmartSelect] No suggested categories or keywords, using model knowledge only')
-    return []
+  // 如果沒有推薦類別，但有關鍵詞，繼續評分
+  if (analysis.suggestedKnowledge.length === 0) {
+    console.log('[SmartSelect] No suggested categories, relying on keyword matching')
   }
   
   // 高置信度時，過濾相關的知識
@@ -242,14 +285,14 @@ export function selectRelevantKnowledge(
       score += matchingTags.length * 5
     }
     
-    // 名稱匹配 (+3 分)
+    // 名稱匹配 (+5 分)
     const lowerName = entry.name.toLowerCase()
     const nameMatches = lowerKeywords.filter(kw => 
       lowerName.includes(kw) || kw.includes(lowerName.split(' ')[0])
     )
-    score += nameMatches.length * 3
+    score += nameMatches.length * 5
     
-    // 內容匹配 (+1 分，但最多 +5)
+    // 內容匹配 (+2 分，但最多 +10)
     const lowerContent = entry.content.toLowerCase()
     let contentMatches = 0
     for (const kw of lowerKeywords) {
@@ -257,19 +300,34 @@ export function selectRelevantKnowledge(
         contentMatches++
       }
     }
-    score += Math.min(contentMatches, 5)
+    score += Math.min(contentMatches * 2, 10)
     
     return { entry, score }
   })
   
-  // 按分數排序，只返回有明確匹配的條目（至少 5 分：類別匹配或標籤匹配）
+  // 按分數排序，門檻 4 分確保基本相關性（內容匹配 2 個關鍵詞即可）
   const relevant = scoredKnowledge
-    .filter(({ score }) => score >= 5)
+    .filter(({ score }) => score >= 4)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3) // 最多返回前 3 個最相關的
+    .slice(0, 5) // 返回最相關的前 5 個
     .map(({ entry }) => entry)
   
-  // 如果過濾後沒有結果，不返回任何知識（讓 AI 使用模型本身的知識）
+  // 記錄評分詳情以便調試
+  if (relevant.length === 0) {
+    const topScores = scoredKnowledge
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ entry, score }) => `${entry.name}(${score}分)`)
+    console.log('[SmartSelect] No knowledge passed threshold (4+). Top scores:', topScores.join(', '))
+    console.log('[SmartSelect] Keywords used for matching:', lowerKeywords)
+  } else {
+    const selectedInfo = relevant.map((e, i) => {
+      const s = scoredKnowledge.find(sk => sk.entry.id === e.id)
+      return `${i+1}. ${e.name}(${s?.score || 0}分)`
+    }).join(', ')
+    console.log('[SmartSelect] Selected knowledge:', selectedInfo)
+  }
+  
   return relevant
 }
 

@@ -615,6 +615,39 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </small>
                 </div>
 
+                {/* Knowledge Selection Mode */}
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
+                    知識庫選擇模式
+                  </label>
+                  <select
+                    value={copilotConfig.knowledgeSelectionMode || 'ai'}
+                    onChange={async e => {
+                      const newConfig = { 
+                        ...copilotConfig, 
+                        knowledgeSelectionMode: e.target.value as 'keyword' | 'ai'
+                      }
+                      setCopilotConfig(newConfig)
+                      await settingsStore.setCopilotConfig(newConfig)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      backgroundColor: '#2a2826',
+                      color: '#dfdbc3',
+                      border: '1px solid #3a3836',
+                      borderRadius: '4px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="ai">🤖 AI 智能選擇（推薦，更準確但消耗更多 Token）</option>
+                    <option value="keyword">🔍 關鍵詞匹配（快速但可能不準確）</option>
+                  </select>
+                  <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
+                    💡 AI 模式：每次提問前先用 AI 分析並選擇相關知識庫，然後再回答問題（兩次 API 調用）
+                  </small>
+                </div>
+
                 <button 
                   onClick={handleLogout}
                   style={{

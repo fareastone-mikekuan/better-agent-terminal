@@ -2,6 +2,7 @@
  * 知識庫管理面板
  */
 import { useState, useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import { knowledgeStore } from '../stores/knowledge-store'
 import { settingsStore } from '../stores/settings-store'
 import type { KnowledgeEntry } from '../types/knowledge-base'
@@ -27,6 +28,7 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
   const [copilotModelsError, setCopilotModelsError] = useState<string>('')
   const [copilotConfig, setCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
+  const [copilotSkills, setCopilotSkills] = useState(() => settingsStore.getCopilotSkills())
 
   const extractVsdxToText = (arrayBuffer: ArrayBuffer, fileName: string): string => {
     const now = new Date().toLocaleString('zh-TW')
@@ -350,9 +352,10 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       setEntries(knowledgeStore.getEntries())
     })
     
-    // 訂閱設定變更以更新 Copilot 配置
+    // 訂閱設定變更以更新 Copilot 配置和技能狀態
     const unsubscribeSettings = settingsStore.subscribe(() => {
       setCopilotConfig(settingsStore.getCopilotConfig())
+      setCopilotSkills(settingsStore.getCopilotSkills())
     })
     
     // 調試：檢查知識庫狀態
@@ -873,7 +876,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
-                {settingsStore.getCopilotSkills().map(skill => (
+                {copilotSkills.map(skill => (
                   <label
                     key={skill.id}
                     style={{
@@ -891,7 +894,13 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                     <input
                       type="checkbox"
                       checked={skill.enabled}
-                      onChange={e => settingsStore.toggleSkill(skill.id, e.target.checked)}
+                      onChange={e => {
+                        settingsStore.toggleSkill(skill.id, e.target.checked)
+                        // Force immediate UI update
+                        flushSync(() => {
+                          setCopilotSkills(settingsStore.getCopilotSkills())
+                        })
+                      }}
                       style={{ marginTop: '2px' }}
                     />
                     <div style={{ flex: 1 }}>
@@ -908,8 +917,12 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               <div style={{ display: 'flex', gap: '8px', fontSize: '13px' }}>
                 <button
                   onClick={() => {
-                    settingsStore.getCopilotSkills().forEach(skill => {
+                    copilotSkills.forEach(skill => {
                       settingsStore.toggleSkill(skill.id, true)
+                    })
+                    // Force immediate UI update
+                    flushSync(() => {
+                      setCopilotSkills(settingsStore.getCopilotSkills())
                     })
                   }}
                   style={{
@@ -926,8 +939,12 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                 </button>
                 <button
                   onClick={() => {
-                    settingsStore.getCopilotSkills().forEach(skill => {
+                    copilotSkills.forEach(skill => {
                       settingsStore.toggleSkill(skill.id, false)
+                    })
+                    // Force immediate UI update
+                    flushSync(() => {
+                      setCopilotSkills(settingsStore.getCopilotSkills())
                     })
                   }}
                   style={{
@@ -942,7 +959,13 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                   全部停用
                 </button>
                 <button
-                  onClick={() => settingsStore.resetSkills()}
+                  onClick={() => {
+                    settingsStore.resetSkills()
+                    // Force immediate UI update
+                    flushSync(() => {
+                      setCopilotSkills(settingsStore.getCopilotSkills())
+                    })
+                  }}
                   style={{
                     padding: '8px 16px',
                     backgroundColor: '#3a3836',
@@ -1396,7 +1419,13 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                             <input
                               type="checkbox"
                               checked={entry.enabled !== false}
-                              onChange={(e) => knowledgeStore.toggleEntryEnabled(entry.id, e.target.checked)}
+                              onChange={(e) => {
+                                knowledgeStore.toggleEntryEnabled(entry.id, e.target.checked)
+                                // Force immediate UI update
+                                flushSync(() => {
+                                  setEntries(knowledgeStore.getEntries())
+                                })
+                              }}
                             />
                             提供給 AI
                           </label>

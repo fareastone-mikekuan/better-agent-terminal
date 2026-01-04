@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -161,6 +162,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [effectiveModel, setEffectiveModel] = useState<string>('')
   const [targetTerminalId, setTargetTerminalId] = useState<string>('')
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
+  const [isComposing, setIsComposing] = useState(false)  // Track IME composition state
   
   // Multi-instance support for Oracle and WebView
   const [selectedOracleId, setSelectedOracleId] = useState<string>('')
@@ -791,28 +793,117 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       const allSkills = settingsStore.getCopilotSkills()
       const allKnowledge = knowledgeStore.getActiveKnowledge()
       
-      const { analysis, selectedSkills, selectedKnowledge } = smartSelect(
-        userQuestion,
-        allSkills,
-        allKnowledge
-      )
+      // 檢查知識庫選擇模式
+      const selectionMode = copilotConfig.knowledgeSelectionMode || 'ai'
+      let selectedSkills: any[] = []
+      let selectedKnowledge: any[] = []
+      let analysis: any = null
+      
+      if (selectionMode === 'ai' && allKnowledge.length > 0) {
+        // AI 驅動的知識庫選擇（兩階段方法）
+        console.log('[CopilotChat] Using AI-driven knowledge selection, available knowledge:', allKnowledge.length)
+        
+        // 第一階段：讓 AI 分析哪些知識庫相關
+        const knowledgeListPrompt = allKnowledge.map((k, idx) => {
+          const preview = k.content.substring(0, 200).replace(/\n/g, ' ')
+          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   預覽: ${preview}...`
+        }).join('\n\n')
+        
+        const selectionSystemPrompt = `你是知識庫選擇助手。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
+
+## 可用知識庫（共 ${allKnowledge.length} 個）：
+
+${knowledgeListPrompt}
+
+## 任務：
+分析用戶的問題，選出與問題**最相關**的知識庫條目（最多5個）。
+只回答知識庫的編號，用逗號分隔，例如：1,3,5
+如果沒有任何相關的知識庫，回答：無`
+
+        try {
+          const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
+            messages: [
+              { role: 'system', content: selectionSystemPrompt },
+              { role: 'user', content: `用戶問題：「${userQuestion}」\n\n請選擇相關的知識庫編號：` }
+            ],
+            model: copilotConfig.model || 'gpt-4o'
+          })
+          
+          console.log('[CopilotChat] AI selection raw result:', selectionResult.content)
+          
+          // 解析 AI 返回的編號
+          const selectedIndices: number[] = []
+          const content = selectionResult.content || ''
+          if (content && !content.includes('無') && !content.includes('没有')) {
+            const matches = content.match(/\d+/g)
+            if (matches) {
+              selectedIndices.push(...matches.map(n => parseInt(n) - 1))
+            }
+          }
+          
+          selectedKnowledge = selectedIndices
+            .filter(idx => idx >= 0 && idx < allKnowledge.length)
+            .map(idx => allKnowledge[idx])
+          
+          console.log('[CopilotChat] AI selected knowledge indices:', selectedIndices)
+          console.log('[CopilotChat] AI selected knowledge names:', selectedKnowledge.map(k => k.name))
+          
+          // 顯示 AI 選擇結果
+          if (selectedKnowledge.length > 0) {
+            const knowledgeListMsg: CopilotMessage = {
+              role: 'info',
+              content: `🤖 **AI 智能選擇**\n\n📚 已選擇 ${selectedKnowledge.length} 個相關知識庫：\n${selectedKnowledge.map((k, i) => `${i + 1}. ${k.name}`).join('\n')}`
+            }
+            setMessages(prev => [...prev, knowledgeListMsg])
+          }
+          
+        } catch (error) {
+          console.error('[CopilotChat] AI selection failed, falling back to keyword matching:', error)
+          // 失敗時回退到關鍵詞匹配
+          const result = smartSelect(userQuestion, allSkills, allKnowledge)
+          analysis = result.analysis
+          selectedSkills = result.selectedSkills
+          selectedKnowledge = result.selectedKnowledge
+        }
+        
+        // Skills 仍使用關鍵詞匹配選擇
+        const skillResult = smartSelect(userQuestion, allSkills, [])
+        selectedSkills = skillResult.selectedSkills
+        analysis = skillResult.analysis
+        
+      } else {
+        // 關鍵詞匹配模式
+        console.log('[CopilotChat] Using keyword-based selection')
+        const result = smartSelect(userQuestion, allSkills, allKnowledge)
+        analysis = result.analysis
+        selectedSkills = result.selectedSkills
+        selectedKnowledge = result.selectedKnowledge
+      }
       
       console.log('[CopilotChat] Smart selection result:', {
         userQuestion: userQuestion.substring(0, 100),
-        intent: analysis.intent,
-        confidence: analysis.confidence,
+        mode: selectionMode,
+        intent: analysis?.intent,
+        confidence: analysis?.confidence,
         skillsSelected: selectedSkills.length,
         knowledgeSelected: selectedKnowledge.length
       })
       
-      // 如果啟用了智能選擇且置信度足夠，在消息前顯示選擇的 skills
-      if (analysis.confidence > 0.5 && selectedSkills.length > 0) {
+      // 如果是關鍵詞模式且置信度足夠，顯示選擇的 skills
+      if (selectionMode === 'keyword' && analysis && analysis.confidence > 0.5 && selectedSkills.length > 0) {
         const skillsList = selectedSkills.map(s => `${s.icon} **${s.name}**`).join(', ')
         const knowledgeInfo = selectedKnowledge.length > 0 ? `\n📚 相關知識：${selectedKnowledge.length} 個文檔` : ''
         
         const selectionInfo: CopilotMessage = {
           role: 'info',
-          content: `🎯 **智能選擇** (置信度: ${(analysis.confidence * 100).toFixed(0)}%)\n\n已啟用能力：${skillsList}${knowledgeInfo}`
+          content: `🔍 **關鍵詞匹配** (置信度: ${(analysis.confidence * 100).toFixed(0)}%)\n\n已啟用能力：${skillsList}${knowledgeInfo}`
+        }
+        setMessages(prev => [...prev, selectionInfo])
+      } else if (selectionMode === 'ai' && selectedSkills.length > 0) {
+        const skillsList = selectedSkills.map(s => `${s.icon} **${s.name}**`).join(', ')
+        const selectionInfo: CopilotMessage = {
+          role: 'info',
+          content: `🎯 已啟用能力：${skillsList}`
         }
         setMessages(prev => [...prev, selectionInfo])
       }
@@ -1189,11 +1280,16 @@ ${skillsPrompt}${knowledgePrompt}
                 if (confirm('確定要清除所有聊天記錄嗎？\n\n建議先匯出保存！')) {
                   isLoadingMessages.current = true
                   localStorage.removeItem(storageKey)
-                  setError(null)
-                  setInput('')
-                  setMessages([])
+                  // Use flushSync to force immediate UI update
+                  flushSync(() => {
+                    setError(null)
+                    setInput('')
+                    setMessages([])
+                  })
                   // Mark that we should focus input after state updates
                   shouldFocusInput.current = true
+                  // Focus immediately after state is flushed
+                  inputRef.current?.focus()
                   // Reset loading flag after a brief delay to allow save effect to skip
                   setTimeout(() => {
                     isLoadingMessages.current = false
@@ -1604,8 +1700,11 @@ ${skillsPrompt}${knowledgePrompt}
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={() => setIsComposing(false)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  // Prevent sending message during IME composition (e.g., Chinese input)
+                  if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                     e.preventDefault()
                     handleSendMessage()
                   }
