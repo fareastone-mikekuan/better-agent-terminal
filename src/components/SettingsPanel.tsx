@@ -23,6 +23,7 @@ const checkFontAvailable = (fontFamily: string): boolean => {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
+  const [activeTab, setActiveTab] = useState<'copilot' | 'gist' | 'panel' | 'shell' | 'web' | 'appearance' | 'env'>('copilot')
   const [settings, setSettings] = useState<AppSettings>(settingsStore.getSettings())
   const [availableFonts, setAvailableFonts] = useState<Set<FontType>>(new Set())
   const [copilotConfig, setCopilotConfig] = useState<CopilotConfig>({
@@ -377,30 +378,129 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={e => e.stopPropagation()}>
         <div className="settings-header">
-                <button 
-                  onClick={handleCopyOAuthToken}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#7bbda4',
-                    color: '#1f1d1a',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                    width: '100%',
-                    marginBottom: '10px'
-                  }}
-                >
-                  📋 複製 OAuth Token
-                </button>
-
           <h2>設定</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
+        {/* Tab Navigation */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '8px',
+          padding: '0 16px',
+          borderBottom: '1px solid #3a3836',
+          backgroundColor: '#1f1d1a'
+        }}>
+          <button
+            onClick={() => setActiveTab('copilot')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'copilot' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'copilot' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'copilot' ? 'bold' : 'normal'
+            }}
+          >
+            🤖 Copilot
+          </button>
+          <button
+            onClick={() => setActiveTab('gist')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'gist' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'gist' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'gist' ? 'bold' : 'normal'
+            }}
+          >
+            📦 Gist
+          </button>
+          <button
+            onClick={() => setActiveTab('panel')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'panel' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'panel' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'panel' ? 'bold' : 'normal'
+            }}
+          >
+            🔗 面板共用
+          </button>
+          <button
+            onClick={() => setActiveTab('shell')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'shell' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'shell' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'shell' ? 'bold' : 'normal'
+            }}
+          >
+            Shell
+          </button>
+          <button
+            onClick={() => setActiveTab('web')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'web' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'web' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'web' ? 'bold' : 'normal'
+            }}
+          >
+            🌐 網頁視窗
+          </button>
+          <button
+            onClick={() => setActiveTab('appearance')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'appearance' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'appearance' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'appearance' ? 'bold' : 'normal'
+            }}
+          >
+            Appearance
+          </button>
+          <button
+            onClick={() => setActiveTab('env')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'env' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'env' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'env' ? 'bold' : 'normal'
+            }}
+          >
+            🌍 環境變數
+          </button>
+        </div>
+
         <div className="settings-content">
-          {/* GitHub Copilot Section */}
-          <div className="settings-section">
+          {/* Copilot Tab */}
+          {activeTab === 'copilot' && (
+          <div className="settings-section" style={{ backgroundColor: '#2a2826', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
             <h3>🤖 Copilot 設定</h3>
             <div className="settings-group">
               <label>
@@ -639,6 +739,22 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <br />
                     用途：Copilot Chat
                   </small>
+                  <button 
+                    onClick={handleCopyOAuthToken}
+                    style={{
+                      marginTop: '10px',
+                      padding: '8px 16px',
+                      backgroundColor: '#7bbda4',
+                      color: '#1f1d1a',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      width: '100%'
+                    }}
+                  >
+                    📋 複製 OAuth Token
+                  </button>
                 </div>
 
                 <div className="settings-group">
@@ -869,96 +985,34 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
           </div>
-
-          {/* Copilot Skills Settings */}
-          {copilotConfig.enabled && (
-            <div className="settings-section">
-              <h3>🎯 AI 技能設定</h3>
-              <p style={{ color: '#888', fontSize: '12px', marginBottom: '12px' }}>
-                選擇 AI 助手可以使用的技能
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
-                {settingsStore.getCopilotSkills().map(skill => (
-                  <label
-                    key={skill.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 10px',
-                      backgroundColor: skill.enabled ? '#2a3826' : '#2a2826',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      border: `1px solid ${skill.enabled ? '#4a5836' : '#3a3836'}`,
-                      fontSize: '13px'
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={skill.enabled}
-                      onChange={e => settingsStore.toggleSkill(skill.id, e.target.checked)}
-                    />
-                    <span style={{ fontSize: '16px' }}>{skill.icon}</span>
-                    <span style={{ color: '#dfdbc3', flex: 1 }}>{skill.name}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                <button
-                  onClick={() => {
-                    settingsStore.getCopilotSkills().forEach(skill => {
-                      settingsStore.toggleSkill(skill.id, true)
-                    })
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#2a5826',
-                    color: '#7bbda4',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  全部啟用
-                </button>
-                <button
-                  onClick={() => {
-                    settingsStore.getCopilotSkills().forEach(skill => {
-                      settingsStore.toggleSkill(skill.id, false)
-                    })
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#3a3836',
-                    color: '#888',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  全部停用
-                </button>
-                <button
-                  onClick={() => settingsStore.resetSkills()}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#3a3836',
-                    color: '#dfdbc3',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  重設
-                </button>
-              </div>
-            </div>
           )}
 
-          {/* Panel Sharing Settings */}
-          <div className="settings-section">
+          {/* Gist Tab */}
+          {activeTab === 'gist' && (
+          <div className="settings-section" style={{ backgroundColor: '#252321', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
+            <h3>📦 GitHub Gist</h3>
+            <div className="settings-group">
+              <label>GitHub Token (用於 Gist 分享)</label>
+              <input
+                type="password"
+                value={gistToken}
+                onChange={e => handleGistTokenChange(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              />
+              <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
+                前往 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" style={{ color: '#7bbda4' }}>github.com/settings/tokens/new</a> 建立 Token
+                <br />
+                權限：勾選 <strong>gist</strong> (Create gists)
+                <br />
+                用途：上傳和導入 Snippet 片段到 GitHub Gist
+              </small>
+            </div>
+          </div>
+          )}
+
+          {/* Panel Sharing Tab */}
+          {activeTab === 'panel' && (
+          <div className="settings-section" style={{ backgroundColor: '#2a2826', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
             <h3>🔗 面板共用設定</h3>
             <p style={{ color: '#888', fontSize: '13px', marginBottom: '15px' }}>
               設定各功能面板是「所有工作區共用」還是「每個工作區獨立」
@@ -1193,28 +1247,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </ul>
             </div>
           </div>
+          )}
 
-          {/* Gist Token Section */}
-          <div className="settings-section">
-            <h3>📦 GitHub Gist</h3>
-            <div className="settings-group">
-              <label>GitHub Token (用於 Gist 分享)</label>
-              <input
-                type="password"
-                value={gistToken}
-                onChange={e => handleGistTokenChange(e.target.value)}
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              />
-              <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
-                前往 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" style={{ color: '#7bbda4' }}>github.com/settings/tokens/new</a> 建立 Token
-                <br />
-                權限：勾選 <strong>gist</strong> (Create gists)
-                <br />
-                用途：上傳和導入 Snippet 片段到 GitHub Gist
-              </small>
-            </div>
-          </div>
-
+          {/* Shell Tab */}
+          {activeTab === 'shell' && (
           <div className="settings-section">
             <h3>Shell</h3>
             
@@ -1331,7 +1367,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               )}
             </div>
           </div>
+          )}
 
+          {/* Web Tab */}
+          {activeTab === 'web' && (
           <div className="settings-section">
             <h3>🌐 網頁視窗設定</h3>
             <div className="settings-group">
@@ -1345,7 +1384,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <p className="settings-hint">右側面板嵌入網頁的 URL。留空則隱藏 WebView。</p>
             </div>
           </div>
+          )}
 
+          {/* Appearance Tab */}
+          {activeTab === 'appearance' && (
           <div className="settings-section">
             <h3>Appearance</h3>
             <div className="settings-group">
@@ -1511,7 +1553,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </>
             )}
           </div>
+          )}
 
+          {/* Environment Variables Tab */}
+          {activeTab === 'env' && (
           <div className="settings-section">
             <h3>🌍 環境變數</h3>
             <p className="settings-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -1524,6 +1569,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               onUpdate={(key, updates) => settingsStore.updateGlobalEnvVar(key, updates)}
             />
           </div>
+          )}
         </div>
 
         <div className="settings-footer">

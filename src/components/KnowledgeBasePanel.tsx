@@ -14,6 +14,7 @@ interface KnowledgeBasePanelProps {
 }
 
 export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
+  const [activeTab, setActiveTab] = useState<'skills' | 'knowledge' | 'categories'>('knowledge')
   const [entries, setEntries] = useState(knowledgeStore.getEntries())
   const [isLearning, setIsLearning] = useState(false)
   const [learningStatus, setLearningStatus] = useState<string>('')
@@ -22,6 +23,10 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const [availableCopilotModels, setAvailableCopilotModels] = useState<string[]>([])
+  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
+  const [copilotModelsError, setCopilotModelsError] = useState<string>('')
+  const [copilotConfig, setCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
 
   const extractVsdxToText = (arrayBuffer: ArrayBuffer, fileName: string): string => {
     const now = new Date().toLocaleString('zh-TW')
@@ -345,6 +350,11 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       setEntries(knowledgeStore.getEntries())
     })
     
+    // 訂閱設定變更以更新 Copilot 配置
+    const unsubscribeSettings = settingsStore.subscribe(() => {
+      setCopilotConfig(settingsStore.getCopilotConfig())
+    })
+    
     // 調試：檢查知識庫狀態
     console.log('[KnowledgeBase] Current state:', {
       totalEntries: knowledgeStore.getEntries().length,
@@ -358,7 +368,55 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       }))
     })
     
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      unsubscribeSettings()
+    }
+  }, [])
+
+  // Load Copilot models
+  useEffect(() => {
+    const config = settingsStore.getCopilotConfig()
+    const shouldLoad = config?.enabled && config?.provider === 'github' && !!config?.apiKey
+
+    if (!shouldLoad) {
+      setAvailableCopilotModels([])
+      setCopilotModelsError('')
+      return
+    }
+
+    let cancelled = false
+
+    const loadModels = async () => {
+      try {
+        setCopilotModelsLoading(true)
+        setCopilotModelsError('')
+
+        const result = await window.electronAPI.copilot.listModels()
+        if (cancelled) return
+
+        if (result?.error) {
+          setAvailableCopilotModels([])
+          setCopilotModelsError(result.error)
+          return
+        }
+
+        const ids = Array.isArray(result?.ids) ? result.ids : []
+        setAvailableCopilotModels(ids)
+      } catch (e: any) {
+        if (cancelled) return
+        setAvailableCopilotModels([])
+        setCopilotModelsError(e?.message || String(e))
+      } finally {
+        if (!cancelled) setCopilotModelsLoading(false)
+      }
+    }
+
+    loadModels()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // 學習知識（使用 Copilot API 驗證）
@@ -736,8 +794,8 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
   const stats = knowledgeStore.getStats()
   
   // 獲取當前模型的知識庫限制
-  const copilotConfig = settingsStore.getCopilotConfig()
-  const modelLimits = getModelKnowledgeLimit(copilotConfig?.model)
+  const currentConfig = settingsStore.getCopilotConfig()
+  const modelLimits = getModelKnowledgeLimit(currentConfig?.model)
   const MAX_KNOWLEDGE_SIZE = modelLimits.maxTotal
   
   const usagePercent = Math.min(100, (stats.activeSize / MAX_KNOWLEDGE_SIZE * 100)).toFixed(1)
@@ -747,11 +805,162 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '1100px', width: '92%' }}>
         <div className="settings-header">
-          <h2>📚 知識庫管理</h2>
+          <h2>📚 AI 能力管理</h2>
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
+        {/* Tab Navigation */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '8px', 
+          padding: '12px 20px 0', 
+          borderBottom: '1px solid #3a3836',
+          marginBottom: '16px'
+        }}>
+          <button
+            onClick={() => setActiveTab('skills')}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: activeTab === 'skills' ? '#2a3826' : 'transparent',
+              color: activeTab === 'skills' ? '#7bbda4' : '#888',
+              border: 'none',
+              borderBottom: activeTab === 'skills' ? '2px solid #7bbda4' : '2px solid transparent',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: activeTab === 'skills' ? 'bold' : 'normal'
+            }}
+          >
+            🎯 技能設定
+          </button>
+          <button
+            onClick={() => setActiveTab('knowledge')}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: activeTab === 'knowledge' ? '#2a3826' : 'transparent',
+              color: activeTab === 'knowledge' ? '#7bbda4' : '#888',
+              border: 'none',
+              borderBottom: activeTab === 'knowledge' ? '2px solid #7bbda4' : '2px solid transparent',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: activeTab === 'knowledge' ? 'bold' : 'normal'
+            }}
+          >
+            📄 知識文檔
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: activeTab === 'categories' ? '#2a3826' : 'transparent',
+              color: activeTab === 'categories' ? '#7bbda4' : '#888',
+              border: 'none',
+              borderBottom: activeTab === 'categories' ? '2px solid #7bbda4' : '2px solid transparent',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: activeTab === 'categories' ? 'bold' : 'normal'
+            }}
+          >
+            📂 分類管理
+          </button>
+        </div>
+
         <div className="settings-content">
+          {/* Skills Tab */}
+          {activeTab === 'skills' && (
+            <div>
+              <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+                選擇 AI 助手可以使用的技能。智能選擇會根據問題自動啟用相關技能。
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                {settingsStore.getCopilotSkills().map(skill => (
+                  <label
+                    key={skill.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      padding: '12px',
+                      backgroundColor: skill.enabled ? '#2a3826' : '#2a2826',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      border: `1px solid ${skill.enabled ? '#4a5836' : '#3a3836'}`,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={skill.enabled}
+                      onChange={e => settingsStore.toggleSkill(skill.id, e.target.checked)}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '18px' }}>{skill.icon}</span>
+                        <span style={{ color: '#dfdbc3', fontWeight: 'bold', fontSize: '14px' }}>{skill.name}</span>
+                      </div>
+                      <div style={{ color: '#888', fontSize: '12px' }}>{skill.description}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', fontSize: '13px' }}>
+                <button
+                  onClick={() => {
+                    settingsStore.getCopilotSkills().forEach(skill => {
+                      settingsStore.toggleSkill(skill.id, true)
+                    })
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a5826',
+                    color: '#7bbda4',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  全部啟用
+                </button>
+                <button
+                  onClick={() => {
+                    settingsStore.getCopilotSkills().forEach(skill => {
+                      settingsStore.toggleSkill(skill.id, false)
+                    })
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#3a3836',
+                    color: '#888',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  全部停用
+                </button>
+                <button
+                  onClick={() => settingsStore.resetSkills()}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#3a3836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  恢復預設
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge Tab */}
+          {activeTab === 'knowledge' && (
+            <>
           {/* 統計資訊 */}
           <div style={{
             display: 'grid',
@@ -994,56 +1203,110 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
             >
               📥 匯入知識
             </button>
+          </div>
 
-            <label
-              style={{
-                marginLeft: 'auto',
-                flex: 1,
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 12px',
-                backgroundColor: '#2a2826',
-                borderRadius: '4px',
-                color: '#dfdbc3',
-                fontSize: '13px'
-              }}
-              title="變更列表排序方式"
-            >
-              ⇅
+          {/* Model Selector and Sort Controls - Above file list */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginBottom: '16px',
+            marginTop: '16px'
+          }}>
+            <div style={{
+              flex: 1,
+              padding: '12px',
+              backgroundColor: '#2a2826',
+              borderRadius: '6px',
+              border: '1px solid #3a3836'
+            }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#dfdbc3', fontWeight: 'bold' }}>
+                🤖 選擇模型
+              </label>
               <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                style={{
-                  backgroundColor: '#2a2826',
-                  color: '#dfdbc3',
-                  border: '1px solid #2a2836',
-                  borderRadius: '4px',
-                  padding: '4px 8px'
+                value={copilotConfig?.model || 'gpt-4o'}
+                onChange={async e => {
+                  const newConfig = { ...copilotConfig, model: e.target.value }
+                  settingsStore.setCopilotConfig(newConfig)
+                  await window.electronAPI.copilot.setConfig(newConfig)
                 }}
-              >
-                <option value="uploadedAt">上傳時間</option>
-                <option value="name">檔名</option>
-                <option value="size">原始大小</option>
-                <option value="learnedAt">學習時間</option>
-                <option value="learnedSize">學習後大小</option>
-              </select>
-              <button
-                onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
                 style={{
-                  padding: '4px 10px',
-                  backgroundColor: '#2a2826',
+                  width: '100%',
+                  padding: '8px',
+                  backgroundColor: '#1f1d1a',
                   color: '#dfdbc3',
-                  border: '1px solid #2a2836',
+                  border: '1px solid #3a3836',
                   borderRadius: '4px',
+                  fontSize: '13px',
                   cursor: 'pointer'
                 }}
-                title={sortDir === 'asc' ? '目前：由小到大（點擊切換）' : '目前：由大到小（點擊切換）'}
               >
-                {sortDir === 'asc' ? '↑' : '↓'}
-              </button>
-            </label>
+                {(() => {
+                  const selected = copilotConfig?.model || 'gpt-4o'
+                  const list = Array.isArray(availableCopilotModels) && availableCopilotModels.length > 0 
+                    ? availableCopilotModels 
+                    : ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'o1-preview', 'o1-mini', 'claude-sonnet-4.5']
+                  const merged = list.includes(selected) ? list : [selected, ...list]
+                  const unique = Array.from(new Set(merged.filter(Boolean)))
+                  return unique.map(id => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))
+                })()}
+              </select>
+            </div>
+
+            <div style={{
+              padding: '12px',
+              backgroundColor: '#2a2826',
+              borderRadius: '6px',
+              border: '1px solid #3a3836',
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: '8px'
+            }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#dfdbc3', fontWeight: 'bold' }}>
+                  ⇅ 排序
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                    style={{
+                      backgroundColor: '#1f1d1a',
+                      color: '#dfdbc3',
+                      border: '1px solid #3a3836',
+                      borderRadius: '4px',
+                      padding: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="uploadedAt">上傳時間</option>
+                    <option value="name">檔名</option>
+                    <option value="size">原始大小</option>
+                    <option value="learnedAt">學習時間</option>
+                    <option value="learnedSize">學習後大小</option>
+                  </select>
+                  <button
+                    onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#1f1d1a',
+                      color: '#dfdbc3',
+                      border: '1px solid #3a3836',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                    title={sortDir === 'asc' ? '由小到大' : '由大到小'}
+                  >
+                    {sortDir === 'asc' ? '↑' : '↓'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 知識列表 */}
@@ -1286,6 +1549,20 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               </div>
             )}
           </div>
+          </>
+          )}
+
+          {/* Categories Tab */}
+          {activeTab === 'categories' && (
+            <div>
+              <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+                管理知識庫分類，為每個分類啟用或停用提供給 AI。
+              </p>
+              <div style={{ color: '#888', fontSize: '13px' }}>
+                🚧 分類管理功能開發中...
+              </div>
+            </div>
+          )}
 
         </div>
       </div>

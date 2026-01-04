@@ -62,7 +62,9 @@ interface CopilotChatPanelProps {
 export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse, focusedTerminalId }: Readonly<CopilotChatPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
-  const currentCopilotConfig = settingsStore.getCopilotConfig()
+  const [availableCopilotModels, setAvailableCopilotModels] = useState<string[]>([])
+  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
+  const [currentCopilotConfig, setCurrentCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const isShared = settings.sharedPanels?.copilot !== false
   const storageKey = isShared ? 'copilot-messages' : `copilot-messages-${workspaceId || 'default'}`
   
@@ -70,9 +72,52 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   useEffect(() => {
     const unsubscribe = settingsStore.subscribe(() => {
       setSettings(settingsStore.getSettings())
+      setCurrentCopilotConfig(settingsStore.getCopilotConfig())
     })
     return unsubscribe
   }, [])
+
+  // Load Copilot models
+  useEffect(() => {
+    if (!isVisible) return
+
+    const copilotConfig = settingsStore.getCopilotConfig()
+    const shouldLoad = copilotConfig?.enabled && copilotConfig?.provider === 'github' && !!copilotConfig?.apiKey
+
+    if (!shouldLoad) {
+      setAvailableCopilotModels([])
+      return
+    }
+
+    let cancelled = false
+
+    const loadModels = async () => {
+      try {
+        setCopilotModelsLoading(true)
+        const result = await window.electronAPI.copilot.listModels()
+        if (cancelled) return
+
+        if (result?.error) {
+          setAvailableCopilotModels([])
+          return
+        }
+
+        const ids = Array.isArray(result?.ids) ? result.ids : []
+        setAvailableCopilotModels(ids)
+      } catch (e: any) {
+        if (cancelled) return
+        setAvailableCopilotModels([])
+      } finally {
+        if (!cancelled) setCopilotModelsLoading(false)
+      }
+    }
+
+    loadModels()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isVisible])
   
   // 調試：輸出知識庫狀態
   useEffect(() => {
@@ -1554,43 +1599,75 @@ ${skillsPrompt}${knowledgePrompt}
                 </button>
               </div>
             )}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSendMessage()
-                }
-              }}
-              placeholder="輸入訊息... (Enter 發送, Shift+Enter 換行)"
-              className="copilot-chat-input"
-              rows={3}
-            />
-            <button
-              onClick={handleSendMessage}
-              disabled={isLoading || !input.trim()}
-              className="copilot-send-btn"
-            >
-              {isLoading ? '⏳' : '發送'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }
+                }}
+                placeholder="輸入訊息... (Enter 發送, Shift+Enter 換行)"
+                className="copilot-chat-input"
+                rows={3}
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={isLoading || !input.trim()}
+                className="copilot-send-btn"
+                style={{ height: 'fit-content', alignSelf: 'flex-end' }}
+              >
+                {isLoading ? '⏳' : '發送'}
+              </button>
+            </div>
 
             <div style={{
               marginTop: '6px',
               fontSize: '11px',
               color: '#888',
               display: 'flex',
-              justifyContent: 'space-between',
-              gap: '8px'
+              flexDirection: 'column',
+              gap: '6px'
             }}>
-              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                使用模型：{effectiveModel || currentCopilotConfig?.model || '未選擇'}
-              </div>
-              <div style={{ flexShrink: 0 }}>
-                {currentCopilotConfig?.model && effectiveModel && effectiveModel !== currentCopilotConfig.model
-                  ? `（選擇：${currentCopilotConfig.model}）`
-                  : ''}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }}>模型：</label>
+                <select
+                  value={currentCopilotConfig?.model || 'gpt-4o'}
+                  onChange={async e => {
+                    const newConfig = { ...currentCopilotConfig, model: e.target.value }
+                    settingsStore.setCopilotConfig(newConfig)
+                    await window.electronAPI.copilot.setConfig(newConfig)
+                    // 訂閱會自動更新 currentCopilotConfig state
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '4px 8px',
+                    backgroundColor: '#2a2826',
+                    color: '#dfdbc3',
+                    border: '1px solid #3a3836',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {(() => {
+                    const selected = currentCopilotConfig?.model || 'gpt-4o'
+                    const list = Array.isArray(availableCopilotModels) && availableCopilotModels.length > 0 
+                      ? availableCopilotModels 
+                      : ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'o1-preview', 'o1-mini', 'claude-sonnet-4.5']
+                    const merged = list.includes(selected) ? list : [selected, ...list]
+                    const unique = Array.from(new Set(merged.filter(Boolean)))
+                    return unique.map(id => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))
+                  })()}
+                </select>
               </div>
             </div>
           </div>
