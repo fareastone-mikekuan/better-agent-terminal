@@ -49,9 +49,14 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
         
       case 'API': {
         // 解析 API: METHOD URL [body]
-        const apiMatch = content.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(\S+)(?:\s+(.+))?$/i)
+        // 支持两种格式：
+        // 1. POST https://api.com/endpoint {"key":"value"}
+        // 2. POST https://api.com/endpoint (无 body)
+        const apiMatch = content.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(\S+)(.*)$/i)
         if (apiMatch) {
-          const [, method, url, body] = apiMatch
+          const [, method, url, bodyPart] = apiMatch
+          // 提取 body（去除前导空格，但保留 JSON 内的空格）
+          const body = bodyPart.trim() || undefined
           step = {
             type: 'api',
             label,
@@ -63,12 +68,21 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
         break
       }
         
-      case 'DB':
+      case 'DB': {
+        // 支持两种格式：
+        // 1. [DB] SELECT * FROM users - 使用默认连接
+        // 2. [DB:connection_name] SELECT * FROM users - 指定连接名称
+        const dbConnectionMatch = type.match(/^DB:(.+)$/i)
+        const connectionName = dbConnectionMatch ? dbConnectionMatch[1] : undefined
+        
         step = {
           type: 'db',
           label,
-          dbQuery: content.trim()
+          dbQuery: content.trim(),
+          dbConnection: connectionName
         }
+        break
+      }
         break
         
       case 'WEB':

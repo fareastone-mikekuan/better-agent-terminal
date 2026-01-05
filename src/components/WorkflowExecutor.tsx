@@ -22,7 +22,10 @@ export function WorkflowExecutor({
   steps,
   onClose
 }: Readonly<WorkflowExecutorProps>) {
-  console.log('WorkflowExecutor 渲染, 步驟數:', steps.length, '工作區:', workspaceName)
+  console.log('[WorkflowExecutor] 渲染開始')
+  console.log('[WorkflowExecutor] 步驟數:', steps.length)
+  console.log('[WorkflowExecutor] 工作區:', workspaceName)
+  console.log('[WorkflowExecutor] 步驟詳情:', JSON.stringify(steps, null, 2))
   
   const [currentStep, setCurrentStep] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
@@ -33,6 +36,7 @@ export function WorkflowExecutor({
 
   // 檢查是否有步驟
   if (steps.length === 0) {
+    console.warn('[WorkflowExecutor] 步驟數為 0，顯示錯誤提示')
     return (
       <div className="dialog-overlay" onClick={onClose}>
         <div
@@ -387,9 +391,9 @@ export function WorkflowExecutor({
                     fontFamily: 'monospace',
                     marginBottom: '4px'
                   }}>
-                    [{step.type.toUpperCase()}] {
+                    [{step.type.toUpperCase()}]{step.type === 'db' && step.dbConnection && <span style={{ color: '#7bbda4' }}> [{step.dbConnection}]</span>} {
                       step.type === 'terminal' ? step.command :
-                      step.type === 'api' ? `${step.apiMethod} ${step.apiUrl}` :
+                      step.type === 'api' ? `${step.apiMethod} ${step.apiUrl}${step.apiBody ? ' ' + step.apiBody : ''}` :
                       step.type === 'db' ? step.dbQuery :
                       step.type === 'web' ? step.webUrl :
                       step.type === 'file' ? `${step.fileAction} ${step.filePath}` :

@@ -71,7 +71,8 @@ export async function createPanelForStep(
         workspaceId,
         type: 'oracle',
         title: step.label || `Step ${stepIndex + 1}: DB`,
-        command: step.dbQuery
+        command: step.dbQuery,
+        connection: step.dbConnection  // 傳遞連接名稱
       })
 
     case 'web':
