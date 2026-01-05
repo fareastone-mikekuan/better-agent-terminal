@@ -149,7 +149,3 @@ export async function executePanelAction(
     return false
   }
 }
-
-    return false
-  }
-}
