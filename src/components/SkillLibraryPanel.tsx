@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Workspace } from '../types'
 import { WorkflowExecutor } from './WorkflowExecutor'
 import { parseWorkflowFromMarkdown } from '../utils/workflow-parser'
@@ -24,6 +24,16 @@ export function SkillLibraryPanel({
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [executingWorkflow, setExecutingWorkflow] = useState<{ workspace: Workspace; content: string } | null>(null)
   const [loadingWorkflowId, setLoadingWorkflowId] = useState<string | null>(null)
+
+  // 監控 executingWorkflow 狀態變化
+  useEffect(() => {
+    console.log('[SkillLibraryPanel] executingWorkflow 狀態變化:', executingWorkflow)
+    if (executingWorkflow) {
+      console.log('[SkillLibraryPanel] 應該顯示 WorkflowExecutor 了')
+      console.log('[SkillLibraryPanel] workspace:', executingWorkflow.workspace.name)
+      console.log('[SkillLibraryPanel] content length:', executingWorkflow.content.length)
+    }
+  }, [executingWorkflow])
 
   // 篩選出技能工作區
   const skillWorkspaces = workspaces.filter(ws => ws.isSkill)
@@ -76,6 +86,7 @@ export function SkillLibraryPanel({
         // 解析工作流程
         const steps = parseWorkflowFromMarkdown(result.content)
         console.log('解析到的步驟數:', steps.length)
+        console.log('解析到的步驟:', steps)
         
         if (steps.length === 0) {
           alert(`找不到工作流程步驟\n\n請確認 skill.md 中有 ## Workflow 區塊，並按照格式定義步驟：\n\n1. [TERMINAL] echo "Hello" - 測試命令\n2. [API] GET https://httpbin.org/get - 測試 API`)
@@ -88,8 +99,11 @@ export function SkillLibraryPanel({
         
         // 稍微延遲一下再開啟執行器，確保工作區切換完成
         setTimeout(() => {
-          console.log('開啟工作流程執行器')
+          console.log('設置 executingWorkflow 狀態')
+          console.log('workspace:', workspace)
+          console.log('content length:', result.content.length)
           setExecutingWorkflow({ workspace, content: result.content })
+          console.log('executingWorkflow 已設置，應該會顯示 WorkflowExecutor')
           setLoadingWorkflowId(null)
         }, 300)
       } else {
