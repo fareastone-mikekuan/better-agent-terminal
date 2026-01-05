@@ -47,15 +47,20 @@ export async function createPanelForStep(
   step: SkillWorkflowStep,
   stepIndex: number
 ): Promise<string | null> {
-  console.log('[workflow-panel-service] createPanelForStep 被調用')
+  console.log('[workflow-panel-service] ===== createPanelForStep 開始 =====')
   console.log('[workflow-panel-service] workspaceId:', workspaceId)
-  console.log('[workflow-panel-service] step:', step)
+  console.log('[workflow-panel-service] workspaceId type:', typeof workspaceId)
+  console.log('[workflow-panel-service] step:', JSON.stringify(step, null, 2))
+  console.log('[workflow-panel-service] stepIndex:', stepIndex)
   console.log('[workflow-panel-service] panelCallback:', panelCallback ? '已註冊' : '未註冊')
+  console.log('[workflow-panel-service] panelCallback type:', typeof panelCallback)
   
   if (!panelCallback) {
-    console.error('[workflow-panel-service] Panel callback not registered')
+    console.error('[workflow-panel-service] ❌ Panel callback NOT registered!')
     return null
   }
+  
+  console.log('[workflow-panel-service] ✅ Panel callback 已註冊，準備調用...')
 
   try {
     switch (step.type) {

@@ -130,7 +130,7 @@ export default function App() {
           const terminal = workspaceStore.addTerminal(workspaceId)
           console.log('[App] Terminal 已創建, ID:', terminal.id)
           
-          const shell = await window.electronAPI.settings.getShell()
+          const shell = await window.electronAPI.settings.getShellPath(settings.shell)
           const customEnv = {
             ...settings.globalEnvVars,
             ...workspace.envVars
