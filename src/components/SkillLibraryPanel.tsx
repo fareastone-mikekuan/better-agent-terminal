@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { Workspace } from '../types'
-import { WorkflowExecutor } from './WorkflowExecutor'
 import { parseWorkflowFromMarkdown } from '../utils/workflow-parser'
 
 interface SkillLibraryPanelProps {
@@ -10,6 +9,7 @@ interface SkillLibraryPanelProps {
   onEditSkill: (workspaceId: string) => void
   onDuplicateSkill: (workspaceId: string) => void
   onDeleteSkill: (workspaceId: string) => void
+  onExecuteWorkflow?: (workspace: Workspace, content: string) => void  // 新增：向上傳遞執行事件
 }
 
 export function SkillLibraryPanel({
@@ -18,7 +18,8 @@ export function SkillLibraryPanel({
   onOpenSkill,
   onEditSkill,
   onDuplicateSkill,
-  onDeleteSkill
+  onDeleteSkill,
+  onExecuteWorkflow
 }: Readonly<SkillLibraryPanelProps>) {
   console.log('[SkillLibraryPanel] 渲染開始')
   console.log('[SkillLibraryPanel] workspaces 數量:', workspaces.length)
@@ -31,18 +32,9 @@ export function SkillLibraryPanel({
   
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const [executingWorkflow, setExecutingWorkflow] = useState<{ workspace: Workspace; content: string } | null>(null)
   const [loadingWorkflowId, setLoadingWorkflowId] = useState<string | null>(null)
 
-  // 監控 executingWorkflow 狀態變化
-  useEffect(() => {
-    console.log('[SkillLibraryPanel] executingWorkflow 狀態變化:', executingWorkflow)
-    if (executingWorkflow) {
-      console.log('[SkillLibraryPanel] 應該顯示 WorkflowExecutor 了')
-      console.log('[SkillLibraryPanel] workspace:', executingWorkflow.workspace.name)
-      console.log('[SkillLibraryPanel] content length:', executingWorkflow.content.length)
-    }
-  }, [executingWorkflow])
+  // 監控 executingWorkflow 狀態變化 - 移除，由 App.tsx 處理
 
   // 篩選出技能工作區
   const skillWorkspaces = workspaces.filter(ws => ws.skillConfig?.isSkill)
@@ -120,8 +112,12 @@ export function SkillLibraryPanel({
           console.log('設置 executingWorkflow 狀態')
           console.log('workspace:', workspace)
           console.log('content length:', result.content.length)
-          setExecutingWorkflow({ workspace, content: result.content })
-          console.log('executingWorkflow 已設置，應該會顯示 WorkflowExecutor')
+          
+          // 向上傳遞執行事件給 App.tsx
+          if (onExecuteWorkflow) {
+            onExecuteWorkflow(workspace, result.content)
+          }
+          
           setLoadingWorkflowId(null)
         }, 300)
       } else {
@@ -511,16 +507,6 @@ export function SkillLibraryPanel({
       }}>
         💡 ▶️ 執行工作流程 | ⚙ 配置技能 | 📁 開啟資料夾
       </div>
-
-      {/* 工作流程執行器 */}
-      {executingWorkflow && (
-        <WorkflowExecutor
-          workspaceId={executingWorkflow.workspace.id}
-          workspaceName={executingWorkflow.workspace.alias || executingWorkflow.workspace.name}
-          steps={parseWorkflowFromMarkdown(executingWorkflow.content)}
-          onClose={() => setExecutingWorkflow(null)}
-        />
-      )}
     </div>
   )
 }

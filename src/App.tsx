@@ -9,6 +9,8 @@ import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { WorkspaceConfigDialog } from './components/WorkspaceConfigDialog'
 import { SkillLibraryPanel } from './components/SkillLibraryPanel'
+import { WorkflowExecutor } from './components/WorkflowExecutor'
+import { parseWorkflowFromMarkdown } from './utils/workflow-parser'
 import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
 import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
@@ -75,6 +77,7 @@ export default function App() {
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
   const [showConfigDialog, setShowConfigDialog] = useState<string | null>(null)
   const [showSkillLibrary, setShowSkillLibrary] = useState(false)
+  const [executingWorkflow, setExecutingWorkflow] = useState<{ workspace: Workspace; content: string } | null>(null)
   // Panel visibility and floating states
   const [showSnippetSidebar, setShowSnippetSidebar] = useState(false)
   const [isSnippetFloating, setIsSnippetFloating] = useState(false)
@@ -669,10 +672,28 @@ export default function App() {
                   workspaceStore.save()
                 }
               }}
+              onExecuteWorkflow={(workspace, content) => {
+                console.log('[App] 收到執行工作流程事件')
+                setExecutingWorkflow({ workspace, content })
+              }}
             />
           </div>
         </div>
       )}
+      
+      {/* 工作流程執行器 - 渲染在頂層 */}
+      {executingWorkflow && (
+        <WorkflowExecutor
+          workspaceId={executingWorkflow.workspace.id}
+          workspaceName={executingWorkflow.workspace.alias || executingWorkflow.workspace.name}
+          steps={parseWorkflowFromMarkdown(executingWorkflow.content)}
+          onClose={() => {
+            console.log('[App] 關閉 WorkflowExecutor')
+            setExecutingWorkflow(null)
+          }}
+        />
+      )}
+      
       {envDialogWorkspace && (
         <WorkspaceEnvDialog
           workspace={envDialogWorkspace}
