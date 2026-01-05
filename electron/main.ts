@@ -366,14 +366,42 @@ ipcMain.handle('settings:get-shell-path', async (_event, shellType: string) => {
 
   // Windows support
   if (shellType === 'auto' || shellType === 'pwsh') {
-    const pwshPaths = [
-      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-      'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
-      process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
-    ]
-    for (const p of pwshPaths) {
-      if (fs.existsSync(p)) {
-        return p
+    const path = await import('path')
+    
+    // 1. 優先使用專案內建的 PowerShell
+    let projectRoot: string
+    if (app.isPackaged) {
+      projectRoot = app.getAppPath()
+      if (projectRoot.includes('.asar')) {
+        projectRoot = path.dirname(projectRoot)
+      }
+    } else {
+      projectRoot = process.cwd()
+    }
+    
+    const bundledPwsh = path.join(projectRoot, 'packages', 'PowerShell', 'pwsh.exe')
+    if (fs.existsSync(bundledPwsh)) {
+      return bundledPwsh
+    }
+    
+    // 2. 嘗試從 PATH 找 pwsh
+    const { execSync } = await import('child_process')
+    try {
+      const pwshPath = execSync('where pwsh', { encoding: 'utf8' }).trim().split('\n')[0]
+      if (pwshPath && fs.existsSync(pwshPath)) {
+        return pwshPath
+      }
+    } catch (e) {
+      // Not in PATH, try common locations
+      const pwshPaths = [
+        'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+        'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
+        process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
+      ]
+      for (const p of pwshPaths) {
+        if (fs.existsSync(p)) {
+          return p
+        }
       }
     }
     if (shellType === 'pwsh') return 'pwsh.exe'

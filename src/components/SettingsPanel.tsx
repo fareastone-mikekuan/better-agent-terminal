@@ -23,7 +23,7 @@ const checkFontAvailable = (fontFamily: string): boolean => {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<'copilot' | 'gist' | 'panel' | 'shell' | 'web' | 'appearance' | 'env'>('copilot')
+  const [activeTab, setActiveTab] = useState<'copilot' | 'gist' | 'panel' | 'shell' | 'web' | 'appearance' | 'env' | 'backup'>('copilot')
   const [settings, setSettings] = useState<AppSettings>(settingsStore.getSettings())
   const [availableFonts, setAvailableFonts] = useState<Set<FontType>>(new Set())
   const [copilotConfig, setCopilotConfig] = useState<CopilotConfig>({
@@ -403,7 +403,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               fontWeight: activeTab === 'copilot' ? 'bold' : 'normal'
             }}
           >
-            🤖 Copilot
+            🤖 Copilot登入
           </button>
           <button
             onClick={() => setActiveTab('gist')}
@@ -478,7 +478,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               fontWeight: activeTab === 'appearance' ? 'bold' : 'normal'
             }}
           >
-            Appearance
+            ☀️介面外觀
           </button>
           <button
             onClick={() => setActiveTab('env')}
@@ -494,6 +494,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             }}
           >
             🌍 環境變數
+          </button>
+          <button
+            onClick={() => setActiveTab('backup')}
+            style={{
+              padding: '12px 16px',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'backup' ? '2px solid #7bbda4' : '2px solid transparent',
+              color: activeTab === 'backup' ? '#dfdbc3' : '#888',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: activeTab === 'backup' ? 'bold' : 'normal'
+            }}
+          >
+            💾 數據備份
           </button>
         </div>
 
@@ -1290,16 +1305,16 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             {/* Shell 設定：Default Shell + Custom Path + Default Terminals per Workspace 排成一列 */}
             <div style={{ display: 'grid', gridTemplateColumns: settings.shell === 'custom' ? '1fr 1fr 1fr' : '1fr 1fr', gap: '16px', marginBottom: '8px' }}>
               <div className="settings-group" style={{ marginBottom: 0 }}>
-                <label>預設 Shell</label>
+                <label>終端機 Shell 類型</label>
                 <select
                   value={settings.shell}
                   onChange={e => handleShellChange(e.target.value as ShellType)}
                 >
-                  <option value="auto">Auto (prefer pwsh)</option>
-                  <option value="pwsh">PowerShell 7 (pwsh)</option>
-                  <option value="powershell">Windows PowerShell</option>
-                  <option value="cmd">Command Prompt (cmd)</option>
-                  <option value="custom">Custom</option>
+                  <option value="auto">🔄 自動偵測（優先內建PowerShell 7）</option>
+                  <option value="pwsh">💻 內建PowerShell 7</option>
+                  <option value="powershell">💻 Windows PowerShell</option>
+                  <option value="cmd">⚙️ 系統命令提示字元 (cmd)</option>
+                  <option value="custom">🔧 自訂路徑</option>
                 </select>
               </div>
 
@@ -1318,7 +1333,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                         color: '#fff',
                         cursor: 'pointer'
                       }}
-                      title="使用專案內建的 PowerShell 7.5.4"
+                      title="使用專案內建的 PowerShell 7"
                     >
                       使用內建 PS
                     </button>
@@ -1327,10 +1342,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     type="text"
                     value={settings.customShellPath}
                     onChange={e => handleCustomPathChange(e.target.value)}
-                    placeholder="例如: packages/PowerShell/pwsh.exe (支援相對路徑)"
+                    placeholder="例如: packages/PowerShell/pwsh.exe"
                   />
                   <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>
-                    提示：可使用相對路徑（如 packages/PowerShell/...）或絕對路徑
+                    提示：相對路徑（packages/PowerShell/pwsh.exe）或完整路徑皆可
                   </div>
                 </div>
               )}
@@ -1347,58 +1362,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             </div>
 
-            {/* Agent 設定：預設建立 + Agent 選擇 + 自動執行 排成一列 */}
-            <div style={{ display: 'grid', gridTemplateColumns: settings.createDefaultAgentTerminal ? '1fr 1fr 1fr' : '1fr', gap: '16px', marginBottom: '8px', marginTop: '16px' }}>
-              <div className="settings-group checkbox-group" style={{ marginBottom: 0 }}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={settings.createDefaultAgentTerminal === true}
-                    onChange={e => settingsStore.setCreateDefaultAgentTerminal(e.target.checked)}
-                  />
-                  預設建立 Agent 終端機
-                </label>
-              </div>
-
-              {settings.createDefaultAgentTerminal && (
-                <>
-                  <div className="settings-group" style={{ marginBottom: 0 }}>
-                    <label>Agent</label>
-                    <select
-                      value={settings.defaultAgent || 'copilot'}
-                      onChange={e => settingsStore.setDefaultAgent(e.target.value as AgentPresetId)}
-                    >
-                      <option value="copilot">
-                        🐙 GitHub Copilot
-                      </option>
-                    </select>
-                  </div>
-
-                  <div className="settings-group checkbox-group" style={{ marginBottom: 0 }}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={settings.agentAutoCommand === true}
-                        onChange={e => settingsStore.setAgentAutoCommand(e.target.checked)}
-                      />
-                      自動執行 Agent 命令
-                    </label>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* 說明文字放在下方 */}
-            <div style={{ marginTop: '12px' }}>
-              <p className="settings-hint" style={{ marginBottom: '8px' }}>
-                <strong>預設建立 Agent 終端機：</strong>啟用後，新工作區會自動包含一個 Agent 終端機。
-              </p>
-              {settings.createDefaultAgentTerminal && (
-                <p className="settings-hint">
-                  <strong>自動執行 Agent 命令：</strong>建立 Agent 終端機時自動執行 Agent 命令（例如：`gh copilot`）。
-                </p>
-              )}
-            </div>
+            {/* Agent 設定已隱藏 */}
           </div>
           )}
 
@@ -1422,7 +1386,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           {/* Appearance Tab */}
           {activeTab === 'appearance' && (
           <div className="settings-section">
-            <h3>Appearance</h3>
+            <h3>介面外觀設定</h3>
             <div className="settings-group">
               <label>Font Size: {settings.fontSize}px</label>
               <input
@@ -1603,11 +1567,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             />
           </div>
           )}
-        </div>
 
-        <div className="settings-footer">
-          {/* Data Backup Section */}
-          <div className="settings-section">
+          {/* Backup Tab */}
+          {activeTab === 'backup' && (
+          <div className="settings-section" style={{ backgroundColor: '#2a2826', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
             <h3>💾 數據備份</h3>
             <div className="settings-group">
               <p style={{ fontSize: '13px', color: '#888', marginBottom: '12px' }}>
@@ -1660,6 +1623,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </p>
             </div>
           </div>
+          )}
+        </div>
+
+        <div className="settings-footer">
 
           <p className="settings-note">所有變更會自動儲存。字型變更會立即套用到所有終端機。</p>
           <div style={{ display: 'flex', justifyContent: 'center' }}>

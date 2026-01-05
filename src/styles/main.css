@@ -794,7 +794,7 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  width: 800px;
+  width: 885px;
   max-width: 95vw;
   max-height: 90vh;
   display: flex;

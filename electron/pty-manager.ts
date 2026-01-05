@@ -64,18 +64,52 @@ export class PtyManager {
 
   private getDefaultShell(): string {
     if (process.platform === 'win32') {
-      // Prefer PowerShell 7 (pwsh) over Windows PowerShell
       const fs = require('fs')
-      const pwshPaths = [
-        'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-        'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
-        process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
-      ]
-      for (const p of pwshPaths) {
-        if (fs.existsSync(p)) {
-          return p
+      const path = require('path')
+      const electron = require('electron')
+      
+      // 1. 優先使用專案內建的 PowerShell
+      let projectRoot: string
+      if (electron.app.isPackaged) {
+        projectRoot = electron.app.getAppPath()
+        if (projectRoot.includes('.asar')) {
+          projectRoot = path.dirname(projectRoot)
+        }
+      } else {
+        projectRoot = path.resolve(__dirname, '..')
+      }
+      
+      const bundledPwsh = path.join(projectRoot, 'packages', 'PowerShell', 'pwsh.exe')
+      if (fs.existsSync(bundledPwsh)) {
+        console.log('[PtyManager] Using bundled pwsh at:', bundledPwsh)
+        return bundledPwsh
+      }
+      
+      // 2. 嘗試從 PATH 找 pwsh
+      const { execSync } = require('child_process')
+      try {
+        const pwshPath = execSync('where pwsh', { encoding: 'utf8' }).trim().split('\n')[0]
+        if (pwshPath) {
+          console.log('[PtyManager] Found pwsh in PATH:', pwshPath)
+          return pwshPath
+        }
+      } catch (e) {
+        // pwsh not in PATH, try common install locations
+        const pwshPaths = [
+          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+          'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
+          process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
+        ]
+        for (const p of pwshPaths) {
+          if (fs.existsSync(p)) {
+            console.log('[PtyManager] Found pwsh at:', p)
+            return p
+          }
         }
       }
+      
+      // 3. Fallback 到 Windows PowerShell
+      console.log('[PtyManager] Using Windows PowerShell')
       return 'powershell.exe'
     } else if (process.platform === 'darwin') {
       return process.env.SHELL || '/bin/zsh'

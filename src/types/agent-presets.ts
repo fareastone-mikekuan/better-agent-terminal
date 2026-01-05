@@ -55,5 +55,5 @@ export function getAgentPreset(id: string): AgentPreset | undefined {
 }
 
 export function getDefaultAgentPreset(): AgentPreset {
-  return AGENT_PRESETS.find(p => p.id === 'claude-code') || AGENT_PRESETS[0];
+  return AGENT_PRESETS.find(p => p.id === 'copilot-cli') || AGENT_PRESETS[0];
 }

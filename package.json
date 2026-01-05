@@ -66,20 +66,13 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "zip"
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
       ],
       "signAndEditExecutable": false,
       "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "shortcutName": "BetterAgentTerminal",
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico"
     },
     "mac": {
       "target": {
@@ -99,6 +92,7 @@
       "dist/**/*",
       "dist-electron/**/*",
       "node_modules/**/*",
+      "packages/**/*",
       "assets/icon.ico",
       "assets/icon.png"
     ]

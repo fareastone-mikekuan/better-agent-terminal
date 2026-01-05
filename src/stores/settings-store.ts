@@ -7,8 +7,8 @@ import { BUILTIN_SKILLS } from '../types/copilot-skills'
 type Listener = () => void
 
 const defaultSettings: AppSettings = {
-  shell: 'custom',
-  customShellPath: 'packages/PowerShell/pwsh.exe',
+  shell: 'auto',
+  customShellPath: '',
   fontSize: 14,
   fontFamily: 'sf-mono',
   customFontFamily: '',
@@ -239,14 +239,14 @@ class SettingsStore {
         const parsed = JSON.parse(data)
         this.settings = { ...defaultSettings, ...parsed }
         
-        // 如果用户使用的是旧的系统 PowerShell 路径，迁移到项目内的 PowerShell
+        // Migrate old bundled PowerShell path to 'auto' (use system PowerShell)
         if (this.settings.shell === 'custom' && 
             this.settings.customShellPath &&
-            (this.settings.customShellPath.includes('Program Files\\PowerShell') ||
-             this.settings.customShellPath.includes('WindowsApps\\pwsh'))) {
-          console.log('Migrating to bundled PowerShell:', this.settings.customShellPath, '→ packages/PowerShell/pwsh.exe')
-          this.settings.customShellPath = 'packages/PowerShell/pwsh.exe'
-          this.save() // 保存迁移后的设置
+            this.settings.customShellPath.includes('packages/PowerShell')) {
+          console.log('Migrating from bundled PowerShell to auto detection')
+          this.settings.shell = 'auto'
+          this.settings.customShellPath = ''
+          this.save()
         }
         
         // 確保 webViewUrl 有預設值
