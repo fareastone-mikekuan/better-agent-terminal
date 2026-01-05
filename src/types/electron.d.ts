@@ -16,6 +16,7 @@ interface ElectronAPI {
   }
   fs: {
     readFile: (filePath: string, cwd: string) => Promise<{ success: boolean; content?: string; error?: string }>
+    writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
   }
   workspace: {
     save: (data: string) => Promise<boolean>
@@ -33,6 +34,19 @@ interface ElectronAPI {
   }
   dialog: {
     selectFolder: () => Promise<string | null>
+  }
+  shell: {
+    openExternal: (path: string) => Promise<void>
+  }
+  terminal: {
+    executeCommand: (workspaceId: string, command: string) => Promise<void>
+  }
+  skill: {
+    executeApiCall: (params: { method: string; url: string; headers?: Record<string, string>; body?: string }) => Promise<{ success: boolean; data?: any; error?: string }>
+    executeDbQuery: (params: { connection?: string; query: string }) => Promise<{ success: boolean; data?: any; error?: string }>
+    openWebUrl: (url: string) => Promise<void>
+    executeFileAction: (params: { action: 'download' | 'upload' | 'open'; path: string }) => Promise<{ success: boolean; error?: string }>
+    waitForCondition: (params: { condition: string; target: string; timeout: number }) => Promise<{ success: boolean; error?: string }>
   }
   copilot: {
     setConfig: (config: any) => Promise<void>

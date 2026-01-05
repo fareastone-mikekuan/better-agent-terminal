@@ -815,24 +815,44 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 
     let messageContent = input.trim()
 
+    // 如果當前工作區是技能，讀取 skill.md
+    const state = workspaceStore.getState()
+    const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
+    let skillContext = ''
+    
+    if (currentWorkspace?.isSkill) {
+      try {
+        const skillMdPath = `${currentWorkspace.folderPath}/skill.md`
+        const result = await window.electronAPI.fs.readFile(skillMdPath, currentWorkspace.folderPath)
+        if (result.success && result.content) {
+          skillContext = `\n\n[技能上下文]\n當前工作區是一個技能：${currentWorkspace.alias || currentWorkspace.name}\n技能說明：\n${result.content}\n[/技能上下文]\n\n`
+        }
+      } catch (e) {
+        console.log('[Copilot] skill.md not found or error reading:', e)
+      }
+    }
+
     // 如果有已讀取的文件，附加到消息中
     if (loadedFile) {
-      messageContent = `請分析以下文件內容（${loadedFile.fileName}）：\n\n${loadedFile.content}\n\n我的問題：${messageContent}`
+      messageContent = `請分析以下文件內容（${loadedFile.fileName}）：\n\n${loadedFile.content}\n\n我的問題：${messageContent}${skillContext}`
       setLoadedFile(null)  // 清除已加載的文件
     }
     // 如果有已讀取的分析數據，附加到消息中
     else if (loadedOracleData) {
       const selectedOracle = oracleInstances.find(o => o.id === selectedOracleId)
       if (selectedOracle?.oracleQueryResult) {
-        messageContent = `請分析以下 Oracle 查詢結果（${selectedOracle.title}）：\n\n${selectedOracle.oracleQueryResult}\n\n我的問題：${messageContent}`
+        messageContent = `請分析以下 Oracle 查詢結果（${selectedOracle.title}）：\n\n${selectedOracle.oracleQueryResult}\n\n我的問題：${messageContent}${skillContext}`
       }
       setLoadedOracleData(false)
     } else if (loadedWebPageData) {
       const selectedWebView = webViewInstances.find(w => w.id === selectedWebViewId)
       if (selectedWebView?.webviewContent) {
-        messageContent = `請分析以下網頁內容（${selectedWebView.title}）：\n\n${selectedWebView.webviewContent}\n\n我的問題：${messageContent}`
+        messageContent = `請分析以下網頁內容（${selectedWebView.title}）：\n\n${selectedWebView.webviewContent}\n\n我的問題：${messageContent}${skillContext}`
       }
       setLoadedWebPageData(false)
+    } else if (skillContext) {
+      // 如果有技能上下文但沒有其他加載內容，也加上
+      messageContent = messageContent + skillContext
     }
 
     const userMessage: CopilotMessage = {

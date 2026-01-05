@@ -24,6 +24,81 @@ export interface Workspace {
     oracleConnections?: any[];    // 資料庫連線
     snippets?: any[];             // 筆記內容
   };
+  // 技能模式相關
+  isSkill?: boolean;              // 是否為技能工作區
+  skillConfig?: {
+    initCommand?: string;         // 初始化命令
+    shortcuts?: SkillShortcut[];  // 快捷操作按鈕
+    workflow?: SkillWorkflowStep[]; // 工作流程步驟（從 skill.md 解析）
+    description?: string;         // 技能簡短描述
+    tags?: string[];              // 技能標籤
+  };
+}
+
+// 技能快捷操作定義
+export type SkillShortcutType = 'terminal' | 'api' | 'db' | 'web' | 'file' | 'wait';
+
+// 工作流程步驟（從 skill.md 解析）
+export interface SkillWorkflowStep {
+  type: SkillShortcutType;
+  label: string;
+  
+  // TERMINAL
+  command?: string;
+  
+  // API
+  apiMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  apiUrl?: string;
+  apiHeaders?: Record<string, string>;
+  apiBody?: string;
+  
+  // DB
+  dbQuery?: string;
+  dbConnection?: string;
+  
+  // WEB
+  webUrl?: string;
+  
+  // FILE
+  fileAction?: 'download' | 'upload' | 'open';
+  filePath?: string;
+  
+  // WAIT
+  waitCondition?: 'log_contains' | 'api_status' | 'file_exists' | 'time';
+  waitTarget?: string;
+  waitTimeout?: number;
+}
+
+export interface SkillShortcut {
+  id: string;
+  label: string;
+  type: SkillShortcutType;
+  icon?: string;
+  
+  // TERMINAL 類型
+  command?: string;
+  
+  // API 類型
+  apiMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  apiUrl?: string;
+  apiHeaders?: Record<string, string>;
+  apiBody?: string;
+  
+  // DB 類型
+  dbQuery?: string;
+  dbConnection?: string;  // 連線名稱或 ID
+  
+  // WEB 類型
+  webUrl?: string;
+  
+  // FILE 類型
+  fileAction?: 'download' | 'upload' | 'open';
+  filePath?: string;
+  
+  // WAIT 類型
+  waitCondition?: 'log_contains' | 'api_status' | 'file_exists' | 'time';
+  waitTarget?: string;  // 要等待的內容（關鍵字、檔案路徑等）
+  waitTimeout?: number;  // 超時時間（秒）
 }
 
 // Preset roles for quick selection

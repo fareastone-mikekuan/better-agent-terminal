@@ -238,6 +238,29 @@ ipcMain.handle('fs:read-file', async (_event, filePath: string, cwd: string) => 
   }
 })
 
+// Write file (for skill.md creation)
+ipcMain.handle('fs:write-file', async (_event, filePath: string, content: string) => {
+  try {
+    const fs = await import('fs/promises')
+    const path = await import('path')
+    
+    // Ensure directory exists
+    const dir = path.dirname(filePath)
+    await fs.mkdir(dir, { recursive: true })
+    
+    // Write file
+    await fs.writeFile(filePath, content, 'utf-8')
+    
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+})
+
+
 ipcMain.handle('dialog:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory']
@@ -420,6 +443,15 @@ ipcMain.handle('settings:get-shell-path', async (_event, shellType: string) => {
 
 ipcMain.handle('shell:open-external', async (_event, url: string) => {
   await shell.openExternal(url)
+})
+
+// Execute command in workspace terminal
+ipcMain.handle('terminal:execute-command', async (_event, workspaceId: string, command: string) => {
+  if (!mainWindow) return
+  
+  // Send command to the first terminal of the workspace
+  // The renderer will handle finding the right terminal
+  mainWindow.webContents.send('terminal:execute-command', workspaceId, command)
 })
 
 // System info handler
@@ -706,3 +738,175 @@ ipcMain.handle('ftp:download', async (_event, remotePath: string, localPath: str
 ipcMain.handle('ftp:is-connected', async () => {
   return ftpManager?.isConnected() || false
 })
+
+// Skill action handlers
+ipcMain.handle('skill:execute-api-call', async (_event, params: { method: string; url: string; headers?: Record<string, string>; body?: string }) => {
+  try {
+    const https = await import('https')
+    const http = await import('http')
+    const { URL } = await import('url')
+    
+    return new Promise((resolve) => {
+      const parsedUrl = new URL(params.url)
+      const client = params.url.startsWith('https') ? https : http
+      
+      const postData = params.body ? Buffer.from(params.body, 'utf-8') : undefined
+      
+      const options: any = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: params.method.toUpperCase(),
+        headers: {
+          'User-Agent': 'AI-Agent-Terminal/1.0',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          ...params.headers
+        }
+      }
+      
+      if (postData) {
+        options.headers['Content-Length'] = Buffer.byteLength(postData)
+      }
+      
+      const req = client.request(options, (res) => {
+        let data = ''
+        
+        res.on('data', (chunk) => {
+          data += chunk
+        })
+        
+        res.on('end', () => {
+          try {
+            const jsonData = JSON.parse(data)
+            resolve({ success: true, data: jsonData })
+          } catch {
+            resolve({ success: true, data })
+          }
+        })
+        
+        res.on('error', (err) => {
+          resolve({ success: false, error: err.message })
+        })
+      })
+      
+      req.on('error', (err) => {
+        resolve({ success: false, error: err.message })
+      })
+      
+      if (postData) {
+        req.write(postData)
+      }
+      req.end()
+    })
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('skill:execute-db-query', async (_event, params: { connection?: string; query: string }) => {
+  try {
+    // 目前暫不支援，需要整合 OraclePanel 的連線邏輯
+    // 未來可以在這裡調用 ptyManager 執行 SQL
+    return { 
+      success: false, 
+      error: '資料庫查詢功能尚未實作。請在 DB 面板手動執行查詢。' 
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('skill:open-web-url', async (_event, url: string) => {
+  try {
+    if (!mainWindow) {
+      await shell.openExternal(url)
+      return
+    }
+    
+    // 通知 renderer 在 WebView 面板開啟 URL
+    mainWindow.webContents.send('webview:open-url', url)
+  } catch (error) {
+    console.error('Failed to open web URL:', error)
+  }
+})
+
+ipcMain.handle('skill:execute-file-action', async (_event, params: { action: 'download' | 'upload' | 'open'; path: string }) => {
+  try {
+    const fs = await import('fs/promises')
+    const { dialog, shell } = await import('electron')
+    
+    switch (params.action) {
+      case 'open':
+        // 用系統預設程式開啟文件
+        await shell.openPath(params.path)
+        return { success: true }
+        
+      case 'download':
+        // 選擇儲存位置
+        const result = await dialog.showSaveDialog({
+          defaultPath: path.basename(params.path)
+        })
+        
+        if (!result.canceled && result.filePath) {
+          await fs.copyFile(params.path, result.filePath)
+          return { success: true }
+        }
+        return { success: false, error: '使用者取消下載' }
+        
+      case 'upload':
+        return { success: false, error: '上傳功能尚未實作' }
+        
+      default:
+        return { success: false, error: `未知的文件操作: ${params.action}` }
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('skill:wait-for-condition', async (_event, params: { condition: string; target: string; timeout: number }) => {
+  try {
+    const startTime = Date.now()
+    const timeoutMs = params.timeout * 1000
+    
+    switch (params.condition) {
+      case 'time':
+        // 簡單等待指定秒數
+        const waitSeconds = parseInt(params.target)
+        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+        return { success: true }
+        
+      case 'file_exists':
+        // 輪詢檢查文件是否存在
+        const fs = await import('fs/promises')
+        while (Date.now() - startTime < timeoutMs) {
+          try {
+            await fs.access(params.target)
+            return { success: true }
+          } catch {
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+        }
+        return { success: false, error: '等待超時' }
+        
+      case 'log_contains':
+      case 'api_status':
+        // 這些需要與 renderer 進行更複雜的互動，暫時不支援
+        return { 
+          success: false, 
+          error: `條件 "${params.condition}" 尚未實作。請在對應面板手動檢查。` 
+        }
+        
+      default:
+        return { success: false, error: `未知的等待條件: ${params.condition}` }
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+

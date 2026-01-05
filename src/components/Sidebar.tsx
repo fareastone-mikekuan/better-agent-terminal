@@ -14,9 +14,11 @@ interface SidebarProps {
   onSetWorkspaceRole: (id: string, role: string) => void
   onReorderWorkspaces: (workspaceIds: string[]) => void
   onOpenEnvVars: (workspaceId: string) => void
+  onOpenConfig?: (workspaceId: string) => void
   onOpenSettings: () => void
   onOpenAbout: () => void
   onOpenKnowledgeBase?: () => void
+  onShowSkillLibrary?: () => void
   showCopilot?: boolean
   onToggleCopilot?: () => void
   showSnippets?: boolean
@@ -40,9 +42,11 @@ export function Sidebar({
   onSetWorkspaceRole,
   onReorderWorkspaces,
   onOpenEnvVars,
+  onOpenConfig,
   onOpenSettings,
   onOpenAbout,
   onOpenKnowledgeBase,
+  onShowSkillLibrary,
   showCopilot = false,
   onToggleCopilot,
   showSnippets = true,
@@ -413,6 +417,34 @@ export function Sidebar({
               📚 知識庫
             </button>
           )}
+          {onShowSkillLibrary && (
+            <button
+              className="knowledge-base-btn"
+              onClick={onShowSkillLibrary}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: 'transparent',
+                color: '#f59e0b',
+                border: '1px solid #f59e0b',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 'bold',
+                transition: 'all 0.2s',
+                marginBottom: '4px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#f59e0b'
+                e.currentTarget.style.color = '#1f1d1a'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = '#f59e0b'
+              }}
+            >
+              📚 技能庫
+            </button>
+          )}
           <button className="settings-btn" onClick={onOpenSettings}>
             設定
           </button>
@@ -439,6 +471,21 @@ export function Sidebar({
             </svg>
             環境變數
           </div>
+          {onOpenConfig && (
+            <div
+              className="context-menu-item"
+              onClick={() => {
+                onOpenConfig(contextMenu.workspaceId)
+                setContextMenu(null)
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              ⚩ 配置
+            </div>
+          )}
           <div className="context-menu-divider" />
           <div
             className="context-menu-item danger"

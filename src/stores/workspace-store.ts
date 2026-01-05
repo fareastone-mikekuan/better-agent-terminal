@@ -47,6 +47,30 @@ class WorkspaceStore {
     return workspace
   }
 
+  addWorkspaceObject(workspace: Workspace): void {
+    this.state = {
+      ...this.state,
+      workspaces: [...this.state.workspaces, workspace],
+      activeWorkspaceId: workspace.id
+    }
+
+    this.notify()
+  }
+
+  updateWorkspace(id: string, updates: Partial<Workspace>): void {
+    const workspaces = this.state.workspaces.map(ws =>
+      ws.id === id ? { ...ws, ...updates } : ws
+    )
+
+    this.state = {
+      ...this.state,
+      workspaces
+    }
+
+    this.notify()
+    this.save()
+  }
+
   removeWorkspace(id: string): void {
     const terminals = this.state.terminals.filter(t => t.workspaceId !== id)
     const workspaces = this.state.workspaces.filter(w => w.id !== id)

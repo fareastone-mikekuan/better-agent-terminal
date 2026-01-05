@@ -7,10 +7,12 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { AboutPanel } from './components/AboutPanel'
 import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
+import { WorkspaceConfigDialog } from './components/WorkspaceConfigDialog'
+import { SkillLibraryPanel } from './components/SkillLibraryPanel'
 import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
 import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
-import type { AppState, EnvVariable } from './types'
+import type { AppState, EnvVariable, Workspace } from './types'
 
 // Panel settings interface
 interface PanelSettings {
@@ -70,6 +72,8 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false)
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
+  const [showConfigDialog, setShowConfigDialog] = useState<string | null>(null)
+  const [showSkillLibrary, setShowSkillLibrary] = useState(false)
   // Panel visibility and floating states
   const [showSnippetSidebar, setShowSnippetSidebar] = useState(false)
   const [isSnippetFloating, setIsSnippetFloating] = useState(false)
@@ -255,6 +259,30 @@ export default function App() {
     ? state.workspaces.find(w => w.id === envDialogWorkspaceId)
     : null
 
+  // Workspace config handlers
+  const handleUpdateWorkspaceConfig = useCallback((workspaceId: string, updates: Partial<Workspace>) => {
+    workspaceStore.updateWorkspace(workspaceId, updates)
+  }, [])
+
+  const handleDuplicateSkill = useCallback(async (workspaceId: string) => {
+    const workspace = state.workspaces.find(ws => ws.id === workspaceId)
+    if (!workspace) return
+    
+    const folderPath = await window.electronAPI.dialog.selectFolder()
+    if (!folderPath) return
+    
+    const newWorkspace: Workspace = {
+      ...workspace,
+      id: Date.now().toString(),
+      folderPath,
+      createdAt: Date.now(),
+      name: folderPath.split(/[/\\]/).pop() || workspace.name
+    }
+    
+    workspaceStore.addWorkspaceObject(newWorkspace)
+    workspaceStore.save()
+  }, [state.workspaces])
+
   return (
     <div className="app">
       <Sidebar
@@ -278,9 +306,11 @@ export default function App() {
           workspaceStore.reorderWorkspaces(workspaceIds)
         }}
         onOpenEnvVars={(workspaceId) => setEnvDialogWorkspaceId(workspaceId)}
+        onOpenConfig={(workspaceId) => setShowConfigDialog(workspaceId)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
         onOpenKnowledgeBase={() => setShowKnowledgeBase(true)}
+        onShowSkillLibrary={() => setShowSkillLibrary(true)}
         showCopilot={showCopilot}
         onToggleCopilot={() => setShowCopilot(!showCopilot)}
         showSnippets={showSnippetSidebar}
@@ -462,6 +492,72 @@ export default function App() {
       {showKnowledgeBase && (
         <KnowledgeBasePanel onClose={() => setShowKnowledgeBase(false)} />
       )}
+      {showSkillLibrary && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '800px',
+            maxWidth: '90vw',
+            height: '80vh',
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '16px',
+              borderBottom: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '18px' }}>📚 技能庫</h2>
+              <button
+                onClick={() => setShowSkillLibrary(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '4px 8px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <SkillLibraryPanel
+              workspaces={state.workspaces}
+              activeWorkspaceId={state.activeWorkspaceId}
+              onOpenSkill={(id) => {
+                workspaceStore.setActiveWorkspace(id)
+                setShowSkillLibrary(false)
+              }}
+              onEditSkill={(id) => {
+                setShowConfigDialog(id)
+                setShowSkillLibrary(false)
+              }}
+              onDuplicateSkill={handleDuplicateSkill}
+              onDeleteSkill={(id) => {
+                if (confirm('確定要刪除這個技能工作區嗎？')) {
+                  workspaceStore.removeWorkspace(id)
+                  workspaceStore.save()
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
       {envDialogWorkspace && (
         <WorkspaceEnvDialog
           workspace={envDialogWorkspace}
@@ -469,6 +565,16 @@ export default function App() {
           onRemove={(key: string) => workspaceStore.removeWorkspaceEnvVar(envDialogWorkspaceId!, key)}
           onUpdate={(key: string, updates: Partial<EnvVariable>) => workspaceStore.updateWorkspaceEnvVar(envDialogWorkspaceId!, key, updates)}
           onClose={() => setEnvDialogWorkspaceId(null)}
+        />
+      )}
+      {showConfigDialog && state.workspaces.find(ws => ws.id === showConfigDialog) && (
+        <WorkspaceConfigDialog
+          workspace={state.workspaces.find(ws => ws.id === showConfigDialog)!}
+          onSave={(updates) => {
+            handleUpdateWorkspaceConfig(showConfigDialog, updates)
+            setShowConfigDialog(null)
+          }}
+          onClose={() => setShowConfigDialog(null)}
         />
       )}
     </div>

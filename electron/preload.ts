@@ -24,7 +24,8 @@ const electronAPI = {
     }
   },
   fs: {
-    readFile: (filePath: string, cwd: string) => ipcRenderer.invoke('fs:read-file', filePath, cwd) as Promise<{ success: boolean; content?: string; error?: string }>
+    readFile: (filePath: string, cwd: string) => ipcRenderer.invoke('fs:read-file', filePath, cwd) as Promise<{ success: boolean; content?: string; error?: string }>,
+    writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content) as Promise<{ success: boolean; error?: string }>
   },
   copilot: {
     setConfig: (config: any) => ipcRenderer.invoke('copilot:set-config', config),
@@ -56,6 +57,21 @@ const electronAPI = {
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url)
+  },
+  terminal: {
+    executeCommand: (workspaceId: string, command: string) => ipcRenderer.invoke('terminal:execute-command', workspaceId, command)
+  },
+  skill: {
+    executeApiCall: (params: { method: string; url: string; headers?: Record<string, string>; body?: string }) => 
+      ipcRenderer.invoke('skill:execute-api-call', params),
+    executeDbQuery: (params: { connection?: string; query: string }) => 
+      ipcRenderer.invoke('skill:execute-db-query', params),
+    openWebUrl: (url: string) => 
+      ipcRenderer.invoke('skill:open-web-url', url),
+    executeFileAction: (params: { action: 'download' | 'upload' | 'open'; path: string }) => 
+      ipcRenderer.invoke('skill:execute-file-action', params),
+    waitForCondition: (params: { condition: string; target: string; timeout: number }) => 
+      ipcRenderer.invoke('skill:wait-for-condition', params)
   },
   update: {
     check: () => ipcRenderer.invoke('update:check'),
