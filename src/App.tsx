@@ -126,7 +126,10 @@ export default function App() {
       
       switch (type) {
         case 'terminal': {
+          console.log('[App] 創建 terminal 面板')
           const terminal = workspaceStore.addTerminal(workspaceId)
+          console.log('[App] Terminal 已創建, ID:', terminal.id)
+          
           const shell = await window.electronAPI.settings.getShell()
           const customEnv = {
             ...settings.globalEnvVars,
@@ -141,14 +144,18 @@ export default function App() {
             customEnv
           })
           
+          console.log('[App] PTY 已創建')
+          
           // Execute command if provided
           if (config?.command) {
+            console.log('[App] 執行命令:', config.command)
             setTimeout(() => {
               window.electronAPI.pty.write(terminal.id, config.command + '\n')
             }, 500)
           }
           
           workspaceStore.setFocusedTerminal(terminal.id)
+          console.log('[App] 返回 terminal.id:', terminal.id)
           return terminal.id
         }
         

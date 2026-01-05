@@ -61,37 +61,47 @@ export async function createPanelForStep(
     switch (step.type) {
       case 'terminal':
         console.log('[workflow-panel-service] 創建 terminal 面板')
-        return await panelCallback(workspaceId, 'terminal', {
+        const terminalId = await panelCallback(workspaceId, 'terminal', {
           command: step.command
         })
+        console.log('[workflow-panel-service] terminal 創建完成，返回 ID:', terminalId)
+        return terminalId
 
       case 'api':
         console.log('[workflow-panel-service] 創建 API 面板')
-        return await panelCallback(workspaceId, 'api', {
+        const apiId = await panelCallback(workspaceId, 'api', {
           method: step.apiMethod,
           url: step.apiUrl,
           headers: step.apiHeaders,
           body: step.apiBody
         })
+        console.log('[workflow-panel-service] API 面板創建完成，返回 ID:', apiId)
+        return apiId
 
       case 'db':
         console.log('[workflow-panel-service] 創建 DB 面板')
-        return await panelCallback(workspaceId, 'db', {
+        const dbId = await panelCallback(workspaceId, 'db', {
           query: step.dbQuery,
           connection: step.dbConnection
         })
+        console.log('[workflow-panel-service] DB 面板創建完成，返回 ID:', dbId)
+        return dbId
 
       case 'web':
         console.log('[workflow-panel-service] 創建 WebView 面板')
-        return await panelCallback(workspaceId, 'web', {
+        const webId = await panelCallback(workspaceId, 'web', {
           url: step.webUrl
         })
+        console.log('[workflow-panel-service] WebView 創建完成，返回 ID:', webId)
+        return webId
 
       case 'file':
         console.log('[workflow-panel-service] 創建 File 面板')
-        return await panelCallback(workspaceId, 'file', {
+        const fileId = await panelCallback(workspaceId, 'file', {
           path: step.filePath
         })
+        console.log('[workflow-panel-service] File 面板創建完成，返回 ID:', fileId)
+        return fileId
 
       default:
         console.warn('[workflow-panel-service] 不支持的面板類型:', step.type)
