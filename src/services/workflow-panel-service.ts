@@ -149,25 +149,7 @@ export async function executePanelAction(
     return false
   }
 }
-      case 'db':
-        // TODO: 通知 DB 面板執行查詢
-        console.log('Executing DB query in panel:', terminalId, step.dbQuery)
-        return true
 
-      case 'web':
-        // WebView 已經在創建時載入
-        return true
-
-      case 'file':
-        // TODO: 通知 File 面板執行操作
-        console.log('Executing file action in panel:', terminalId, step.fileAction)
-        return true
-
-      default:
-        return false
-    }
-  } catch (error) {
-    console.error('Failed to execute panel action:', error)
     return false
   }
 }
