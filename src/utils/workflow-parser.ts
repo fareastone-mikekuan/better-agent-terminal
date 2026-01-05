@@ -29,10 +29,27 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
   
   for (const line of lines) {
     // 匹配格式: 1. [TYPE] content - description
-    const match = line.match(/^\s*\d+\.\s*\[(\w+)\]\s+(.+?)\s*(?:-\s*(.+))?$/)
+    // 使用更精确的匹配，避免把命令中的 "-" 当作分隔符
+    // 分隔符必须是 " - "（前后有空格）
+    const match = line.match(/^\s*\d+\.\s*\[(\w+(?::\w+)?)\]\s+(.+)$/)
     if (!match) continue
     
-    const [, type, content, description] = match
+    const [, type, rest] = match
+    
+    // 分离 content 和 description
+    // 寻找 " - " 作为分隔符（前后必须有空格）
+    const separatorIndex = rest.lastIndexOf(' - ')
+    let content: string
+    let description: string | undefined
+    
+    if (separatorIndex !== -1) {
+      content = rest.substring(0, separatorIndex).trim()
+      description = rest.substring(separatorIndex + 3).trim()
+    } else {
+      content = rest.trim()
+      description = undefined
+    }
+    
     const typeUpper = type.toUpperCase()
     const label = description || content
     
