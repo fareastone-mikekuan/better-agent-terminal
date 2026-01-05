@@ -20,6 +20,15 @@ export function SkillLibraryPanel({
   onDuplicateSkill,
   onDeleteSkill
 }: Readonly<SkillLibraryPanelProps>) {
+  console.log('[SkillLibraryPanel] 渲染開始')
+  console.log('[SkillLibraryPanel] workspaces 數量:', workspaces.length)
+  console.log('[SkillLibraryPanel] workspaces:', workspaces.map(ws => ({
+    id: ws.id,
+    name: ws.name,
+    isSkill: ws.skillConfig?.isSkill,
+    hasWorkflow: !!ws.skillConfig?.workflow
+  })))
+  
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [executingWorkflow, setExecutingWorkflow] = useState<{ workspace: Workspace; content: string } | null>(null)
@@ -36,7 +45,16 @@ export function SkillLibraryPanel({
   }, [executingWorkflow])
 
   // 篩選出技能工作區
-  const skillWorkspaces = workspaces.filter(ws => ws.isSkill)
+  const skillWorkspaces = workspaces.filter(ws => ws.skillConfig?.isSkill)
+  
+  console.log('[SkillLibraryPanel] skillWorkspaces 數量:', skillWorkspaces.length)
+  if (skillWorkspaces.length > 0) {
+    console.log('[SkillLibraryPanel] skillWorkspaces:', skillWorkspaces.map(ws => ({
+      name: ws.name,
+      alias: ws.alias,
+      path: ws.folderPath
+    })))
+  }
 
   // 收集所有標籤
   const allTags = Array.from(
@@ -252,7 +270,11 @@ export function SkillLibraryPanel({
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
                     <button
-                      onClick={() => handleExecuteWorkflow(ws)}
+                      onClick={() => {
+                        console.log('[SkillLibraryPanel] ▶️ 按鈕被點擊！')
+                        console.log('[SkillLibraryPanel] 工作區:', ws.name, ws.id)
+                        handleExecuteWorkflow(ws)
+                      }}
                       disabled={loadingWorkflowId === ws.id}
                       title={loadingWorkflowId === ws.id ? "載入中..." : "執行工作流程"}
                       style={{
