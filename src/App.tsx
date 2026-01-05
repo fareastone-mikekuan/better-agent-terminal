@@ -109,9 +109,18 @@ export default function App() {
 
   // Register workflow panel creation callback
   useEffect(() => {
+    console.log('[App] 註冊工作流程面板創建回調')
     registerPanelCallback(async (workspaceId, type, config) => {
+      console.log('[App] Panel callback 被調用')
+      console.log('[App] workspaceId:', workspaceId)
+      console.log('[App] type:', type)
+      console.log('[App] config:', config)
+      
       const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
-      if (!workspace) return null
+      if (!workspace) {
+        console.error('[App] 找不到工作區:', workspaceId)
+        return null
+      }
 
       const settings = settingsStore.getSettings()
       

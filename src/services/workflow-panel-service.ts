@@ -5,24 +5,29 @@
 
 import type { SkillWorkflowStep } from '../types'
 
-export interface PanelCreationRequest {
-  workspaceId: string
-  step: SkillWorkflowStep
-  stepIndex: number
-}
-
-export interface CreateTerminalRequest {
-  workspaceId: string
-  type: 'terminal' | 'oracle' | 'webview' | 'file' | 'api'
-  title?: string
+export interface PanelCreationConfig {
   command?: string
+  method?: string
   url?: string
+  headers?: Record<string, string>
+  body?: string
+  query?: string
+  connection?: string
+  path?: string
 }
 
 /**
  * 工作流程面板創建回調
+ * @param workspaceId 工作區 ID
+ * @param type 面板類型
+ * @param config 面板配置
+ * @returns 創建的面板/終端 ID
  */
-export type WorkflowPanelCallback = (request: CreateTerminalRequest) => Promise<string>
+export type WorkflowPanelCallback = (
+  workspaceId: string,
+  type: 'terminal' | 'api' | 'db' | 'web' | 'file',
+  config?: PanelCreationConfig
+) => Promise<string | null>
 
 let panelCallback: WorkflowPanelCallback | null = null
 
@@ -30,6 +35,7 @@ let panelCallback: WorkflowPanelCallback | null = null
  * 註冊面板創建回調（由 App.tsx 調用）
  */
 export function registerPanelCallback(callback: WorkflowPanelCallback) {
+  console.log('[workflow-panel-service] 註冊面板創建回調')
   panelCallback = callback
 }
 
@@ -41,70 +47,65 @@ export async function createPanelForStep(
   step: SkillWorkflowStep,
   stepIndex: number
 ): Promise<string | null> {
+  console.log('[workflow-panel-service] createPanelForStep 被調用')
+  console.log('[workflow-panel-service] workspaceId:', workspaceId)
+  console.log('[workflow-panel-service] step:', step)
+  console.log('[workflow-panel-service] panelCallback:', panelCallback ? '已註冊' : '未註冊')
+  
   if (!panelCallback) {
-    console.error('Panel callback not registered')
+    console.error('[workflow-panel-service] Panel callback not registered')
     return null
   }
 
-  switch (step.type) {
-    case 'terminal':
-      // 創建終端面板並執行命令
-      return await panelCallback({
-        workspaceId,
-        type: 'terminal',
-        title: step.label || `Step ${stepIndex + 1}: Terminal`,
-        command: step.command
-      })
+  try {
+    switch (step.type) {
+      case 'terminal':
+        console.log('[workflow-panel-service] 創建 terminal 面板')
+        return await panelCallback(workspaceId, 'terminal', {
+          command: step.command
+        })
 
-    case 'api':
-      // 創建 API Tester 面板
-      return await panelCallback({
-        workspaceId,
-        type: 'api',
-        title: step.label || `Step ${stepIndex + 1}: API`,
-        command: `${step.apiMethod} ${step.apiUrl}`
-      })
+      case 'api':
+        console.log('[workflow-panel-service] 創建 API 面板')
+        return await panelCallback(workspaceId, 'api', {
+          method: step.apiMethod,
+          url: step.apiUrl,
+          headers: step.apiHeaders,
+          body: step.apiBody
+        })
 
-    case 'db':
-      // 創建 Oracle/DB 面板
-      return await panelCallback({
-        workspaceId,
-        type: 'oracle',
-        title: step.label || `Step ${stepIndex + 1}: DB`,
-        command: step.dbQuery,
-        connection: step.dbConnection  // 傳遞連接名稱
-      })
+      case 'db':
+        console.log('[workflow-panel-service] 創建 DB 面板')
+        return await panelCallback(workspaceId, 'db', {
+          query: step.dbQuery,
+          connection: step.dbConnection
+        })
 
-    case 'web':
-      // 創建 WebView 面板
-      return await panelCallback({
-        workspaceId,
-        type: 'webview',
-        title: step.label || `Step ${stepIndex + 1}: Web`,
-        url: step.webUrl
-      })
+      case 'web':
+        console.log('[workflow-panel-service] 創建 WebView 面板')
+        return await panelCallback(workspaceId, 'web', {
+          url: step.webUrl
+        })
 
-    case 'file':
-      // 創建 File Explorer 面板
-      return await panelCallback({
-        workspaceId,
-        type: 'file',
-        title: step.label || `Step ${stepIndex + 1}: File`,
-        command: `${step.fileAction} ${step.filePath}`
-      })
+      case 'file':
+        console.log('[workflow-panel-service] 創建 File 面板')
+        return await panelCallback(workspaceId, 'file', {
+          path: step.filePath
+        })
 
-    case 'wait':
-      // WAIT 類型不需要創建面板，在工作流程執行器中處理
-      return null
-
-    default:
-      console.warn('Unknown step type:', step.type)
-      return null
+      default:
+        console.warn('[workflow-panel-service] 不支持的面板類型:', step.type)
+        return null
+    }
+  } catch (error) {
+    console.error('[workflow-panel-service] 創建面板失敗:', error)
+    return null
   }
 }
 
 /**
  * 執行步驟動作（在面板中）
+ * 這個函數用於在面板創建後執行特定動作
  */
 export async function executePanelAction(
   terminalId: string,
@@ -117,10 +118,37 @@ export async function executePanelAction(
         return true
 
       case 'api':
-        // TODO: 通知 API 面板執行請求
-        console.log('Executing API in panel:', terminalId, step.apiMethod, step.apiUrl)
+        // API 請求已通過 custom event 觸發
+        console.log('[workflow-panel-service] API 請求已在面板中觸發:', terminalId)
         return true
 
+      case 'db':
+        // DB 查詢已通過 custom event 觸發
+        console.log('[workflow-panel-service] DB 查詢已在面板中觸發:', terminalId)
+        return true
+
+      case 'web':
+        // WebView 已自動加載 URL
+        return true
+
+      case 'file':
+        // 文件操作已通過 custom event 觸發
+        console.log('[workflow-panel-service] 文件操作已在面板中觸發:', terminalId)
+        return true
+
+      case 'wait':
+        // WAIT 類型由 WorkflowExecutor 直接處理
+        return true
+
+      default:
+        console.warn('[workflow-panel-service] 未知的步驟類型:', step.type)
+        return false
+    }
+  } catch (error) {
+    console.error('[workflow-panel-service] 執行面板動作失敗:', error)
+    return false
+  }
+}
       case 'db':
         // TODO: 通知 DB 面板執行查詢
         console.log('Executing DB query in panel:', terminalId, step.dbQuery)
