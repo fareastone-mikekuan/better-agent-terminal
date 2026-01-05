@@ -12,6 +12,7 @@ import { SkillLibraryPanel } from './components/SkillLibraryPanel'
 import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
 import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
+import { registerPanelCallback } from './services/workflow-panel-service'
 import type { AppState, EnvVariable, Workspace } from './types'
 
 // Panel settings interface
@@ -101,6 +102,120 @@ export default function App() {
   useEffect(() => {
     console.log('[App] Initial state:', state)
     console.log('[App] Panel settings:', panelSettings)
+  }, [])
+
+  // Register workflow panel creation callback
+  useEffect(() => {
+    registerPanelCallback(async (workspaceId, type, config) => {
+      const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
+      if (!workspace) return null
+
+      const settings = settingsStore.getSettings()
+      
+      switch (type) {
+        case 'terminal': {
+          const terminal = workspaceStore.addTerminal(workspaceId)
+          const shell = await window.electronAPI.settings.getShell()
+          const customEnv = {
+            ...settings.globalEnvVars,
+            ...workspace.envVars
+          }
+          
+          await window.electronAPI.pty.create({
+            id: terminal.id,
+            cwd: workspace.folderPath,
+            type: 'terminal',
+            shell,
+            customEnv
+          })
+          
+          // Execute command if provided
+          if (config?.command) {
+            setTimeout(() => {
+              window.electronAPI.pty.write(terminal.id, config.command + '\n')
+            }, 500)
+          }
+          
+          workspaceStore.setFocusedTerminal(terminal.id)
+          return terminal.id
+        }
+        
+        case 'api': {
+          const terminal = workspaceStore.addApiTester(workspaceId)
+          workspaceStore.setFocusedTerminal(terminal.id)
+          
+          // Auto-fill API request if config provided
+          if (config?.method && config?.url) {
+            setTimeout(() => {
+              const event = new CustomEvent('api-auto-fill', {
+                detail: {
+                  terminalId: terminal.id,
+                  method: config.method,
+                  url: config.url,
+                  headers: config.headers,
+                  body: config.body
+                }
+              })
+              window.dispatchEvent(event)
+            }, 300)
+          }
+          
+          return terminal.id
+        }
+        
+        case 'db': {
+          const terminal = workspaceStore.addOracle(workspaceId)
+          workspaceStore.setFocusedTerminal(terminal.id)
+          
+          // Auto-fill query if provided
+          if (config?.query) {
+            setTimeout(() => {
+              const event = new CustomEvent('db-auto-fill', {
+                detail: {
+                  terminalId: terminal.id,
+                  query: config.query,
+                  connection: config.connection
+                }
+              })
+              window.dispatchEvent(event)
+            }, 300)
+          }
+          
+          return terminal.id
+        }
+        
+        case 'web': {
+          const url = config?.url || 'https://www.google.com'
+          const terminal = workspaceStore.addWebView(workspaceId, url)
+          workspaceStore.setFocusedTerminal(terminal.id)
+          return terminal.id
+        }
+        
+        case 'file': {
+          const terminal = workspaceStore.addFile(workspaceId)
+          workspaceStore.setFocusedTerminal(terminal.id)
+          
+          // Auto-perform action if provided
+          if (config?.action && config?.path) {
+            setTimeout(() => {
+              const event = new CustomEvent('file-auto-action', {
+                detail: {
+                  terminalId: terminal.id,
+                  action: config.action,
+                  path: config.path
+                }
+              })
+              window.dispatchEvent(event)
+            }, 300)
+          }
+          
+          return terminal.id
+        }
+        
+        default:
+          return null
+      }
+    })
   }, [])
 
   // Handle sidebar resize

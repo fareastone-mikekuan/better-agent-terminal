@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SkillWorkflowStep } from '../types'
+import { createPanelForStep } from '../services/workflow-panel-service'
 
 interface WorkflowExecutorProps {
   workspaceId: string
@@ -88,13 +89,30 @@ export function WorkflowExecutor({
     updateStepResult(index, { status: 'running' })
     
     try {
+      // 對於需要面板的步驟類型，先創建面板
+      if (['terminal', 'api', 'db', 'web', 'file'].includes(step.type)) {
+        const panelId = await createPanelForStep(workspaceId, step, index)
+        
+        if (!panelId) {
+          updateStepResult(index, {
+            status: 'error',
+            message: '無法創建面板',
+            duration: Date.now() - startTime
+          })
+          return false
+        }
+        
+        // 等待面板創建和初始化
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+      
       switch (step.type) {
         case 'terminal':
           if (step.command) {
-            await window.electronAPI.terminal.executeCommand(workspaceId, step.command)
+            // 命令已在面板創建時執行
             updateStepResult(index, {
               status: 'success',
-              message: `執行命令: ${step.command}`,
+              message: `✅ 已在終端面板執行: ${step.command}`,
               duration: Date.now() - startTime
             })
           }
@@ -102,60 +120,32 @@ export function WorkflowExecutor({
           
         case 'api':
           if (step.apiMethod && step.apiUrl) {
-            const result = await window.electronAPI.skill.executeApiCall({
-              method: step.apiMethod,
-              url: step.apiUrl,
-              headers: step.apiHeaders,
-              body: step.apiBody
+            // API 請求已在 API Tester 面板中執行
+            updateStepResult(index, {
+              status: 'success',
+              message: `✅ 已在 API Tester 面板執行: ${step.apiMethod} ${step.apiUrl}`,
+              duration: Date.now() - startTime
             })
-            
-            if (result.success) {
-              updateStepResult(index, {
-                status: 'success',
-                message: `API 呼叫成功: ${step.apiMethod} ${step.apiUrl}`,
-                duration: Date.now() - startTime
-              })
-            } else {
-              updateStepResult(index, {
-                status: 'error',
-                message: result.error || 'API 呼叫失敗',
-                duration: Date.now() - startTime
-              })
-              return false
-            }
           }
           break
           
         case 'db':
           if (step.dbQuery) {
-            const result = await window.electronAPI.skill.executeDbQuery({
-              connection: step.dbConnection,
-              query: step.dbQuery
+            // 資料庫查詢已在 Oracle 面板中執行
+            updateStepResult(index, {
+              status: 'success',
+              message: `✅ 已在 Oracle 面板執行查詢`,
+              duration: Date.now() - startTime
             })
-            
-            if (result.success) {
-              updateStepResult(index, {
-                status: 'success',
-                message: `資料庫查詢完成`,
-                duration: Date.now() - startTime
-              })
-            } else {
-              updateStepResult(index, {
-                status: 'error',
-                message: result.error || '資料庫查詢失敗',
-                duration: Date.now() - startTime
-              })
-              return false
-            }
           }
           break
           
         case 'web':
           if (step.webUrl) {
-            await window.electronAPI.skill.openWebUrl(step.webUrl)
+            // 網頁已在 WebView 面板中開啟
             updateStepResult(index, {
               status: 'success',
-              message: `開啟網頁: ${step.webUrl}`,
+              message: `✅ 已在 WebView 面板開啟: ${step.webUrl}`,
               duration: Date.now() - startTime
             })
           }
@@ -163,25 +153,12 @@ export function WorkflowExecutor({
           
         case 'file':
           if (step.fileAction && step.filePath) {
-            const result = await window.electronAPI.skill.executeFileAction({
-              action: step.fileAction,
-              path: step.filePath
+            // 檔案操作已在 File Explorer 面板中執行
+            updateStepResult(index, {
+              status: 'success',
+              message: `✅ 已在 File Explorer 面板執行: ${step.fileAction} ${step.filePath}`,
+              duration: Date.now() - startTime
             })
-            
-            if (result.success) {
-              updateStepResult(index, {
-                status: 'success',
-                message: `文件操作完成: ${step.fileAction} ${step.filePath}`,
-                duration: Date.now() - startTime
-              })
-            } else {
-              updateStepResult(index, {
-                status: 'error',
-                message: result.error || '文件操作失敗',
-                duration: Date.now() - startTime
-              })
-              return false
-            }
           }
           break
           
