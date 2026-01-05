@@ -13,7 +13,7 @@ export function WorkspaceConfigDialog({
   onSave,
   onClose
 }: Readonly<WorkspaceConfigDialogProps>) {
-  const [isSkill, setIsSkill] = useState(workspace.isSkill || false)
+  const [isSkill, setIsSkill] = useState(workspace.skillConfig?.isSkill || false)
   const [initCommand, setInitCommand] = useState(workspace.skillConfig?.initCommand || '')
   const [description, setDescription] = useState(workspace.skillConfig?.description || '')
   const [tags, setTags] = useState((workspace.skillConfig?.tags || []).join(', '))
@@ -23,15 +23,24 @@ export function WorkspaceConfigDialog({
   const [editingShortcut, setEditingShortcut] = useState<SkillShortcut | null>(null)
 
   const handleSave = () => {
+    console.log('[WorkspaceConfigDialog] 保存配置')
+    console.log('[WorkspaceConfigDialog] isSkill:', isSkill)
+    console.log('[WorkspaceConfigDialog] description:', description)
+    console.log('[WorkspaceConfigDialog] tags:', tags)
+    
     const updates: Partial<Workspace> = {
-      isSkill,
       skillConfig: isSkill ? {
+        isSkill: true,  // 關鍵：明確設置 isSkill
         initCommand: initCommand.trim() || undefined,
         description: description.trim() || undefined,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         shortcuts: shortcuts.length > 0 ? shortcuts : undefined
-      } : undefined
+      } : {
+        isSkill: false  // 關鍵：未勾選時設為 false
+      }
     }
+    
+    console.log('[WorkspaceConfigDialog] 更新內容:', updates)
     onSave(updates)
     onClose()
   }

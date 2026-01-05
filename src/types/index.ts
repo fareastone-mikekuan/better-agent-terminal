@@ -25,8 +25,8 @@ export interface Workspace {
     snippets?: any[];             // 筆記內容
   };
   // 技能模式相關
-  isSkill?: boolean;              // 是否為技能工作區
   skillConfig?: {
+    isSkill?: boolean;            // 是否為技能工作區
     initCommand?: string;         // 初始化命令
     shortcuts?: SkillShortcut[];  // 快捷操作按鈕
     workflow?: SkillWorkflowStep[]; // 工作流程步驟（從 skill.md 解析）

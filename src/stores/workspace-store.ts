@@ -58,9 +58,21 @@ class WorkspaceStore {
   }
 
   updateWorkspace(id: string, updates: Partial<Workspace>): void {
+    console.log('[WorkspaceStore] updateWorkspace 被調用')
+    console.log('[WorkspaceStore] id:', id)
+    console.log('[WorkspaceStore] updates:', updates)
+    
     const workspaces = this.state.workspaces.map(ws =>
       ws.id === id ? { ...ws, ...updates } : ws
     )
+    
+    const updatedWorkspace = workspaces.find(ws => ws.id === id)
+    console.log('[WorkspaceStore] 更新後的工作區:', {
+      id: updatedWorkspace?.id,
+      name: updatedWorkspace?.name,
+      isSkill: updatedWorkspace?.skillConfig?.isSkill,
+      skillConfig: updatedWorkspace?.skillConfig
+    })
 
     this.state = {
       ...this.state,
@@ -501,6 +513,20 @@ class WorkspaceStore {
 
   // Persistence
   async save(): Promise<void> {
+    console.log('[WorkspaceStore] 開始保存到 localStorage')
+    console.log('[WorkspaceStore] workspaces 數量:', this.state.workspaces.length)
+    
+    // 記錄技能工作區
+    const skillWorkspaces = this.state.workspaces.filter(ws => ws.skillConfig?.isSkill)
+    console.log('[WorkspaceStore] 技能工作區數量:', skillWorkspaces.length)
+    if (skillWorkspaces.length > 0) {
+      console.log('[WorkspaceStore] 技能工作區列表:', skillWorkspaces.map(ws => ({
+        name: ws.name,
+        isSkill: ws.skillConfig?.isSkill,
+        description: ws.skillConfig?.description
+      })))
+    }
+    
     const data = JSON.stringify({
       workspaces: this.state.workspaces,
       activeWorkspaceId: this.state.activeWorkspaceId,
