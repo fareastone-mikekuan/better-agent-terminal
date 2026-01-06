@@ -384,6 +384,13 @@ gh auth token
   private async makeRequest(request: CopilotChatRequest): Promise<CopilotChatResponse> {
     const copilotToken = await this.getCopilotToken()
     
+    // 調試：檢查 messages 是否為空
+    console.log('[CopilotManager] Request messages:', JSON.stringify(request.messages, null, 2))
+    
+    if (!request.messages || request.messages.length === 0) {
+      throw new Error('Messages array is empty. Cannot send request to Copilot API.')
+    }
+    
     return new Promise((resolve, reject) => {
       const options = {
         hostname: 'api.githubcopilot.com',

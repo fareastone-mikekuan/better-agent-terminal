@@ -5,6 +5,7 @@ import { parseWorkflowFromMarkdown } from '../utils/workflow-parser'
 interface SkillLibraryPanelProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
+  onAddSkill?: () => void  // 新增技能
   onOpenSkill: (workspaceId: string) => void
   onEditSkill: (workspaceId: string) => void
   onDuplicateSkill: (workspaceId: string) => void
@@ -15,6 +16,7 @@ interface SkillLibraryPanelProps {
 export function SkillLibraryPanel({
   workspaces,
   activeWorkspaceId,
+  onAddSkill,
   onOpenSkill,
   onEditSkill,
   onDuplicateSkill,
@@ -111,10 +113,10 @@ export function SkillLibraryPanel({
         setTimeout(() => {
           console.log('設置 executingWorkflow 狀態')
           console.log('workspace:', workspace)
-          console.log('content length:', result.content.length)
+          console.log('content length:', result.content?.length)
           
           // 向上傳遞執行事件給 App.tsx
-          if (onExecuteWorkflow) {
+          if (onExecuteWorkflow && result.content) {
             onExecuteWorkflow(workspace, result.content)
           }
           
@@ -137,15 +139,36 @@ export function SkillLibraryPanel({
       <div className="skill-library-panel" style={{ 
         padding: '40px 20px', 
         textAlign: 'center',
-        color: '#888'
+        color: '#888',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '16px'
       }}>
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📚</div>
-        <h3 style={{ marginBottom: '8px', color: '#dfdbc3' }}>尚無技能</h3>
-        <p style={{ fontSize: '14px', marginBottom: '16px' }}>
-          將工作區標記為「技能」即可在此管理
-        </p>
-        <p style={{ fontSize: '12px', color: '#666' }}>
-          💡 在工作區右鍵選單中點擊「⚙ 配置」，勾選「這是一個技能工作區」
+        <div style={{ fontSize: '48px' }}>📚</div>
+        <h3 style={{ margin: 0, color: '#dfdbc3' }}>尚無技能</h3>
+        {onAddSkill && (
+          <button
+            onClick={onAddSkill}
+            style={{
+              padding: '10px 20px',
+              fontSize: '14px',
+              backgroundColor: '#7bbda4',
+              color: '#1f1d1a',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            ➕ 新增技能工作區
+          </button>
+        )}
+        <p style={{ fontSize: '12px', color: '#666', maxWidth: '300px', lineHeight: '1.5' }}>
+          💡 或在工作區右鍵選單中點擊「⚙ 配置」，勾選「這是一個技能工作區」
         </p>
       </div>
     )
@@ -171,6 +194,30 @@ export function SkillLibraryPanel({
 
       {/* 搜尋和篩選 */}
       <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color)' }}>
+        {/* 新增技能按鈕 */}
+        {onAddSkill && (
+          <button
+            onClick={onAddSkill}
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              backgroundColor: '#7bbda4',
+              color: '#1f1d1a',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            ➕ 新增技能工作區
+          </button>
+        )}
         {/* 搜尋框 */}
         <input
           type="text"

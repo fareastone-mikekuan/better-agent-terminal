@@ -16,6 +16,7 @@ export interface Workspace {
   createdAt: number;
   defaultAgent?: AgentPresetId;  // Workspace 預設 Agent
   envVars?: EnvVariable[];       // Workspace 專屬環境變數
+  linkedSkills?: string[];       // 關聯的技能 ID 列表（新技能系統）
   // 工作區獨立的面板狀態（當 sharedPanels 對應項為 false 時使用）
   panelStates?: {
     copilotMessages?: any[];      // Copilot 聊天記錄
@@ -24,7 +25,7 @@ export interface Workspace {
     oracleConnections?: any[];    // 資料庫連線
     snippets?: any[];             // 筆記內容
   };
-  // 技能模式相關
+  // 技能模式相關（舊版，保留兼容性）
   skillConfig?: {
     isSkill?: boolean;            // 是否為技能工作區
     initCommand?: string;         // 初始化命令

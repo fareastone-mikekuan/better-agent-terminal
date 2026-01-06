@@ -21,6 +21,8 @@ interface SidebarProps {
   onShowSkillLibrary?: () => void
   showCopilot?: boolean
   onToggleCopilot?: () => void
+  showSkill?: boolean
+  onToggleSkill?: () => void
   showSnippets?: boolean
   onToggleSnippets?: () => void
 }
@@ -49,6 +51,8 @@ export function Sidebar({
   onShowSkillLibrary,
   showCopilot = false,
   onToggleCopilot,
+  showSkill = false,
+  onToggleSkill,
   showSnippets = true,
   onToggleSnippets
 }: Readonly<SidebarProps>) {
@@ -378,6 +382,29 @@ export function Sidebar({
             }}
           >
             ⚡ AI
+          </button>
+        )}
+        {onToggleSkill && (
+          <button
+            onClick={onToggleSkill}
+            title={showSkill ? '隱藏技能' : '顯示技能'}
+            style={{
+              padding: '10px',
+              backgroundColor: '#78716c',
+              color: 'white',
+              border: `2px solid ${showSkill ? '#22c55e' : '#ef4444'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              marginBottom: '8px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            🎯 技能
           </button>
         )}
         {onToggleSnippets && (

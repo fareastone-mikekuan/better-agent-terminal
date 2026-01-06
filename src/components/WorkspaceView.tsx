@@ -132,7 +132,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
           ? (workspace.defaultAgent || settings.defaultAgent || 'claude')
           : 'none'
         const shell = await getShellFromSettings()
-        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars || [])
 
         // Create agent terminal first (if enabled)
         if (createAgentTerminal) {
@@ -184,7 +184,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
       const restoreTerminals = async () => {
         const shell = await getShellFromSettings()
         const settings = settingsStore.getSettings()
-        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
+        const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars || [])
 
         for (const terminal of terminals) {
           console.log('[WorkspaceView] Processing terminal:', { id: terminal.id, type: terminal.type, title: terminal.title })
@@ -296,7 +296,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     const terminal = workspaceStore.addTerminal(workspace.id)
     const shell = await getShellFromSettings()
     const settings = settingsStore.getSettings()
-    const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
+    const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars || [])
     window.electronAPI.pty.create({
       id: terminal.id,
       cwd: workspace.folderPath,

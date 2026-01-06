@@ -47,6 +47,10 @@ const electronAPI = {
     load: () => ipcRenderer.invoke('settings:load'),
     getShellPath: (shell: string) => ipcRenderer.invoke('settings:get-shell-path', shell)
   },
+  skills: {
+    save: (data: string) => ipcRenderer.invoke('skills:save', data),
+    load: () => ipcRenderer.invoke('skills:load')
+  },
   data: {
     export: () => ipcRenderer.invoke('data:export'),
     import: () => ipcRenderer.invoke('data:import'),

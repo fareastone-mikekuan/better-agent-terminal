@@ -314,6 +314,30 @@ ipcMain.handle('settings:load', async () => {
   }
 })
 
+// Skills handlers
+ipcMain.handle('skills:save', async (_event, data: string) => {
+  const fs = await import('fs/promises')
+  const configPath = path.join(app.getPath('userData'), 'skills.json')
+  console.log('[Main] 保存技能到:', configPath)
+  await fs.writeFile(configPath, data, 'utf-8')
+  console.log('[Main] 技能保存成功')
+  return true
+})
+
+ipcMain.handle('skills:load', async () => {
+  const fs = await import('fs/promises')
+  const configPath = path.join(app.getPath('userData'), 'skills.json')
+  console.log('[Main] 從文件載入技能:', configPath)
+  try {
+    const data = await fs.readFile(configPath, 'utf-8')
+    console.log('[Main] 技能載入成功，大小:', data.length, 'bytes')
+    return data
+  } catch (err) {
+    console.log('[Main] 技能文件不存在或讀取失敗:', err)
+    return null
+  }
+})
+
 // Data export/import handlers
 ipcMain.handle('data:export', async () => {
   if (!mainWindow) return null

@@ -27,6 +27,10 @@ interface ElectronAPI {
     load: () => Promise<string | null>
     getShellPath: (shell: string) => Promise<string>
   }
+  skills: {
+    save: (data: string) => Promise<boolean>
+    load: () => Promise<string | null>
+  }
   data: {
     export: () => Promise<string | null>
     import: () => Promise<string | null>

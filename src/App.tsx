@@ -8,11 +8,12 @@ import { AboutPanel } from './components/AboutPanel'
 import { SnippetSidebar } from './components/SnippetPanel'
 import { WorkspaceEnvDialog } from './components/WorkspaceEnvDialog'
 import { WorkspaceConfigDialog } from './components/WorkspaceConfigDialog'
-import { SkillLibraryPanel } from './components/SkillLibraryPanel'
+import { NewSkillLibraryPanel } from './components/NewSkillLibraryPanel'
 import { WorkflowExecutor } from './components/WorkflowExecutor'
 import { parseWorkflowFromMarkdown } from './utils/workflow-parser'
 import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
+import { NewSkillPanel } from './components/NewSkillPanel'
 import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
 import { registerPanelCallback } from './services/workflow-panel-service'
 import type { AppState, EnvVariable, Workspace } from './types'
@@ -27,6 +28,9 @@ interface PanelSettings {
     collapsed: boolean
   }
   copilot: {
+    collapsed: boolean
+  }
+  skill: {
     collapsed: boolean
   }
 }
@@ -48,7 +52,8 @@ function loadPanelSettings(): PanelSettings {
       return {
         sidebar: parsed.sidebar || { width: DEFAULT_SIDEBAR_WIDTH },
         snippetSidebar: parsed.snippetSidebar || { width: DEFAULT_SNIPPET_WIDTH, collapsed: false },
-        copilot: parsed.copilot || { collapsed: false }
+        copilot: parsed.copilot || { collapsed: false },
+        skill: parsed.skill || { collapsed: false }
       }
     }
   } catch (e) {
@@ -57,7 +62,8 @@ function loadPanelSettings(): PanelSettings {
   return {
     sidebar: { width: DEFAULT_SIDEBAR_WIDTH },
     snippetSidebar: { width: DEFAULT_SNIPPET_WIDTH, collapsed: false },
-    copilot: { collapsed: false }
+    copilot: { collapsed: false },
+    skill: { collapsed: false }
   }
 }
 
@@ -85,6 +91,11 @@ export default function App() {
   const [copilotWidth, setCopilotWidth] = useState(() => {
     const saved = localStorage.getItem('copilot-width')
     return saved ? parseInt(saved) : 400
+  })
+  const [showSkill, setShowSkill] = useState(false)
+  const [skillWidth, setSkillWidth] = useState(() => {
+    const saved = localStorage.getItem('skill-width')
+    return saved ? parseInt(saved) : 320
   })
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
@@ -301,6 +312,15 @@ export default function App() {
     })
   }, [])
 
+  // Toggle skill collapse
+  const handleSkillCollapse = useCallback(() => {
+    setPanelSettings(prev => {
+      const updated = { ...prev, skill: { collapsed: !prev.skill.collapsed } }
+      savePanelSettings(updated)
+      return updated
+    })
+  }, [])
+
   // Reset snippet sidebar to default width
   const handleSnippetResetWidth = useCallback(() => {
     setPanelSettings(prev => {
@@ -417,6 +437,35 @@ export default function App() {
     workspaceStore.save()
   }, [state.workspaces])
 
+  const handleAddSkill = useCallback(async () => {
+    const folderPath = await window.electronAPI.dialog.selectFolder()
+    if (!folderPath) return
+    
+    const name = folderPath.split(/[/\\]/).pop() || '新技能'
+    const newWorkspace: Workspace = {
+      id: Date.now().toString(),
+      name,
+      folderPath,
+      createdAt: Date.now(),
+      terminals: [],
+      envVars: {},
+      skillConfig: {
+        isSkill: true,
+        description: '',
+        tags: [],
+        workflow: ''
+      }
+    }
+    
+    workspaceStore.addWorkspaceObject(newWorkspace)
+    workspaceStore.save()
+    
+    // 自動打開配置對話框
+    setTimeout(() => {
+      setShowConfigDialog(newWorkspace.id)
+    }, 100)
+  }, [])
+
   return (
     <div className="app">
       <Sidebar
@@ -447,6 +496,8 @@ export default function App() {
         onShowSkillLibrary={() => setShowSkillLibrary(true)}
         showCopilot={showCopilot}
         onToggleCopilot={() => setShowCopilot(!showCopilot)}
+        showSkill={showSkill}
+        onToggleSkill={() => setShowSkill(!showSkill)}
         showSnippets={showSnippetSidebar}
         onToggleSnippets={() => setShowSnippetSidebar(!showSnippetSidebar)}
       />
@@ -507,6 +558,36 @@ export default function App() {
             collapsed={panelSettings.copilot.collapsed}
             onCollapse={handleCopilotCollapse}
             focusedTerminalId={state.focusedTerminalId}
+          />
+        </>
+      )}
+
+      {/* Skill Panel - always in flex flow */}
+      {showSkill && (
+        <>
+          {!panelSettings.skill.collapsed && (
+            <ResizeHandle
+              direction="horizontal"
+              onResize={(delta) => {
+                setSkillWidth(prev => {
+                  const newWidth = Math.min(500, Math.max(250, prev - delta))
+                  localStorage.setItem('skill-width', newWidth.toString())
+                  return newWidth
+                })
+              }}
+              onDoubleClick={() => {
+                setSkillWidth(320)
+                localStorage.setItem('skill-width', '320')
+              }}
+            />
+          )}
+          <NewSkillPanel 
+            isVisible={showSkill}
+            onClose={() => setShowSkill(false)}
+            width={panelSettings.skill.collapsed ? 32 : skillWidth}
+            workspaceId={state.activeWorkspaceId}
+            collapsed={panelSettings.skill.collapsed}
+            onCollapse={handleSkillCollapse}
           />
         </>
       )}
@@ -670,28 +751,8 @@ export default function App() {
                 ×
               </button>
             </div>
-            <SkillLibraryPanel
-              workspaces={state.workspaces}
-              activeWorkspaceId={state.activeWorkspaceId}
-              onOpenSkill={(id) => {
-                workspaceStore.setActiveWorkspace(id)
-                setShowSkillLibrary(false)
-              }}
-              onEditSkill={(id) => {
-                setShowConfigDialog(id)
-                setShowSkillLibrary(false)
-              }}
-              onDuplicateSkill={handleDuplicateSkill}
-              onDeleteSkill={(id) => {
-                if (confirm('確定要刪除這個技能工作區嗎？')) {
-                  workspaceStore.removeWorkspace(id)
-                  workspaceStore.save()
-                }
-              }}
-              onExecuteWorkflow={(workspace, content) => {
-                console.log('[App] 收到執行工作流程事件')
-                setExecutingWorkflow({ workspace, content })
-              }}
+            <NewSkillLibraryPanel
+              onClose={() => setShowSkillLibrary(false)}
             />
           </div>
         </div>
