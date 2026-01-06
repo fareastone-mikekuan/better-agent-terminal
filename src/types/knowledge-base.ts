@@ -128,6 +128,7 @@ export interface KnowledgeEntry {
   content: string
   category: 'billing' | 'business' | 'technical' | 'custom'
   enabled: boolean // 是否提供給 AI（以個別文件控制）
+  useOriginalContent?: boolean // 是否使用原始檔案內容（false=使用分析後內容，true=使用原始檔案）
   originalContent?: string // 保留上傳原文（用於「忘記」後還原）
   originalSize?: number // 上傳原文大小（bytes）
   size: number

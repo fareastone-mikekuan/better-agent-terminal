@@ -709,7 +709,12 @@ ${mergedSummaries}
         const entry = await knowledgeStore.addEntry(fileName, initialContent, category)
 
         // Ensure "原始大小" 使用檔案 bytes，而非字元估算
-        knowledgeStore.updateEntry(entry.id, { originalSize: originalBytes, size: originalBytes })
+        // 同時保存原始內容到 originalContent（用於切換模式）
+        knowledgeStore.updateEntry(entry.id, { 
+          originalSize: originalBytes, 
+          size: originalBytes,
+          originalContent: content  // 保存完整的原始內容
+        })
 
         // 自動學習（使用 sourceContent，避免先把超大原文寫入 storage）
         await learnKnowledge(entry, content, contentBytes)
@@ -1378,6 +1383,14 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                                 <span>學習後：{formatFileSize(entry.learnedSize ?? new Blob([entry.content]).size)}</span>
                               </>
                             )}
+                            {entry.isLearned && entry.originalContent && (
+                              <>
+                                <span>•</span>
+                                <span style={{ color: entry.useOriginalContent ? '#b89bdb' : '#7bbda4' }}>
+                                  {entry.useOriginalContent ? '使用原始檔' : '使用分析後'}
+                                </span>
+                              </>
+                            )}
                             {entry.isLearned && (
                               <>
                                 <span>•</span>
@@ -1400,7 +1413,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                             </div>
                           )}
                         </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <label
                             onClick={(e) => e.stopPropagation()}
                             style={{
@@ -1429,6 +1442,38 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                             />
                             提供給 AI
                           </label>
+                          {entry.originalContent && entry.isLearned && (
+                            <label
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '4px 10px',
+                                backgroundColor: entry.useOriginalContent ? '#3a2a58' : '#2a2a38',
+                                color: entry.useOriginalContent ? '#b89bdb' : '#888',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '12px'
+                              }}
+                              title={entry.useOriginalContent 
+                                ? "正在使用原始檔案內容（未經分析）" 
+                                : "正在使用分析後的內容（已學習精簡）"}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={entry.useOriginalContent || false}
+                                onChange={(e) => {
+                                  knowledgeStore.toggleUseOriginalContent(entry.id, e.target.checked)
+                                  // Force immediate UI update
+                                  flushSync(() => {
+                                    setEntries(knowledgeStore.getEntries())
+                                  })
+                                }}
+                              />
+                              {entry.useOriginalContent ? '📄 原始檔案' : '🎓 分析後'}
+                            </label>
+                          )}
                           {!entry.isLearned ? (
                             <button
                               onClick={(e) => {

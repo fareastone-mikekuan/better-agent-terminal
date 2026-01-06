@@ -78,7 +78,19 @@ class KnowledgeStore {
       e => e.isLearned && e.enabled !== false
     )
 
-    return [...activeEntries]
+    // 根據 useOriginalContent 標記返回對應的內容
+    return activeEntries.map(entry => {
+      if (entry.useOriginalContent && entry.originalContent) {
+        // 使用原始內容（建立副本避免修改原始物件）
+        return {
+          ...entry,
+          content: entry.originalContent,
+          size: entry.originalSize || entry.size
+        }
+      }
+      // 使用分析後的內容（預設行為）
+      return { ...entry }
+    })
   }
 
   // 切換單筆文件是否提供給 AI
@@ -86,6 +98,16 @@ class KnowledgeStore {
     const entry = this.entries.find(e => e.id === id)
     if (entry) {
       entry.enabled = enabled
+      this.save()
+      this.notify()
+    }
+  }
+
+  // 切換使用原始內容或分析後內容
+  toggleUseOriginalContent(id: string, useOriginal: boolean): void {
+    const entry = this.entries.find(e => e.id === id)
+    if (entry) {
+      entry.useOriginalContent = useOriginal
       this.save()
       this.notify()
     }
@@ -334,9 +356,16 @@ class KnowledgeStore {
       .filter(e => e.isLearned)
       .reduce((sum, e) => sum + (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([e.content]).size), 0)
     
-    // 計算啟用類別的已學習內容大小
+    // 計算啟用類別的已學習內容大小（考慮 useOriginalContent）
     const activeKnowledge = this.getActiveKnowledge()
-    const activeSize = activeKnowledge.reduce((sum, e) => sum + (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([e.content]).size), 0)
+    const activeSize = activeKnowledge.reduce((sum, e) => {
+      // 如果使用原始內容且有 originalContent，使用 originalSize
+      if (e.useOriginalContent && e.originalContent) {
+        return sum + (e.originalSize || new Blob([e.originalContent]).size)
+      }
+      // 否則使用學習後的大小
+      return sum + (typeof e.learnedSize === 'number' ? e.learnedSize : new Blob([e.content]).size)
+    }, 0)
     
     return {
       total,
