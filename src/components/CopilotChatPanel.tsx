@@ -911,25 +911,45 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       let analysis: any = null
       
       if (selectionMode === 'ai' && allKnowledge.length > 0) {
-        // AI 驅動的知識庫選擇（兩階段方法）
-        console.log('[CopilotChat] Using AI-driven knowledge selection, available knowledge:', allKnowledge.length)
+        // AI 驅動的知識庫選擇（兩階段方法）- 高精準度模式
+        console.log('[CopilotChat] Using AI-driven knowledge selection (HIGH PRECISION), available knowledge:', allKnowledge.length)
         
         // 第一階段：讓 AI 分析哪些知識庫相關
+        // 智能預覽：取開頭、中間、結尾片段，確保代表性
         const knowledgeListPrompt = allKnowledge.map((k, idx) => {
-          const preview = k.content.substring(0, 200).replace(/\n/g, ' ')
-          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   預覽: ${preview}...`
-        }).join('\n\n')
+          const content = k.content
+          const contentLength = content.length
+          let preview = ''
+          
+          if (contentLength <= 2000) {
+            // 短文件：完整預覽
+            preview = content.replace(/\n/g, ' ')
+          } else {
+            // 長文件：分段採樣（開頭 800 + 中間 600 + 結尾 600 = 2000 字）
+            const head = content.substring(0, 800)
+            const middle = content.substring(Math.floor(contentLength / 2) - 300, Math.floor(contentLength / 2) + 300)
+            const tail = content.substring(contentLength - 600)
+            preview = `${head.replace(/\n/g, ' ')}\n...[中略]...\n${middle.replace(/\n/g, ' ')}\n...[中略]...\n${tail.replace(/\n/g, ' ')}`
+          }
+          
+          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   內容長度: ${(contentLength / 1024).toFixed(1)}KB\n   預覽:\n${preview}${contentLength > 2000 ? '\n   [已截取關鍵片段]' : ''}`
+        }).join('\n\n---\n\n')
         
-        const selectionSystemPrompt = `你是知識庫選擇助手。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
+        const selectionSystemPrompt = `你是知識庫選擇助手（高精準模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
 
 ## 可用知識庫（共 ${allKnowledge.length} 個）：
 
 ${knowledgeListPrompt}
 
-## 任務：
-分析用戶的問題，選出與問題**最相關**的知識庫條目（最多5個）。
+## 選擇策略：
+1. **優先保證數量**：至少選擇 2-3 個相關知識庫（除非真的完全無關）
+2. **深度分析**：仔細閱讀預覽內容（包含開頭、中間、結尾片段）
+3. **語意相關**：即使關鍵詞不完全匹配，只要主題相關就應選擇
+4. **最多選擇**：最多 5 個，確保質量
+
+## 輸出格式：
 只回答知識庫的編號，用逗號分隔，例如：1,3,5
-如果沒有任何相關的知識庫，回答：無`
+如果完全無相關知識庫（非常罕見），回答：無`
 
         try {
           const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
@@ -1053,38 +1073,78 @@ ${knowledgeListPrompt}
       if (selectedKnowledge.length > 0) {
         const MAX_KNOWLEDGE_LENGTH = modelLimits.maxTotal
         const MAX_SINGLE_ENTRY = modelLimits.maxSingle
+        const MIN_ENTRIES = 2  // 至少保證 2 個知識庫
+        const TARGET_ENTRIES = 3  // 目標 3 個知識庫
         let totalLength = 0
         
-        for (const k of selectedKnowledge) {
+        // 階段 1：優先保證前 MIN_ENTRIES 個完整載入
+        console.log('[CopilotChat] Phase 1: Ensuring minimum entries')
+        for (let i = 0; i < Math.min(MIN_ENTRIES, selectedKnowledge.length); i++) {
+          const k = selectedKnowledge[i]
           let entryContent = k.content
           let truncated = false
           
-          // 如果單個文件太大，截斷它
+          // 對於前 MIN_ENTRIES 個，即使超過單個限制也盡量多包含
           if (entryContent.length > MAX_SINGLE_ENTRY) {
             entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
             truncated = true
-            console.log('[CopilotChat] Entry too large, truncating:', {
+            console.log('[CopilotChat] Priority entry truncated:', {
               name: k.name,
+              priority: i + 1,
               original: k.content.length,
               truncated: entryContent.length
             })
           }
           
+          includedKnowledge.push({ name: k.name, content: entryContent, truncated })
+          totalLength += entryContent.length
+          
+          console.log('[CopilotChat] Priority entry included:', {
+            name: k.name,
+            index: i + 1,
+            entryLength: entryContent.length,
+            totalLength: totalLength
+          })
+        }
+        
+        // 階段 2：嘗試添加更多知識庫（最多到 TARGET_ENTRIES 或總限制）
+        console.log('[CopilotChat] Phase 2: Adding additional entries if space allows')
+        for (let i = MIN_ENTRIES; i < selectedKnowledge.length; i++) {
+          const k = selectedKnowledge[i]
+          let entryContent = k.content
+          let truncated = false
+          
+          // 檢查是否已達目標數量
+          if (includedKnowledge.length >= TARGET_ENTRIES) {
+            console.log('[CopilotChat] Reached target entries, stopping:', TARGET_ENTRIES)
+            break
+          }
+          
+          // 如果單個文件太大，智能截斷
+          if (entryContent.length > MAX_SINGLE_ENTRY) {
+            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
+            truncated = true
+          }
+          
           const entryText = `【${k.name}】\n${entryContent}`
           
-          console.log('[CopilotChat] Processing knowledge entry:', {
+          console.log('[CopilotChat] Evaluating additional entry:', {
             name: k.name,
             entryLength: entryText.length,
             currentTotal: totalLength,
-            willInclude: totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH,
-            wasTruncated: truncated
+            wouldExceed: totalLength + entryText.length > MAX_KNOWLEDGE_LENGTH
           })
           
+          // 檢查是否會超過總限制
           if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
             includedKnowledge.push({ name: k.name, content: entryContent, truncated })
             totalLength += entryText.length
+            console.log('[CopilotChat] Additional entry included:', {
+              name: k.name,
+              totalEntries: includedKnowledge.length
+            })
           } else {
-            console.log('[CopilotChat] Would exceed limit, skipping remaining entries')
+            console.log('[CopilotChat] Would exceed total limit, stopping')
             break
           }
         }

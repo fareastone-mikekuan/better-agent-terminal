@@ -414,6 +414,12 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     }
     
     try {
+      // 獲取知識庫內容
+      const { knowledgeStore } = await import('../stores/knowledge-store')
+      const activeKnowledge = knowledgeStore.getActiveKnowledge()
+      
+      console.log('[Terminal AI Analysis] Active knowledge entries:', activeKnowledge.length)
+      
       // 判断是文件名还是错误/命令
       const isFilePath = /^[.\w\/-]+\.(ts|tsx|js|jsx|json|md|sh|py|css|html|txt|yml|yaml|toml|env|gitignore)$/i.test(text.trim())
       const isExecutable = /\.(sh|py|js|ts|rb|pl)$/i.test(text.trim())  // 可执行文件
@@ -524,10 +530,55 @@ ${fileContent.substring(0, 1500)}
 這是什麼？有什麼含義？`
       }
       
+      // 建構知識庫 prompt
+      let knowledgePrompt = ''
+      if (activeKnowledge.length > 0) {
+        const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
+        const copilotConfig = await window.electronAPI.copilot.getConfig()
+        const modelLimits = getModelKnowledgeLimit(copilotConfig?.model || 'gpt-4')
+        
+        const MAX_KNOWLEDGE_LENGTH = Math.min(modelLimits.maxTotal, 50000) // 終端分析限制較小
+        const MAX_SINGLE_ENTRY = modelLimits.maxSingle
+        let totalLength = 0
+        const includedKnowledge: Array<{ name: string; content: string }> = []
+        
+        for (const k of activeKnowledge) {
+          let entryContent = k.content
+          
+          // 截斷過大的單個條目
+          if (entryContent.length > MAX_SINGLE_ENTRY) {
+            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY) + '\n...(內容已截斷)'
+          }
+          
+          const entryText = `【${k.name}】\n${entryContent}`
+          
+          if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
+            includedKnowledge.push({ name: k.name, content: entryContent })
+            totalLength += entryText.length
+          } else {
+            break
+          }
+        }
+        
+        if (includedKnowledge.length > 0) {
+          knowledgePrompt = `\n\n## 📚 參考知識庫（${includedKnowledge.length} 個）\n\n` +
+            includedKnowledge.map(item => `### ${item.name}\n\n${item.content}`).join('\n\n---\n\n')
+          
+          console.log('[Terminal AI Analysis] Included knowledge:', {
+            count: includedKnowledge.length,
+            totalLength: totalLength,
+            names: includedKnowledge.map(k => k.name)
+          })
+        }
+      }
+      
       const copilotConfig = await window.electronAPI.copilot.getConfig()
       const response = await window.electronAPI.copilot.chat('terminal-analysis', {
         messages: [
-          { role: 'system', content: '你是終端助手。用戶會給你一個文件名、命令或錯誤信息，請直接分析它。用繁體中文回答，簡潔明瞭。' },
+          { 
+            role: 'system', 
+            content: `你是終端助手。用戶會給你一個文件名、命令或錯誤信息，請直接分析它。用繁體中文回答，簡潔明瞭。${knowledgePrompt ? '\n\n你可以參考以下知識庫內容來提供更準確的分析。' : ''}${knowledgePrompt}` 
+          },
           { role: 'user', content: promptContent }
         ],
         model: copilotConfig?.model || 'gpt-4'
