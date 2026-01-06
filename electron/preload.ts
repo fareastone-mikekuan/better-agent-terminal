@@ -49,7 +49,9 @@ const electronAPI = {
   },
   skills: {
     save: (data: string) => ipcRenderer.invoke('skills:save', data),
-    load: () => ipcRenderer.invoke('skills:load')
+    load: () => ipcRenderer.invoke('skills:load'),
+    loadSources: () => ipcRenderer.invoke('skills:load-sources'),
+    saveSources: (sources: any) => ipcRenderer.invoke('skills:save-sources', sources)
   },
   data: {
     export: () => ipcRenderer.invoke('data:export'),

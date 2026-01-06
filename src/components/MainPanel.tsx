@@ -95,6 +95,7 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
         ) : terminal.type === 'oracle' ? (
           <OraclePanel
             isFloating={false}
+            workspaceId={terminal.workspaceId}
             onQueryResult={(result) => {
               // Store oracle query result in terminal for AI reading
               workspaceStore.updateTerminal(terminal.id, { oracleQueryResult: result })
@@ -124,6 +125,7 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
             isVisible={true}
             onClose={() => {}}
             isFloating={false}
+            workspaceId={terminal.workspaceId}
           />
         ) : null}
       </div>

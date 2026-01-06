@@ -1277,6 +1277,41 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                 </div>
               </label>
+
+              {/* 技能面板 */}
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '10px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>🤖</span>
+                  <span style={{ color: '#dfdbc3', fontSize: '14px' }}>技能面板</span>
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#888' }}>
+                    {settings.sharedPanels?.skills !== false ? '共用' : '獨立'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.sharedPanels?.skills !== false}
+                    onChange={e => {
+                      settingsStore.setSettings({
+                        ...settings,
+                        sharedPanels: {
+                          ...settings.sharedPanels,
+                          skills: e.target.checked
+                        }
+                      })
+                    }}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                </div>
+              </label>
             </div>
 
             <div style={{ 

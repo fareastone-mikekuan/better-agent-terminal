@@ -267,6 +267,7 @@ export interface AppSettings {
     oracle?: boolean;       // 資料庫連線是否共用（預設 true）
     webView?: boolean;      // 網頁視窗是否共用（預設 true）
     snippets?: boolean;     // 筆記面板是否共用（預設 true）
+    skills?: boolean;       // 技能面板是否共用（預設 true）
   };
 }
 

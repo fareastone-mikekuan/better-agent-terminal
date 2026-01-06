@@ -30,6 +30,8 @@ interface ElectronAPI {
   skills: {
     save: (data: string) => Promise<boolean>
     load: () => Promise<string | null>
+    loadSources: () => Promise<any[]>
+    saveSources: (sources: any[]) => Promise<void>
   }
   data: {
     export: () => Promise<string | null>

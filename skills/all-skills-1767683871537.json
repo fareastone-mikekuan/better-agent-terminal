@@ -1,0 +1,346 @@
+[
+  {
+    "type": "ai-agent",
+    "name": "資料庫分析專員",
+    "description": "專業資料庫健康檢查與效能分析",
+    "category": "ai-agent",
+    "tags": ["database", "analysis", "performance"],
+    "icon": "🔍",
+    "prompt": {
+      "role": "你是一個資深資料庫分析專員，擅長 Oracle 資料庫的效能調校與問題診斷",
+      "expertise": [
+        "Oracle DBA",
+        "SQL 優化",
+        "效能調校",
+        "資料庫監控",
+        "備份恢復"
+      ],
+      "instructions": "1. 檢查資料庫連接狀態與實例資訊\n2. 查詢系統效能指標（CPU、記憶體、I/O）\n3. 分析慢查詢與執行計畫\n4. 檢查表空間使用率\n5. 提供優化建議與改善方案",
+      "constraints": [
+        "不執行 DELETE、DROP、TRUNCATE 等破壞性操作",
+        "所有 DML/DDL 操作必須經過批准",
+        "優先使用唯讀查詢進行分析"
+      ]
+    },
+    "allowedTools": {
+      "terminal": false,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "admin",
+        "password": "password",
+        "database": "ORCL",
+        "type": "oracle"
+      },
+      "api": false,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [],
+      "logPatterns": [],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 15,
+      "timeout": 300000,
+      "requireApproval": true
+    },
+    "id": "skill-db-analysis-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  },
+  {
+    "type": "ai-agent",
+    "name": "出帳狀況分析",
+    "description": "分析帳務系統出帳狀態，識別異常與延遲",
+    "category": "ai-agent",
+    "tags": ["billing", "analysis", "monitoring"],
+    "icon": "📊",
+    "prompt": {
+      "role": "你是一個帳務系統分析專員，負責監控與分析電信計費系統的出帳狀況",
+      "expertise": [
+        "電信計費系統",
+        "CCBS (Convergent Charging & Billing System)",
+        "帳務流程",
+        "資料分析",
+        "異常偵測"
+      ],
+      "instructions": "1. 查詢當前出帳批次狀態與進度\n2. 檢查出帳時間表與實際執行時間\n3. 統計各狀態帳單數量（待出帳、出帳中、已完成、失敗）\n4. 識別延遲或卡住的出帳任務\n5. 分析失敗原因與錯誤日誌\n6. 提供處理建議與優先順序排序",
+      "constraints": [
+        "不修改出帳資料",
+        "不執行手動出帳操作",
+        "發現嚴重問題時立即提醒用戶",
+        "保護客戶隱私資訊"
+      ]
+    },
+    "allowedTools": {
+      "terminal": true,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "billing_user",
+        "password": "billing_pass",
+        "database": "CCBS",
+        "type": "oracle"
+      },
+      "api": true,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [
+        "billing.*failed",
+        "invoice.*error",
+        "timeout.*billing"
+      ],
+      "logPatterns": [],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 20,
+      "timeout": 600000,
+      "requireApproval": true
+    },
+    "id": "skill-billing-analysis-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  },
+  {
+    "type": "ai-agent",
+    "name": "帳單產生器",
+    "description": "立即產生客戶帳單內容與詳細資訊",
+    "category": "ai-agent",
+    "tags": ["billing", "invoice", "generation"],
+    "icon": "📄",
+    "prompt": {
+      "role": "你是一個帳單產生專員，負責根據客戶資料與使用記錄產生正式帳單",
+      "expertise": [
+        "帳單格式設計",
+        "費率計算",
+        "稅務計算",
+        "帳單模板",
+        "PDF 生成"
+      ],
+      "instructions": "1. 根據客戶編號或帳號查詢基本資料\n2. 獲取計費週期內的使用記錄\n3. 計算各項費用（通話費、數據費、月租費等）\n4. 套用優惠折扣與促銷方案\n5. 計算稅金與總金額\n6. 產生帳單明細與摘要\n7. 將帳單內容格式化輸出或存檔",
+      "constraints": [
+        "必須經過批准才能產生正式帳單",
+        "確保金額計算準確無誤",
+        "保護客戶個人資料",
+        "遵循公司計費政策",
+        "記錄所有帳單產生操作"
+      ]
+    },
+    "allowedTools": {
+      "terminal": true,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "billing_user",
+        "password": "billing_pass",
+        "database": "CCBS",
+        "type": "oracle"
+      },
+      "api": true,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [],
+      "logPatterns": [],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 15,
+      "timeout": 300000,
+      "requireApproval": true
+    },
+    "id": "skill-invoice-generator-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  },
+  {
+    "type": "ai-agent",
+    "name": "審帳專員",
+    "description": "審核帳單準確性與合規性",
+    "category": "ai-agent",
+    "tags": ["audit", "validation", "compliance"],
+    "icon": "✅",
+    "prompt": {
+      "role": "你是一個資深審帳專員，負責審核電信帳單的準確性、完整性與合規性",
+      "expertise": [
+        "帳務審核",
+        "資料驗證",
+        "合規檢查",
+        "異常偵測",
+        "風險評估"
+      ],
+      "instructions": "1. 檢查帳單基本資料完整性（客戶資訊、帳號、週期）\n2. 驗證費用計算邏輯與金額準確性\n3. 核對使用量與計費記錄是否一致\n4. 檢查折扣優惠套用是否正確\n5. 識別異常高額或零金額帳單\n6. 驗證稅金計算與法規合規性\n7. 產生審核報告與問題清單\n8. 標記需人工複核的異常案例",
+      "constraints": [
+        "不修改帳單資料",
+        "發現重大異常立即警告",
+        "遵循稽核準則與標準流程",
+        "記錄所有審核結果",
+        "保持審核獨立性與客觀性"
+      ]
+    },
+    "allowedTools": {
+      "terminal": false,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "audit_user",
+        "password": "audit_pass",
+        "database": "CCBS",
+        "type": "oracle"
+      },
+      "api": false,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [],
+      "logPatterns": [],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 20,
+      "timeout": 600000,
+      "requireApproval": false
+    },
+    "id": "skill-audit-specialist-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  },
+  {
+    "type": "ai-agent",
+    "name": "帳務異常偵測",
+    "description": "自動偵測計費系統異常與潛在問題",
+    "category": "ai-agent",
+    "tags": ["monitoring", "anomaly", "detection"],
+    "icon": "🚨",
+    "prompt": {
+      "role": "你是一個帳務異常偵測專家，使用資料分析技術識別計費系統的異常行為",
+      "expertise": [
+        "異常偵測",
+        "統計分析",
+        "模式識別",
+        "即時監控",
+        "預警系統"
+      ],
+      "instructions": "1. 監控帳單金額分布，識別異常高額或低額\n2. 檢查出帳數量與歷史趨勢的偏差\n3. 偵測重複計費或漏計費情況\n4. 識別費率套用錯誤\n5. 監控系統效能指標（處理時間、失敗率）\n6. 分析客戶投訴與帳單關聯性\n7. 產生異常報告與風險等級評估\n8. 提供根因分析與修正建議",
+      "constraints": [
+        "不修改任何資料",
+        "發現嚴重異常立即通知",
+        "避免誤報，確保偵測準確性",
+        "持續學習正常行為模式",
+        "保護敏感資訊"
+      ]
+    },
+    "allowedTools": {
+      "terminal": true,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "monitor_user",
+        "password": "monitor_pass",
+        "database": "CCBS",
+        "type": "oracle"
+      },
+      "api": true,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [
+        "duplicate.*billing",
+        "amount.*exceed",
+        "rate.*mismatch"
+      ],
+      "logPatterns": [
+        "ERROR.*billing",
+        "WARNING.*invoice"
+      ],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 25,
+      "timeout": 600000,
+      "requireApproval": false
+    },
+    "id": "skill-anomaly-detection-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  },
+  {
+    "type": "ai-agent",
+    "name": "帳單報表生成",
+    "description": "產生各類帳務統計報表與分析圖表",
+    "category": "ai-agent",
+    "tags": ["reporting", "analytics", "visualization"],
+    "icon": "📈",
+    "prompt": {
+      "role": "你是一個帳務報表專員，負責產生管理階層所需的各類統計報表",
+      "expertise": [
+        "資料統計",
+        "報表設計",
+        "圖表製作",
+        "資料視覺化",
+        "商業智能"
+      ],
+      "instructions": "1. 根據需求選擇報表類型（日報、週報、月報、年報）\n2. 查詢指定期間的帳務資料\n3. 統計關鍵指標（總帳單數、總金額、平均金額、增長率）\n4. 分析客戶分布與收入結構\n5. 計算出帳成功率與異常率\n6. 產生趨勢分析與同期比較\n7. 製作視覺化圖表（長條圖、折線圖、圓餅圖）\n8. 輸出報表文件（Excel、PDF、CSV）",
+      "constraints": [
+        "確保資料統計準確",
+        "保護客戶隱私，僅輸出統計數據",
+        "報表格式符合公司規範",
+        "標註資料來源與產生時間",
+        "提供資料解讀與建議"
+      ]
+    },
+    "allowedTools": {
+      "terminal": true,
+      "fileSystem": true,
+      "database": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 1521,
+        "username": "report_user",
+        "password": "report_pass",
+        "database": "CCBS",
+        "type": "oracle"
+      },
+      "api": true,
+      "knowledgeBase": true
+    },
+    "knowledgeBaseIds": [],
+    "triggers": {
+      "manual": true,
+      "errorPatterns": [],
+      "logPatterns": [],
+      "events": []
+    },
+    "config": {
+      "maxIterations": 15,
+      "timeout": 300000,
+      "requireApproval": true
+    },
+    "id": "skill-report-generator-001",
+    "createdAt": 1767684000000,
+    "updatedAt": 1767684000000
+  }
+]

@@ -132,8 +132,15 @@ export class AIAgentExecutor {
           const action = await this.parseAction(thought.content)
           
           if (action) {
+            console.log('[AI Agent] 解析動作:', {
+              type: action.type,
+              requiresApproval: action.requiresApproval,
+              skillRequireApproval: this.skill.config?.requireApproval
+            })
+            
             // 檢查是否需要批准
             if (this.skill.config?.requireApproval && action.requiresApproval) {
+              console.log('[AI Agent] 設置等待批准狀態')
               this.state.status = 'waiting-approval'
               this.state.pendingAction = action
               // 等待外部批准（由 UI 處理）
@@ -275,6 +282,14 @@ export class AIAgentExecutor {
     systemPrompt += `## 可用工具\n`
     const tools = this.getAvailableToolsDescription(allowedTools)
     systemPrompt += tools.map(t => `- ${t}`).join('\n') + '\n\n'
+    
+    // 被限制的工具
+    const restrictedTools = this.getRestrictedToolsDescription(allowedTools)
+    if (restrictedTools.length > 0) {
+      systemPrompt += `## ⚠️ 被限制的工具（不可使用）\n`
+      systemPrompt += restrictedTools.map(t => `- ❌ ${t}`).join('\n') + '\n'
+      systemPrompt += `\n**重要**: 如果用戶要求使用以上工具，請明確告知該功能已被限制，並建議替代方案。\n\n`
+    }
     
     // 知識庫
     if (this.context.knowledgeBase.length > 0) {
@@ -515,7 +530,8 @@ export class AIAgentExecutor {
       
       // 檢查工具權限
       if (!this.isToolAllowed(actionData.type)) {
-        throw new Error(`工具 ${actionData.type} 不在允許列表中`)
+        const suggestion = this.getAlternativeSuggestion(actionData.type)
+        throw new Error(`⚠️ 權限拒絕: 工具 "${actionData.type}" 已被技能配置禁止使用。\n\n${suggestion}`)
       }
       
       const action: AgentAction = {
@@ -574,7 +590,11 @@ export class AIAgentExecutor {
           return await this.runCommand(action.params.command)
           
         case 'readFile':
-          return await this.readFile(action.params.path)
+          // 支持多種參數名稱：path, filePath, filepath
+          return await this.readFile(action.params.path || action.params.filePath || action.params.filepath)
+          
+        case 'writeFile':
+          return await this.writeFile(action.params.path || action.params.filePath, action.params.content)
           
         case 'queryKnowledge':
           return await this.searchKnowledge(action.params.query)
@@ -606,13 +626,63 @@ export class AIAgentExecutor {
   /**
    * 查詢資料庫
    */
-  private async queryDatabase(_query: string): Promise<string> {
+  private async queryDatabase(query: string): Promise<string> {
     try {
-      // 這裡需要整合實際的資料庫查詢功能
-      // 暫時返回模擬數據
-      return `查詢結果:\n${JSON.stringify({ message: '資料庫功能待實現' }, null, 2)}`
+      console.log('[AI Agent] 執行資料庫查詢:', query)
+      
+      // 使用 Electron IPC 執行資料庫查詢
+      if (!window.electronAPI?.skill?.executeDbQuery) {
+        return '❌ 資料庫功能不可用：缺少 executeDbQuery API'
+      }
+      
+      // 從 skill 獲取資料庫連接配置
+      const dbConfig = this.skill.allowedTools.database
+      let connectionInfo: any = undefined
+      
+      if (dbConfig && typeof dbConfig === 'object' && 'enabled' in dbConfig) {
+        if (dbConfig.enabled && dbConfig.host) {
+          connectionInfo = {
+            type: dbConfig.type || 'oracle',
+            host: dbConfig.host,
+            port: dbConfig.port,
+            username: dbConfig.username,
+            password: dbConfig.password,
+            database: dbConfig.database
+          }
+          console.log('[AI Agent] 使用 Agent 配置的資料庫連接:', { 
+            type: connectionInfo.type, 
+            host: connectionInfo.host, 
+            port: connectionInfo.port 
+          })
+        }
+      }
+      
+      // executeDbQuery 需要 { connection?, query } 參數格式
+      const result = await window.electronAPI.skill.executeDbQuery({ 
+        connection: connectionInfo,
+        query 
+      })
+      console.log('[AI Agent] 資料庫查詢結果:', result)
+      
+      if (!result.success) {
+        return `❌ 資料庫查詢失敗: ${result.error || '未知錯誤'}`
+      }
+      
+      // 格式化結果
+      const rows = result.data || []
+      if (rows.length === 0) {
+        return '✅ 查詢成功，但沒有返回數據'
+      }
+      
+      // 限制顯示行數避免輸出過長
+      const displayRows = rows.slice(0, 10)
+      const hasMore = rows.length > 10
+      
+      return `✅ 查詢成功 (共 ${rows.length} 行${hasMore ? '，僅顯示前 10 行' : ''}):\n${JSON.stringify(displayRows, null, 2)}`
     } catch (error) {
-      throw new Error(`資料庫查詢失敗: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : '未知錯誤'
+      console.error('[AI Agent] 資料庫查詢錯誤:', errorMsg)
+      return `❌ 資料庫查詢失敗: ${errorMsg}`
     }
   }
 
@@ -621,11 +691,37 @@ export class AIAgentExecutor {
    */
   private async runCommand(command: string): Promise<string> {
     try {
-      // 使用 pty 執行命令（需要創建臨時 terminal）
-      // 暫時返回模擬數據
-      return `命令執行結果 (${command}):\n[命令執行功能待實現]`
+      console.log('[AI Agent] 執行命令:', command)
+      
+      // 使用當前活動的 terminal 執行命令
+      const terminalId = this.context.activeTerminalId
+      if (!terminalId) {
+        return '❌ 無法執行命令：沒有活動的 terminal'
+      }
+      
+      // 使用 Electron IPC 在 terminal 中執行命令
+      if (!window.electronAPI?.pty?.write) {
+        return '❌ 命令執行功能不可用：缺少 pty.write API'
+      }
+      
+      // 寫入命令到 terminal
+      await window.electronAPI.pty.write(terminalId, command + '\r')
+      
+      // 等待一段時間讓命令執行
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // 讀取 terminal 輸出
+      const buffer = this.context.terminalBuffers?.get(terminalId)
+      if (buffer) {
+        const recentOutput = buffer.slice(-20).join('')
+        return `✅ 命令已執行: ${command}\n\n最近輸出:\n${recentOutput}`
+      }
+      
+      return `✅ 命令已發送到 terminal: ${command}`
     } catch (error) {
-      throw new Error(`命令執行失敗: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : '未知錯誤'
+      console.error('[AI Agent] 命令執行錯誤:', errorMsg)
+      return `❌ 命令執行失敗: ${errorMsg}`
     }
   }
 
@@ -634,6 +730,11 @@ export class AIAgentExecutor {
    */
   private async readFile(path: string): Promise<string> {
     try {
+      // 參數驗證
+      if (!path) {
+        return '❌ 文件讀取失敗: 未提供文件路徑'
+      }
+      
       // 特殊處理：如果請求讀取 terminal buffer
       if (path.startsWith('terminal://')) {
         const terminalId = path.replace('terminal://', '')
@@ -641,18 +742,51 @@ export class AIAgentExecutor {
         if (buffer) {
           return `Terminal Buffer (最近 50 行):\n${buffer.slice(-50).join('')}`
         }
-        return `Terminal buffer not found for: ${terminalId}`
+        return `❌ Terminal buffer not found for: ${terminalId}`
       }
       
       // 實際文件讀取
-      if (window.electronAPI?.readFile) {
-        const content = await window.electronAPI.readFile(path)
-        return `文件內容 (${path}):\n${content}`
+      if (window.electronAPI?.fs?.readFile) {
+        const result = await window.electronAPI.fs.readFile(path, this.context.currentPath || '')
+        if (!result.success) {
+          return `❌ 文件讀取失敗: ${result.error || '未知錯誤'}`
+        }
+        return `✅ 文件內容 (${path}):\n${result.content || ''}`
       }
       
-      return `文件讀取功能不可用 (路徑: ${path})`
+      return `❌ 文件讀取功能不可用 (路徑: ${path})`
     } catch (error) {
-      throw new Error(`無法讀取文件: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : '未知錯誤'
+      console.error('[AI Agent] 文件讀取錯誤:', errorMsg)
+      return `❌ 文件讀取失敗: ${errorMsg}`
+    }
+  }
+
+  /**
+   * 寫入文件
+   */
+  private async writeFile(path: string, content: string): Promise<string> {
+    try {
+      console.log('[AI Agent] 寫入文件:', path)
+      
+      // 使用 Electron IPC 寫入文件
+      if (!window.electronAPI?.fs?.writeFile) {
+        return '❌ 文件寫入功能不可用：缺少 fs.writeFile API'
+      }
+      
+      const result = await window.electronAPI.fs.writeFile(path, content)
+      
+      if (!result.success) {
+        return `❌ 文件寫入失敗: ${result.error || '未知錯誤'}`
+      }
+      
+      console.log('[AI Agent] 文件寫入成功:', path)
+      
+      return `✅ 文件寫入成功: ${path}\n\n內容長度: ${content.length} 字符`
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '未知錯誤'
+      console.error('[AI Agent] 文件寫入錯誤:', errorMsg)
+      return `❌ 文件寫入失敗: ${errorMsg}`
     }
   }
 
@@ -706,7 +840,11 @@ export class AIAgentExecutor {
       descriptions.push('writeFile: 寫入文件')
       descriptions.push('readLog: 讀取日誌')
     }
-    if (tools.database) {
+    // 檢查 database 是否可用（支持 boolean 或 DatabaseConfig）
+    const isDatabaseEnabled = typeof tools.database === 'boolean' 
+      ? tools.database 
+      : tools.database?.enabled
+    if (isDatabaseEnabled) {
       descriptions.push('queryDatabase: 查詢資料庫')
     }
     if (tools.api) {
@@ -714,6 +852,35 @@ export class AIAgentExecutor {
     }
     if (tools.knowledgeBase) {
       descriptions.push('searchKnowledge: 搜尋知識庫')
+    }
+    
+    return descriptions
+  }
+
+  /**
+   * 獲取被限制的工具描述
+   */
+  private getRestrictedToolsDescription(tools: any): string[] {
+    const descriptions: string[] = []
+    
+    if (!tools.terminal) {
+      descriptions.push('runCommand: 執行終端命令（原因：技能配置禁止）')
+    }
+    if (!tools.fileSystem) {
+      descriptions.push('readFile/writeFile: 讀寫文件（原因：技能配置禁止）')
+    }
+    // 檢查 database 是否被禁用
+    const isDatabaseEnabled = typeof tools.database === 'boolean' 
+      ? tools.database 
+      : tools.database?.enabled
+    if (!isDatabaseEnabled) {
+      descriptions.push('queryDatabase: 查詢資料庫（原因：技能配置禁止）')
+    }
+    if (!tools.api) {
+      descriptions.push('makeApiCall: 呼叫 API（原因：技能配置禁止）')
+    }
+    if (!tools.knowledgeBase) {
+      descriptions.push('searchKnowledge: 搜尋知識庫（原因：技能配置禁止）')
     }
     
     return descriptions
@@ -733,13 +900,46 @@ export class AIAgentExecutor {
       case 'readLog':
         return allowedTools.fileSystem
       case 'queryDatabase':
-        return allowedTools.database
+        // 支持 boolean 或 DatabaseConfig 格式
+        return typeof allowedTools.database === 'boolean' 
+          ? allowedTools.database 
+          : allowedTools.database?.enabled || false
       case 'makeApiCall':
         return allowedTools.api
       case 'searchKnowledge':
         return allowedTools.knowledgeBase
       default:
         return false
+    }
+  }
+
+  /**
+   * 獲取工具被禁止時的替代方案建議
+   */
+  private getAlternativeSuggestion(actionType: string): string {
+    switch (actionType) {
+      case 'queryDatabase':
+        return `💡 替代方案:\n` +
+               `1. 檢查 terminal 中是否有資料庫查詢結果\n` +
+               `2. 讀取資料庫日誌文件（如果 fileSystem 權限可用）\n` +
+               `3. 建議用戶手動執行查詢並貼上結果\n` +
+               `4. 或請管理員修改技能配置，啟用 database 權限`
+      case 'runCommand':
+        return `💡 替代方案:\n` +
+               `1. 讀取相關日誌或配置文件（如果 fileSystem 權限可用）\n` +
+               `2. 建議用戶手動執行命令並提供輸出\n` +
+               `3. 或請管理員修改技能配置，啟用 terminal 權限`
+      case 'makeApiCall':
+        return `💡 替代方案:\n` +
+               `1. 建議用戶使用 curl 或 PowerShell 手動呼叫 API\n` +
+               `2. 或請管理員修改技能配置，啟用 api 權限`
+      case 'readFile':
+      case 'writeFile':
+        return `💡 替代方案:\n` +
+               `1. 建議用戶手動檢查或修改文件\n` +
+               `2. 或請管理員修改技能配置，啟用 fileSystem 權限`
+      default:
+        return `請檢查技能配置的 allowedTools 設定。`
     }
   }
 

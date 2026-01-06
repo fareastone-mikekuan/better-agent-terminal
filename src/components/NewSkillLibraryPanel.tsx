@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { skillStore } from '../stores/skill-store'
 import { DEFAULT_CATEGORIES, SKILL_TEMPLATES, isAIAgentSkill } from '../types/skill'
 import type { UnifiedSkill, SkillStep, Skill } from '../types/skill'
+import { SkillMarketplacePanel } from './SkillMarketplacePanel'
 
 interface NewSkillLibraryPanelProps {
   onClose: () => void
@@ -14,7 +15,7 @@ export function NewSkillLibraryPanel({ onClose }: NewSkillLibraryPanelProps) {
   const [skills, setSkills] = useState<UnifiedSkill[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'list' | 'templates'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'templates' | 'marketplace'>('list')
   const [editingSkill, setEditingSkill] = useState<UnifiedSkill | null>(null)
   const [showAIAgentCreator, setShowAIAgentCreator] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -179,24 +180,57 @@ export function NewSkillLibraryPanel({ onClose }: NewSkillLibraryPanelProps) {
           >
             <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               📚 技能庫
-              <span style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal' }}>
-                ({filteredSkills.length} 個技能)
-              </span>
+              {viewMode === 'list' && (
+                <span style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal' }}>
+                  ({filteredSkills.length} 個技能)
+                </span>
+              )}
             </h2>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                onClick={() => setViewMode(viewMode === 'list' ? 'templates' : 'list')}
+                onClick={() => setViewMode('list')}
                 style={{
                   padding: '6px 12px',
                   fontSize: '13px',
-                  backgroundColor: 'var(--bg-tertiary)',
-                  color: 'var(--text-primary)',
+                  backgroundColor: viewMode === 'list' ? '#7bbda4' : 'var(--bg-tertiary)',
+                  color: viewMode === 'list' ? '#1f1d1a' : 'var(--text-primary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '4px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontWeight: viewMode === 'list' ? 'bold' : 'normal'
                 }}
               >
-                {viewMode === 'list' ? '📝 模板' : '📋 列表'}
+                📋 我的技能
+              </button>
+              <button
+                onClick={() => setViewMode('templates')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  backgroundColor: viewMode === 'templates' ? '#7bbda4' : 'var(--bg-tertiary)',
+                  color: viewMode === 'templates' ? '#1f1d1a' : 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: viewMode === 'templates' ? 'bold' : 'normal'
+                }}
+              >
+                📝 模板
+              </button>
+              <button
+                onClick={() => setViewMode('marketplace')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  backgroundColor: viewMode === 'marketplace' ? '#ec4899' : 'var(--bg-tertiary)',
+                  color: viewMode === 'marketplace' ? 'white' : 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: viewMode === 'marketplace' ? 'bold' : 'normal'
+                }}
+              >
+                🏪 市場
               </button>
               <button
                 onClick={onClose}
@@ -214,7 +248,9 @@ export function NewSkillLibraryPanel({ onClose }: NewSkillLibraryPanelProps) {
             </div>
           </div>
 
-          {viewMode === 'list' ? (
+          {viewMode === 'marketplace' ? (
+            <SkillMarketplacePanel />
+          ) : viewMode === 'list' ? (
             <>
               {/* 工具列 */}
               <div
@@ -1043,7 +1079,13 @@ function AIAgentCreator({ onSave, onClose }: AIAgentCreatorProps) {
     constraints: [] as string[],
     terminal: true,
     fileSystem: true,
-    database: false,
+    databaseEnabled: true,
+    databaseHost: '',
+    databasePort: 1521,
+    databaseUsername: '',
+    databasePassword: '',
+    databaseName: '',
+    databaseType: 'oracle' as 'oracle' | 'mysql' | 'postgresql' | 'sqlserver',
     api: true,
     knowledgeBase: true,
     maxIterations: 10,
@@ -1084,7 +1126,15 @@ function AIAgentCreator({ onSave, onClose }: AIAgentCreatorProps) {
         allowedTools: {
           terminal: formData.terminal,
           fileSystem: formData.fileSystem,
-          database: formData.database,
+          database: {
+            enabled: formData.databaseEnabled,
+            host: formData.databaseHost || undefined,
+            port: formData.databasePort || undefined,
+            username: formData.databaseUsername || undefined,
+            password: formData.databasePassword || undefined,
+            database: formData.databaseName || undefined,
+            type: formData.databaseType
+          },
           api: formData.api,
           knowledgeBase: formData.knowledgeBase
         },
@@ -1122,7 +1172,15 @@ function AIAgentCreator({ onSave, onClose }: AIAgentCreatorProps) {
   "allowedTools": {
     "terminal": true,
     "fileSystem": true,
-    "database": false,
+    "database": {
+      "enabled": true,
+      "host": "localhost",
+      "port": 1521,
+      "username": "admin",
+      "password": "password",
+      "database": "ORCL",
+      "type": "oracle"
+    },
     "api": true,
     "knowledgeBase": true
   },
@@ -1396,7 +1454,6 @@ function AIAgentCreator({ onSave, onClose }: AIAgentCreatorProps) {
                   {[
                     { key: 'terminal', label: '終端命令', icon: '💻' },
                     { key: 'fileSystem', label: '文件系統', icon: '📁' },
-                    { key: 'database', label: '資料庫', icon: '🗄️' },
                     { key: 'api', label: 'API 呼叫', icon: '🔌' },
                     { key: 'knowledgeBase', label: '知識庫', icon: '📚' }
                   ].map(tool => (
@@ -1412,6 +1469,145 @@ function AIAgentCreator({ onSave, onClose }: AIAgentCreatorProps) {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              {/* 資料庫連接配置 */}
+              <div style={{ padding: '16px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.databaseEnabled}
+                    onChange={(e) => setFormData({ ...formData, databaseEnabled: e.target.checked })}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '16px' }}>🗄️</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>資料庫查詢</span>
+                </label>
+                
+                {formData.databaseEnabled && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginLeft: '24px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>類型</label>
+                        <select
+                          value={formData.databaseType}
+                          onChange={(e) => setFormData({ ...formData, databaseType: e.target.value as any })}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <option value="oracle">Oracle</option>
+                          <option value="mysql">MySQL</option>
+                          <option value="postgresql">PostgreSQL</option>
+                          <option value="sqlserver">SQL Server</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>主機</label>
+                        <input
+                          type="text"
+                          value={formData.databaseHost}
+                          onChange={(e) => setFormData({ ...formData, databaseHost: e.target.value })}
+                          placeholder="localhost"
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>端口</label>
+                        <input
+                          type="number"
+                          value={formData.databasePort}
+                          onChange={(e) => setFormData({ ...formData, databasePort: parseInt(e.target.value) || 1521 })}
+                          placeholder="1521"
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>資料庫名稱</label>
+                        <input
+                          type="text"
+                          value={formData.databaseName}
+                          onChange={(e) => setFormData({ ...formData, databaseName: e.target.value })}
+                          placeholder="ORCL"
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>用戶名</label>
+                        <input
+                          type="text"
+                          value={formData.databaseUsername}
+                          onChange={(e) => setFormData({ ...formData, databaseUsername: e.target.value })}
+                          placeholder="admin"
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>密碼</label>
+                        <input
+                          type="password"
+                          value={formData.databasePassword}
+                          onChange={(e) => setFormData({ ...formData, databasePassword: e.target.value })}
+                          placeholder="••••••"
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                      💡 暫時使用 Mock 資料，連接配置將在未來版本中啟用
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>

@@ -19,8 +19,8 @@ export function SkillLibraryPanel({
   onAddSkill,
   onOpenSkill,
   onEditSkill,
-  onDuplicateSkill,
-  onDeleteSkill,
+  onDuplicateSkill: _onDuplicateSkill,
+  onDeleteSkill: _onDeleteSkill,
   onExecuteWorkflow
 }: Readonly<SkillLibraryPanelProps>) {
   console.log('[SkillLibraryPanel] 渲染開始')
@@ -168,7 +168,7 @@ export function SkillLibraryPanel({
           </button>
         )}
         <p style={{ fontSize: '12px', color: '#666', maxWidth: '300px', lineHeight: '1.5' }}>
-          💡 或在工作區右鍵選單中點擊「⚙ 配置」，勾選「這是一個技能工作區」
+          💡 提示：在工作區右鍵選單中點擊「環境變數」可以設定技能專屬的環境變數
         </p>
       </div>
     )

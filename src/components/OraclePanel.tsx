@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { workspaceStore } from '../stores/workspace-store'
+import { settingsStore } from '../stores/settings-store'
 
 interface OraclePanelProps {
   onQueryResult?: (result: string) => void
@@ -7,6 +9,7 @@ interface OraclePanelProps {
   onToggleFloat?: () => void
   onClose?: () => void
   onCollapse?: () => void
+  workspaceId?: string | null
 }
 
 interface ConnectionConfig {
@@ -28,7 +31,7 @@ interface DBTab {
   error: string
 }
 
-export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose, onCollapse }: OraclePanelProps) {
+export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, onClose, onCollapse, workspaceId }: OraclePanelProps) {
   // Multi-tab state
   const [tabs, setTabs] = useState<DBTab[]>(() => {
     const saved = localStorage.getItem('oracle-tabs')
@@ -48,6 +51,14 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
     }
     return []
   })
+  
+  // 取得共用/獨立狀態（即時計算）
+  const settings = settingsStore.getSettings()
+  const isShared = settings.sharedPanels?.oracle !== false
+  const state = workspaceStore.getState()
+  const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
+  const workspaceName = currentWorkspace?.alias || currentWorkspace?.name || '未知工作區'
+  const modeLabel = isShared ? '🌐 共用' : `🔒 ${workspaceName}`
   
   // AI Analysis state
   const [hoveredData, setHoveredData] = useState<{ text: string; x: number; y: number } | null>(null)
@@ -757,6 +768,17 @@ ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
         <span style={{ color: '#dfdbc3', fontSize: '13px', fontWeight: 500, flex: 1 }}>
           🗄️ 資料庫 {activeTab?.isConnected && <span style={{ color: '#4ade80' }}>● 已連接</span>}
         </span>
+        {/* 共用/獨立標籤 */}
+        <span style={{ 
+          fontSize: '11px', 
+          color: isShared ? '#7bbda4' : '#f59e0b',
+          backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
+          padding: '2px 8px',
+          borderRadius: '10px',
+          fontWeight: 'bold'
+        }}>
+          {modeLabel}
+        </span>
         <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
           {onToggleFloat && (
             <button
@@ -783,13 +805,13 @@ ${num > 1000000 ? `• 百萬: ${(num / 1000000).toFixed(2)}M` : ''}
                 border: '1px solid #3a3836',
                 color: '#dfdbc3',
                 cursor: 'pointer',
-                padding: '4px 8px',
+                padding: '6px 12px',
                 fontSize: '12px',
                 borderRadius: '4px'
               }}
               title="收合面板"
             >
-              ▼
+              »
             </button>
           )}
           {onClose && (

@@ -53,10 +53,20 @@ export interface AIAgentPrompt {
   constraints: string[]     // 限制條件
 }
 
+export interface DatabaseConfig {
+  enabled: boolean
+  host?: string
+  port?: number
+  username?: string
+  password?: string
+  database?: string
+  type?: 'oracle' | 'mysql' | 'postgresql' | 'sqlserver'
+}
+
 export interface AIAgentTools {
   terminal: boolean         // 可執行命令
   fileSystem: boolean       // 可讀寫檔案
-  database: boolean         // 可查詢資料庫
+  database: DatabaseConfig  // 資料庫連接配置
   api: boolean             // 可調用 API
   knowledgeBase: boolean   // 可查詢知識庫
 }
@@ -104,7 +114,7 @@ export interface AgentThought {
 // Agent 行動
 export interface AgentAction {
   id: string
-  type: 'readLog' | 'queryDatabase' | 'runCommand' | 'queryKnowledge' | 'readFile' | 'callAPI'
+  type: 'readLog' | 'queryDatabase' | 'runCommand' | 'queryKnowledge' | 'readFile' | 'writeFile' | 'callAPI'
   description: string
   requiresApproval: boolean
   params: Record<string, any>
@@ -273,5 +283,94 @@ export const SKILL_TEMPLATES: Skill[] = [
     ],
     createdAt: Date.now(),
     updatedAt: Date.now()
+  }
+]
+
+// ============ 技能市場類型 ============
+
+export interface SkillMarketplaceMetadata {
+  author: string            // 作者
+  authorEmail?: string
+  organization?: string     // 組織/團隊
+  version: string          // 版本號
+  downloads: number        // 下載次數
+  rating: number          // 評分 (0-5)
+  reviews: number         // 評論數
+  lastUpdated: number     // 最後更新時間
+  license?: string        // 授權協議
+  homepage?: string       // 項目主頁
+  repository?: string     // 源碼倉庫
+}
+
+export interface SkillMarketplacePackage {
+  id: string
+  skill: AIAgentSkill      // 技能內容
+  metadata: SkillMarketplaceMetadata
+  dependencies?: string[]  // 依賴的其他技能
+  screenshots?: string[]   // 截圖
+  readme?: string         // 詳細說明 (Markdown)
+}
+
+export interface SkillMarketplaceCategory {
+  id: string
+  name: string
+  description: string
+  icon: string
+  color: string
+  parentId?: string       // 支持嵌套分類
+}
+
+export interface SkillMarketplaceSource {
+  id: string
+  name: string
+  type: 'official' | 'github' | 'custom'
+  url: string             // API 端點或 GitHub 倉庫
+  enabled: boolean
+  lastSync?: number
+}
+
+// 電信計費專業分類
+export const TELECOM_BILLING_CATEGORIES: SkillMarketplaceCategory[] = [
+  {
+    id: 'billing-analysis',
+    name: '計費分析',
+    description: '帳務數據分析與報表',
+    icon: '📊',
+    color: '#3b82f6'
+  },
+  {
+    id: 'billing-generation',
+    name: '帳單生成',
+    description: '自動產生客戶帳單',
+    icon: '📄',
+    color: '#10b981'
+  },
+  {
+    id: 'billing-audit',
+    name: '審帳稽核',
+    description: '帳單審核與合規檢查',
+    icon: '✅',
+    color: '#8b5cf6'
+  },
+  {
+    id: 'billing-monitoring',
+    name: '異常監控',
+    description: '計費異常偵測與預警',
+    icon: '🚨',
+    color: '#ef4444'
+  },
+  {
+    id: 'billing-reporting',
+    name: '報表生成',
+    description: '各類統計報表產出',
+    icon: '📈',
+    color: '#f59e0b'
+  },
+  {
+    id: 'database-ops',
+    name: '資料庫運維',
+    description: '資料庫維護與優化',
+    icon: '🗄️',
+    color: '#06b6d4'
   }
 ]

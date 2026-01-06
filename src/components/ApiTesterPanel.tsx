@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { workspaceStore } from '../stores/workspace-store'
+import { settingsStore } from '../stores/settings-store'
 
 interface ApiTesterPanelProps {
     isVisible: boolean
@@ -6,6 +8,7 @@ interface ApiTesterPanelProps {
     isFloating?: boolean
     collapsed?: boolean
     onCollapse?: () => void
+    workspaceId?: string | null
 }
 
 interface RequestHeader {
@@ -70,7 +73,7 @@ interface SavedCollection {
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
-export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collapsed = false, onCollapse }: Readonly<ApiTesterPanelProps>) {
+export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collapsed = false, onCollapse, workspaceId }: Readonly<ApiTesterPanelProps>) {
     const [isInternalFloating, setIsInternalFloating] = useState(() => {
         const saved = localStorage.getItem('api-tester-floating')
         return saved ? JSON.parse(saved) : false
@@ -78,6 +81,14 @@ export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collaps
     
     // Use prop isFloating when in tab system, otherwise use internal state
     const effectiveFloating = isFloating || isInternalFloating
+    
+    // 取得共用/獨立狀態（即時計算）
+    const settings = settingsStore.getSettings()
+    const isShared = settings.sharedPanels?.api !== false
+    const state = workspaceStore.getState()
+    const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
+    const workspaceName = currentWorkspace?.alias || currentWorkspace?.name || '未知工作區'
+    const modeLabel = isShared ? '🌐 共用' : `🔒 ${workspaceName}`
     
     const [position, setPosition] = useState(() => {
         const saved = localStorage.getItem('api-tester-position')
@@ -407,7 +418,20 @@ export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collaps
         <aside className={panelClass} style={panelStyle}>
             {/* Resize handle for docked mode - not needed as it's handled by parent ResizeHandle */}
             <div className="api-tester-header" onMouseDown={handleDragStart}>
-                <h3>🌐 API</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ margin: 0 }}>🌐 API</h3>
+                    {/* 共用/獨立標籤 */}
+                    <span style={{ 
+                        fontSize: '11px', 
+                        color: isShared ? '#7bbda4' : '#f59e0b',
+                        backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontWeight: 'bold'
+                    }}>
+                        {modeLabel}
+                    </span>
+                </div>
                 <div className="api-tester-controls">
                     <button
                         className="api-tester-toggle-btn"
@@ -434,6 +458,7 @@ export function ApiTesterPanel({ isVisible, onClose, isFloating = false, collaps
                                     className="api-tester-toggle-btn"
                                     onClick={onCollapse}
                                     title="收合面板"
+                                    style={{ padding: '6px 12px' }}
                                 >
                                     »
                                 </button>

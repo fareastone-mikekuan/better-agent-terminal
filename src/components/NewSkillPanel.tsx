@@ -7,6 +7,7 @@ import { skillStore } from '../stores/skill-store'
 import type { UnifiedSkill, SkillStep, AIAgentSkill, AgentExecutionState } from '../types/skill'
 import { isAIAgentSkill } from '../types/skill'
 import { workspaceStore } from '../stores/workspace-store'
+import { settingsStore } from '../stores/settings-store'
 import { DEFAULT_CATEGORIES } from '../types/skill'
 import { createPanelForStep } from '../services/workflow-panel-service'
 import { AIAgentExecutor, type AgentContext } from '../services/ai-agent-executor'
@@ -39,6 +40,14 @@ export function NewSkillPanel({
   const [linkedSkillIds, setLinkedSkillIds] = useState<string[]>([])
   const [selectedSkill, setSelectedSkill] = useState<UnifiedSkill | null>(null)
   const [showSkillSelector, setShowSkillSelector] = useState(false)
+  
+  // 取得共用/獨立狀態（即時計算）
+  const settings = settingsStore.getSettings()
+  const isShared = settings.sharedPanels?.skills !== false
+  const state = workspaceStore.getState()
+  const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
+  const workspaceName = currentWorkspace?.alias || currentWorkspace?.name || '未知工作區'
+  const modeLabel = isShared ? '🌐 共用' : `🔒 ${workspaceName}`
   
   // 執行狀態（自動化技能）
   const [executingSkill, setExecutingSkill] = useState<UnifiedSkill | null>(null)
@@ -363,27 +372,50 @@ export function NewSkillPanel({
       
       // 啟動執行並監聽狀態更新
       const updateInterval = setInterval(() => {
-        setAgentState({ ...executor.getState() })
+        const currentState = executor.getState()
+        console.log('[UI] 更新 Agent 狀態:', {
+          status: currentState.status,
+          hasPendingAction: !!currentState.pendingAction,
+          actionType: currentState.pendingAction?.type
+        })
+        setAgentState({ ...currentState })
       }, 500)
       
-      // 執行 Agent
-      const result = await executor.execute()
-      
-      clearInterval(updateInterval)
-      setAgentState(executor.getState())
-      
-      if (result.success) {
-        alert(`AI Agent 執行完成\n\n${result.message}`)
-      } else {
-        alert(`AI Agent 執行失敗\n\n${result.message}`)
+      try {
+        // 執行 Agent
+        const result = await executor.execute()
+        
+        clearInterval(updateInterval)
+        const finalState = executor.getState()
+        setAgentState(finalState)
+        
+        // 只有在真正完成或錯誤時才清空 executor
+        // 如果是等待批准，保留 executor 讓用戶可以批准/拒絕
+        if (finalState.status !== 'waiting-approval') {
+          setAgentExecutor(null)
+          setIsRunning(false)
+          
+          if (result.success) {
+            alert(`AI Agent 執行完成\n\n${result.message}`)
+          } else {
+            alert(`AI Agent 執行失敗\n\n${result.message}`)
+          }
+        } else {
+          // 等待批准狀態，保持 isRunning 為 true
+          console.log('[AI Agent] 進入等待批准狀態，保留 executor')
+        }
+      } catch (error) {
+        console.error('AI Agent 執行錯誤:', error)
+        clearInterval(updateInterval)
+        setAgentExecutor(null)
+        setIsRunning(false)
+        alert(`執行錯誤: ${error instanceof Error ? error.message : '未知錯誤'}`)
       }
       
     } catch (error) {
-      console.error('AI Agent 執行錯誤:', error)
-      alert(`執行錯誤: ${error instanceof Error ? error.message : '未知錯誤'}`)
-    } finally {
+      console.error('AI Agent 初始化錯誤:', error)
+      alert(`初始化錯誤: ${error instanceof Error ? error.message : '未知錯誤'}`)
       setIsRunning(false)
-      setAgentExecutor(null)
     }
   }
 
@@ -391,12 +423,55 @@ export function NewSkillPanel({
    * 批准 AI Agent 的待處理動作
    */
   const handleApproveAction = async () => {
-    if (!agentExecutor || !agentState?.pendingAction) return
+    console.log('[Approval] Button clicked')
+    console.log('[Approval] agentExecutor:', agentExecutor)
+    console.log('[Approval] pendingAction:', agentState?.pendingAction)
+    
+    if (!agentExecutor || !agentState?.pendingAction) {
+      console.error('[Approval] Missing required state')
+      alert('無法批准：缺少必要的狀態資訊')
+      return
+    }
     
     try {
+      console.log('[Approval] Calling approveAction()')
       await agentExecutor.approveAction()
-      setAgentState({ ...agentExecutor.getState() })
+      const newState = agentExecutor.getState()
+      console.log('[Approval] New state after approval:', newState)
+      setAgentState({ ...newState })
+      
+      // 批准後繼續執行 Agent
+      console.log('[Approval] Continuing Agent execution...')
+      const updateInterval = setInterval(() => {
+        setAgentState({ ...agentExecutor.getState() })
+      }, 500)
+      
+      try {
+        const result = await agentExecutor.execute()
+        clearInterval(updateInterval)
+        const finalState = agentExecutor.getState()
+        setAgentState(finalState)
+        
+        // 檢查是否又需要批准
+        if (finalState.status !== 'waiting-approval') {
+          setAgentExecutor(null)
+          setIsRunning(false)
+          
+          if (result.success) {
+            alert(`AI Agent 執行完成\n\n${result.message}`)
+          } else {
+            alert(`AI Agent 執行失敗\n\n${result.message}`)
+          }
+        }
+      } catch (error) {
+        clearInterval(updateInterval)
+        console.error('[Approval] Execution error:', error)
+        setAgentExecutor(null)
+        setIsRunning(false)
+        alert(`執行錯誤: ${error instanceof Error ? error.message : '未知錯誤'}`)
+      }
     } catch (error) {
+      console.error('[Approval] Error:', error)
       alert(`批准動作失敗: ${error instanceof Error ? error.message : '未知錯誤'}`)
     }
   }
@@ -405,11 +480,20 @@ export function NewSkillPanel({
    * 拒絕 AI Agent 的待處理動作
    */
   const handleRejectAction = () => {
-    if (!agentExecutor || !agentState?.pendingAction) return
+    console.log('[Approval] Reject clicked')
+    if (!agentExecutor || !agentState?.pendingAction) {
+      console.error('[Approval] Missing required state for rejection')
+      return
+    }
     
     const reason = prompt('拒絕原因（可選）:')
     agentExecutor.rejectAction(reason || undefined)
     setAgentState({ ...agentExecutor.getState() })
+    
+    // 拒絕後清理並結束
+    setAgentExecutor(null)
+    setIsRunning(false)
+    alert('已拒絕動作，Agent 執行已終止')
   }
 
   const handlePause = () => {
@@ -583,6 +667,17 @@ export function NewSkillPanel({
               <span style={{ fontWeight: 600, fontSize: '14px' }}>
                 {executingSkill ? '執行技能' : '技能'}
               </span>
+              {/* 共用/獨立標籤 */}
+              <span style={{ 
+                fontSize: '11px', 
+                color: isShared ? '#7bbda4' : '#f59e0b',
+                backgroundColor: isShared ? '#2d4a2d' : '#3d2f1f',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                fontWeight: 'bold'
+              }}>
+                {modeLabel}
+              </span>
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>
               <button
@@ -592,12 +687,12 @@ export function NewSkillPanel({
                   border: 'none',
                   color: 'var(--text-secondary)',
                   cursor: 'pointer',
-                  fontSize: '16px',
-                  padding: '4px 8px'
+                  fontSize: '14px',
+                  padding: '6px 12px'
                 }}
-                title="收合"
+                title="收合面板"
               >
-                ▶
+                »
               </button>
               <button
                 onClick={onClose}
@@ -786,7 +881,10 @@ export function NewSkillPanel({
                           backgroundColor: '#fff3cd',
                           border: '2px solid #ff9800',
                           borderRadius: '6px',
-                          color: '#856404'
+                          color: '#856404',
+                          position: 'relative',
+                          zIndex: 1000,
+                          pointerEvents: 'auto'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '14px' }}>
@@ -801,6 +899,10 @@ export function NewSkillPanel({
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={handleApproveAction}
+                            onMouseDown={(e) => {
+                              console.log('[Approval] Mouse down on approve button')
+                              e.stopPropagation()
+                            }}
                             style={{
                               flex: 1,
                               padding: '8px 12px',
@@ -810,13 +912,20 @@ export function NewSkillPanel({
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
-                              fontWeight: 'bold'
+                              fontWeight: 'bold',
+                              pointerEvents: 'auto',
+                              position: 'relative',
+                              zIndex: 1001
                             }}
                           >
                             ✓ 批准
                           </button>
                           <button
                             onClick={handleRejectAction}
+                            onMouseDown={(e) => {
+                              console.log('[Approval] Mouse down on reject button')
+                              e.stopPropagation()
+                            }}
                             style={{
                               flex: 1,
                               padding: '8px 12px',
@@ -826,7 +935,10 @@ export function NewSkillPanel({
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
-                              fontWeight: 'bold'
+                              fontWeight: 'bold',
+                              pointerEvents: 'auto',
+                              position: 'relative',
+                              zIndex: 1001
                             }}
                           >
                             ✗ 拒絕
