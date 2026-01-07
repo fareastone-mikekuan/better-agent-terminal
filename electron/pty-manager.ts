@@ -353,12 +353,50 @@ export class PtyManager {
   kill(id: string): boolean {
     const instance = this.instances.get(id)
     if (instance) {
-      if (instance.usePty) {
-        instance.process.kill()
-      } else {
-        (instance.process as ChildProcess).kill()
+      try {
+        if (instance.usePty) {
+          // For PTY, use kill method
+          instance.process.kill()
+        } else {
+          // For child_process, try graceful shutdown first
+          const cp = instance.process as ChildProcess
+          if (process.platform === 'win32') {
+            // On Windows, use taskkill to ensure process tree is killed
+            const { execSync } = require('child_process')
+            try {
+              if (cp.pid) {
+                execSync(`taskkill /pid ${cp.pid} /T /F`, { timeout: 3000 })
+              }
+            } catch (e) {
+              // If taskkill fails, try regular kill
+              cp.kill('SIGKILL')
+            }
+          } else {
+            // On Unix, kill the process group
+            if (cp.pid) {
+              try {
+                process.kill(-cp.pid, 'SIGTERM')
+                // Give it a moment, then force kill if needed
+                setTimeout(() => {
+                  try {
+                    if (cp.pid) process.kill(-cp.pid, 'SIGKILL')
+                  } catch (e) {
+                    // Process already dead
+                  }
+                }, 1000)
+              } catch (e) {
+                cp.kill('SIGKILL')
+              }
+            } else {
+              cp.kill('SIGKILL')
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[PtyManager] Error killing terminal ${id}:`, error)
+      } finally {
+        this.instances.delete(id)
       }
-      this.instances.delete(id)
       return true
     }
     return false
@@ -383,8 +421,19 @@ export class PtyManager {
   }
 
   dispose(): void {
-    for (const [id] of this.instances) {
-      this.kill(id)
+    console.log(`[PtyManager] Disposing ${this.instances.size} terminal instances...`)
+    const instanceIds = Array.from(this.instances.keys())
+    
+    for (const id of instanceIds) {
+      try {
+        console.log(`[PtyManager] Killing terminal: ${id}`)
+        this.kill(id)
+      } catch (error) {
+        console.error(`[PtyManager] Failed to kill terminal ${id}:`, error)
+      }
     }
+    
+    this.instances.clear()
+    console.log('[PtyManager] All terminals disposed')
   }
 }

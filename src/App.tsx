@@ -346,28 +346,27 @@ export default function App() {
     settingsStore.load()
 
     // Save terminal cwds before app closes
-    const handleBeforeUnload = () => {
-      // Trigger async save, but don't wait for it
-      // The periodic save in WorkspaceView should have already saved most recent state
-      const state = workspaceStore.getState()
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Save to localStorage immediately (synchronous)
+      console.log('[App] beforeunload - saving emergency backup...')
+      workspaceStore.saveBackup()
       
-      // Quick synchronous save attempt
-      Promise.all(
-        state.terminals
-          .filter(t => t.type === 'terminal')
-          .map(async (terminal) => {
-            try {
-              const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+      // Also try async save, but don't wait
+      const state = workspaceStore.getState()
+      state.terminals
+        .filter(t => t.type === 'terminal')
+        .forEach((terminal) => {
+          window.electronAPI.pty.getCwd(terminal.id)
+            .then(cwd => {
               if (cwd) {
                 workspaceStore.updateTerminalCwd(terminal.id, cwd)
+                workspaceStore.saveBackup() // Update backup with latest cwd
               }
-            } catch (err) {
+            })
+            .catch(() => {
               // Ignore errors during shutdown
-            }
-          })
-      ).then(() => {
-        workspaceStore.save()
-      })
+            })
+        })
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)

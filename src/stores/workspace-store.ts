@@ -14,6 +14,9 @@ class WorkspaceStore {
   }
 
   private listeners: Set<Listener> = new Set()
+  private saveTimeout: NodeJS.Timeout | null = null
+  private isSaving = false
+  private readonly BACKUP_KEY = 'workspace-backup'
 
   getState(): AppState {
     return this.state
@@ -512,38 +515,107 @@ class WorkspaceStore {
   }
 
   // Persistence
-  async save(): Promise<void> {
-    console.log('[WorkspaceStore] 開始保存到 localStorage')
-    console.log('[WorkspaceStore] workspaces 數量:', this.state.workspaces.length)
-    
-    // 記錄技能工作區
-    const skillWorkspaces = this.state.workspaces.filter(ws => ws.skillConfig?.isSkill)
-    console.log('[WorkspaceStore] 技能工作區數量:', skillWorkspaces.length)
-    if (skillWorkspaces.length > 0) {
-      console.log('[WorkspaceStore] 技能工作區列表:', skillWorkspaces.map(ws => ({
-        name: ws.name,
-        isSkill: ws.skillConfig?.isSkill,
-        description: ws.skillConfig?.description
-      })))
+  async save(immediate = false): Promise<void> {
+    // Immediate save - cancel any pending debounced save
+    if (immediate) {
+      if (this.saveTimeout) {
+        clearTimeout(this.saveTimeout)
+        this.saveTimeout = null
+      }
+      // For immediate saves, wait if another save is in progress
+      if (this.isSaving) {
+        console.log('[WorkspaceStore] Waiting for current save to complete...')
+        // Wait a bit and retry
+        await new Promise(resolve => setTimeout(resolve, 100))
+        if (this.isSaving) {
+          console.log('[WorkspaceStore] Still saving, will use localStorage backup')
+          return
+        }
+      }
+      return this.performSave()
     }
     
-    const data = JSON.stringify({
-      workspaces: this.state.workspaces,
-      activeWorkspaceId: this.state.activeWorkspaceId,
-      terminals: this.state.terminals,
-      focusedTerminalId: this.state.focusedTerminalId
-    })
-    await window.electronAPI.workspace.save(data)
+    // For debounced saves, if already saving, just reset the timer
+    if (this.isSaving) {
+      console.log('[WorkspaceStore] Save in progress, will retry after it completes')
+      // Reset the timer to try again after current save finishes
+      if (this.saveTimeout) {
+        clearTimeout(this.saveTimeout)
+      }
+      this.saveTimeout = setTimeout(() => this.save(), 2000)
+      return
+    }
+    
+    // Debounce saves to prevent rapid successive calls - use longer delay since localStorage is backup
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout)
+    }
+    
+    this.saveTimeout = setTimeout(() => this.performSave(), 2000)
+  }
+  
+  private async performSave(): Promise<void> {
+    this.isSaving = true
+    try {
+      const data = JSON.stringify({
+        workspaces: this.state.workspaces,
+        activeWorkspaceId: this.state.activeWorkspaceId,
+        terminals: this.state.terminals,
+        focusedTerminalId: this.state.focusedTerminalId
+      })
+      
+      // Save to localStorage first (primary storage - always works)
+      try {
+        localStorage.setItem(this.BACKUP_KEY, data)
+        console.log('[WorkspaceStore] Saved to localStorage (primary)')
+      } catch (e) {
+        console.error('[WorkspaceStore] Failed to save to localStorage:', e)
+      }
+      
+      // Try to save to file as well (backup, non-blocking)
+      // Don't await this - let it run in background
+      window.electronAPI.workspace.save(data).then(success => {
+        if (success) {
+          console.log('[WorkspaceStore] File backup saved')
+        }
+        // Silent fail for file - localStorage is the truth
+      }).catch(() => {
+        // Silent fail - localStorage is primary
+      })
+      
+    } catch (error) {
+      console.error('[WorkspaceStore] Failed to save:', error)
+    } finally {
+      this.isSaving = false
+      this.saveTimeout = null
+    }
+  }
+  
+  // Synchronous backup save for emergency situations (e.g., beforeunload)
+  saveBackup(): void {
+    try {
+      const data = JSON.stringify({
+        workspaces: this.state.workspaces,
+        activeWorkspaceId: this.state.activeWorkspaceId,
+        terminals: this.state.terminals,
+        focusedTerminalId: this.state.focusedTerminalId
+      })
+      localStorage.setItem(this.BACKUP_KEY, data)
+      console.log('[WorkspaceStore] Emergency backup saved to localStorage')
+    } catch (error) {
+      console.error('[WorkspaceStore] Failed to save emergency backup:', error)
+    }
   }
 
   async load(): Promise<void> {
-    const data = await window.electronAPI.workspace.load()
-    if (data) {
+    // Try localStorage first (primary storage)
+    const localData = localStorage.getItem(this.BACKUP_KEY)
+    if (localData) {
       try {
-        const parsed = JSON.parse(data)
-        console.log('Loading workspace data...')
-        console.log('Workspaces:', parsed.workspaces?.length || 0)
-        console.log('Terminals:', parsed.terminals?.length || 0)
+        const parsed = JSON.parse(localData)
+        console.log('[WorkspaceStore] Loading from localStorage (primary)...')
+        console.log('[WorkspaceStore] Workspaces:', parsed.workspaces?.length || 0)
+        console.log('[WorkspaceStore] Terminals:', parsed.terminals?.length || 0)
         this.state = {
           ...this.state,
           workspaces: parsed.workspaces || [],
@@ -551,13 +623,38 @@ class WorkspaceStore {
           terminals: parsed.terminals || [],
           focusedTerminalId: parsed.focusedTerminalId || null
         }
-        console.log('Workspace state updated:', this.state)
+        console.log('[WorkspaceStore] Workspace state updated from localStorage')
+        this.notify()
+        return
+      } catch (e) {
+        console.error('[WorkspaceStore] Failed to parse localStorage data:', e)
+      }
+    }
+    
+    // Fallback to file if localStorage is empty
+    const data = await window.electronAPI.workspace.load()
+    if (data) {
+      try {
+        const parsed = JSON.parse(data)
+        console.log('[WorkspaceStore] Loading from file (fallback)...')
+        console.log('[WorkspaceStore] Workspaces:', parsed.workspaces?.length || 0)
+        console.log('[WorkspaceStore] Terminals:', parsed.terminals?.length || 0)
+        this.state = {
+          ...this.state,
+          workspaces: parsed.workspaces || [],
+          activeWorkspaceId: parsed.activeWorkspaceId || null,
+          terminals: parsed.terminals || [],
+          focusedTerminalId: parsed.focusedTerminalId || null
+        }
+        console.log('[WorkspaceStore] Workspace state updated from file')
+        // Also save to localStorage for next time
+        localStorage.setItem(this.BACKUP_KEY, data)
         this.notify()
       } catch (e) {
-        console.error('Failed to parse workspace data:', e)
+        console.error('[WorkspaceStore] Failed to parse workspace file data:', e)
       }
     } else {
-      console.log('No workspace data found')
+      console.log('[WorkspaceStore] No workspace data found in file or localStorage')
     }
   }
 }

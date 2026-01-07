@@ -6,11 +6,18 @@ import { FtpManager } from './ftp-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
 import { snippetDb, CreateSnippetInput } from './snippet-db'
 
+// Suppress Chromium cache warnings
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
+
 // Set AppUserModelId for Windows taskbar pinning (must be before app.whenReady)
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.fareastone.billing-integration')
 }
 app.name = 'AI維運平台'
+
+// Disable GPU cache to prevent cache errors
+app.commandLine.appendSwitch('disable-http-cache')
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
@@ -20,6 +27,75 @@ let updateCheckResult: UpdateCheckResult | null = null
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const GITHUB_REPO_URL = 'https://github.com/fareastone-mikekuan/better-agent-terminal'
+
+/**
+ * Safe file write with retry logic
+ * Handles file locks and permission issues
+ * Returns true on success, false on failure (does not throw)
+ */
+async function safeWriteFile(filePath: string, data: string, retries = 3): Promise<boolean> {
+  const fs = await import('fs/promises')
+  const dirPath = path.dirname(filePath)
+  
+  // Ensure directory exists
+  try {
+    await fs.mkdir(dirPath, { recursive: true })
+  } catch (err: any) {
+    if (err.code !== 'EEXIST') {
+      console.error(`[Main] Failed to create directory ${dirPath}:`, err)
+      return false
+    }
+  }
+  
+  let lastError: any = null
+  const maxRetries = retries
+  
+  while (retries > 0) {
+    try {
+      // Simple direct write approach - avoid complex atomic operations on Windows
+      // that can cause file lock issues
+      
+      // First, clean up any leftover temp files
+      const tempPath = filePath + '.tmp'
+      try {
+        await fs.unlink(tempPath)
+      } catch (e) {
+        // Ignore
+      }
+      try {
+        await fs.unlink(filePath + '.old')
+      } catch (e) {
+        // Ignore
+      }
+      
+      // Try direct write
+      await fs.writeFile(filePath, data, { encoding: 'utf-8', flag: 'w' })
+      return true
+      
+    } catch (err: any) {
+      lastError = err
+      retries--
+      const attempt = maxRetries - retries
+      
+      if (err.code === 'EPERM' || err.code === 'EACCES' || err.code === 'EBUSY') {
+        console.warn(`[Main] File ${filePath} is locked (attempt ${attempt}/${maxRetries})`)
+      } else {
+        console.warn(`[Main] Failed to write ${filePath} (attempt ${attempt}/${maxRetries}):`, err.code || err.message)
+      }
+      
+      if (retries > 0) {
+        // Progressive backoff with longer waits for lock issues
+        const waitTime = err.code === 'EPERM' ? 1000 * attempt : 200 * attempt
+        console.log(`[Main] Retrying in ${waitTime}ms...`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+      }
+    }
+  }
+  
+  console.error(`[Main] Failed to write ${filePath} after ${maxRetries} retries:`, lastError?.code || lastError?.message)
+  console.log(`[Main] Note: Data should be preserved in localStorage backup`)
+  return false
+}
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -144,9 +220,39 @@ function createWindow() {
   })
 }
 
+// Cleanup before app quits
+app.on('before-quit', () => {
+  console.log('[Main] App is quitting, cleaning up...')
+  if (ptyManager) {
+    ptyManager.dispose()
+    ptyManager = null
+  }
+  if (copilotManager) {
+    copilotManager = null
+  }
+  if (ftpManager) {
+    ftpManager = null
+  }
+})
+
 app.whenReady().then(async () => {
   buildMenu()
   createWindow()
+
+  // Cleanup any leftover temp files from previous runs
+  setTimeout(async () => {
+    const fs = await import('fs/promises')
+    const userData = app.getPath('userData')
+    const filesToClean = ['workspaces.json.tmp', 'workspaces.json.old', 'settings.json.tmp', 'settings.json.old', 'skills.json.tmp', 'skills.json.old']
+    for (const file of filesToClean) {
+      try {
+        await fs.unlink(path.join(userData, file))
+        console.log(`[Main] Cleaned up leftover file: ${file}`)
+      } catch (e) {
+        // Ignore - file doesn't exist
+      }
+    }
+  }, 1000)
 
   // Check for updates after startup
   setTimeout(async () => {
@@ -162,16 +268,58 @@ app.whenReady().then(async () => {
   }, 2000)
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+app.on('window-all-closed', async () => {
+  // Clean up before quitting
+  console.log('[Main] All windows closed, cleaning up...')
+  
+  if (ptyManager) {
+    console.log('[Main] Cleaning up PTY instances...')
+    try {
+      ptyManager.dispose()
+    } catch (e) {
+      console.error('[Main] Error during PTY cleanup:', e)
+    }
+    ptyManager = null
   }
+  
+  if (copilotManager) {
+    copilotManager = null
+  }
+  
+  if (ftpManager) {
+    ftpManager = null
+  }
+  
+  console.log('[Main] Cleanup done, exiting...')
+  
+  // Don't wait, just exit immediately
+  app.exit(0)
 })
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
   }
+})
+
+// Handle app will quit - final cleanup
+app.on('will-quit', () => {
+  console.log('[Main] App will quit, performing final cleanup...')
+  
+  // Force cleanup synchronously
+  if (ptyManager) {
+    try {
+      ptyManager.dispose()
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    ptyManager = null
+  }
+  
+  copilotManager = null
+  ftpManager = null
+  
+  console.log('[Main] Cleanup completed')
 })
 
 // IPC Handlers
@@ -269,19 +417,14 @@ ipcMain.handle('dialog:select-folder', async () => {
 })
 
 ipcMain.handle('workspace:save', async (_event, data: string) => {
-  const fs = await import('fs/promises')
-  const userDataPath = app.getPath('userData')
-  const configPath = path.join(userDataPath, 'workspaces.json')
-  
-  // Ensure directory exists
-  try {
-    await fs.mkdir(userDataPath, { recursive: true })
-  } catch (err) {
-    console.error('Failed to create userData directory:', err)
+  const configPath = path.join(app.getPath('userData'), 'workspaces.json')
+  const success = await safeWriteFile(configPath, data)
+  if (success) {
+    console.log('[Main] Workspaces saved successfully')
+  } else {
+    console.warn('[Main] Workspaces file save failed, data is in localStorage backup')
   }
-  
-  await fs.writeFile(configPath, data, 'utf-8')
-  return true
+  return success
 })
 
 ipcMain.handle('workspace:load', async () => {
@@ -297,10 +440,12 @@ ipcMain.handle('workspace:load', async () => {
 
 // Settings handlers
 ipcMain.handle('settings:save', async (_event, data: string) => {
-  const fs = await import('fs/promises')
   const configPath = path.join(app.getPath('userData'), 'settings.json')
-  await fs.writeFile(configPath, data, 'utf-8')
-  return true
+  const success = await safeWriteFile(configPath, data)
+  if (!success) {
+    console.warn('[Main] Settings file save failed, data may be in localStorage')
+  }
+  return success
 })
 
 ipcMain.handle('settings:load', async () => {
@@ -316,12 +461,15 @@ ipcMain.handle('settings:load', async () => {
 
 // Skills handlers
 ipcMain.handle('skills:save', async (_event, data: string) => {
-  const fs = await import('fs/promises')
   const configPath = path.join(app.getPath('userData'), 'skills.json')
   console.log('[Main] Saving skills to:', configPath)
-  await fs.writeFile(configPath, data, 'utf-8')
-  console.log('[Main] Skills saved successfully')
-  return true
+  const success = await safeWriteFile(configPath, data)
+  if (success) {
+    console.log('[Main] Skills saved successfully')
+  } else {
+    console.warn('[Main] Skills file save failed')
+  }
+  return success
 })
 
 ipcMain.handle('skills:load', async () => {
@@ -352,11 +500,14 @@ ipcMain.handle('skills:load-sources', async () => {
 })
 
 ipcMain.handle('skills:save-sources', async (_event, sources) => {
-  const fs = await import('fs/promises')
   const sourcesPath = path.join(app.getPath('userData'), 'skill-sources.json')
-  await fs.writeFile(sourcesPath, JSON.stringify(sources, null, 2), 'utf-8')
-  console.log('[Main] 保存技能源配置成功')
-  return true
+  const success = await safeWriteFile(sourcesPath, JSON.stringify(sources, null, 2))
+  if (success) {
+    console.log('[Main] Skill sources saved successfully')
+  } else {
+    console.warn('[Main] Skill sources file save failed')
+  }
+  return success
 })
 
 // Data export/import handlers
