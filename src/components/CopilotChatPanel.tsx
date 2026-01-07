@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -64,7 +64,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
   const [availableCopilotModels, setAvailableCopilotModels] = useState<string[]>([])
-  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
+  const [, setCopilotModelsLoading] = useState(false)
   const [currentCopilotConfig, setCurrentCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const isShared = settings.sharedPanels?.copilot !== false
   const storageKey = isShared ? 'copilot-messages' : `copilot-messages-${workspaceId || 'default'}`
@@ -147,7 +147,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     return saved ? JSON.parse(saved) : { x: 100, y: 100 }
   })
   
-  const [size, setSize] = useState(() => {
+  const [size] = useState(() => {
     const saved = localStorage.getItem('copilot-size')
     return saved ? JSON.parse(saved) : { width: 500, height: 700 }
   })
@@ -159,7 +159,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [effectiveModel, setEffectiveModel] = useState<string>('')
+  const [, setEffectiveModel] = useState<string>('')
   const [targetTerminalId, setTargetTerminalId] = useState<string>('')
   const [availableTerminals, setAvailableTerminals] = useState<TerminalInstance[]>([])
   const [isComposing, setIsComposing] = useState(false)  // Track IME composition state
@@ -176,7 +176,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [userInfo, setUserInfo] = useState<{ username: string; hostname: string }>({ username: '', hostname: '' })
   
   // 样式控制状态
-  const [fontSize, setFontSize] = useState(() => {
+  const [fontSize] = useState(() => {
     const saved = localStorage.getItem('copilot-font-size')
     return saved ? parseInt(saved) : 12
   })
@@ -231,7 +231,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     markdown += `**Messages**: ${messages.length}\n\n---\n\n`
     
     messages.forEach((msg, idx) => {
-      const time = new Date(msg.timestamp).toLocaleString()
+      const time = new Date(msg.timestamp || Date.now()).toLocaleString()
       markdown += `## Message ${idx + 1} - ${msg.role}\n\n`
       markdown += `*${time}*\n\n`
       markdown += `${msg.content}\n\n---\n\n`
@@ -276,37 +276,8 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     input.click()
   }
 
-  // 查看所有工作區的對話
-  const viewAllMessages = () => {
-    const allKeys = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key?.startsWith('copilot-messages')) {
-        allKeys.push(key)
-      }
-    }
-    
-    let info = `📊 所有 Copilot 對話記錄\n\n`
-    info += `當前使用: ${storageKey}\n`
-    info += `當前訊息數: ${messages.length}\n\n`
-    info += `──────────\n\n`
-    
-    allKeys.forEach(key => {
-      const data = localStorage.getItem(key)
-      if (data) {
-        try {
-          const msgs = JSON.parse(data)
-          const isCurrent = key === storageKey
-          info += `${isCurrent ? '➡️ ' : '▫️ '} ${key}\n`
-          info += `   訊息數: ${msgs.length}\n\n`
-        } catch (e) {
-          // ignore
-        }
-      }
-    })
-    
-    alert(info)
-  }
+  // 查看所有工作區的對話功能已移除
+  // (可在開發者工具 localStorage 中查看 'copilot-messages-*' 鍵)
 
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent) => {
@@ -767,9 +738,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         return { success: false, error: '未選擇終端' }
       }
 
-      const targetTerminal = availableTerminals.find(t => t.id === targetTerminalId)
-      const terminalName = targetTerminal?.title || 'Unknown'
-      
+      // Terminal reference removed - not needed
       // Clear output buffer before executing
       terminalOutputBuffer.current.set(targetTerminalId, '')
 
@@ -820,7 +789,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     const currentWorkspace = state.workspaces.find(w => w.id === workspaceId)
     let skillContext = ''
     
-    if (currentWorkspace?.isSkill) {
+    if (currentWorkspace?.skillConfig?.isSkill) {
       try {
         const skillMdPath = `${currentWorkspace.folderPath}/skill.md`
         const result = await window.electronAPI.fs.readFile(skillMdPath, currentWorkspace.folderPath)
@@ -876,7 +845,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 
       // 獲取當前終端的 shell 類型
       const currentTerminal = availableTerminals.find(t => t.id === targetTerminalId)
-      const shellType = currentTerminal?.shell || 'powershell'
+      const shellType = (currentTerminal as any)?.shell || 'powershell'
       const isWindows = shellType.toLowerCase().includes('powershell') || 
                         shellType.toLowerCase().includes('pwsh') || 
                         shellType.toLowerCase().includes('cmd') ||
@@ -915,24 +884,66 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         console.log('[CopilotChat] Using AI-driven knowledge selection (HIGH PRECISION), available knowledge:', allKnowledge.length)
         
         // 第一階段：讓 AI 分析哪些知識庫相關
-        // 智能預覽：取開頭、中間、結尾片段，確保代表性
+        // 智能預覽：優先顯示包含問題關鍵詞的片段
+        const extractKeywords = (question: string) => {
+          // 提取問題中的關鍵詞（去除常見詞）
+          const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
+          return question.split(/[\s,，、。！？;；]+/)
+            .filter(word => word.length >= 2 && !stopWords.includes(word))
+        }
+        
+        const keywords = extractKeywords(userQuestion)
+        console.log('[CopilotChat] Extracted keywords for smart preview:', keywords)
+        
         const knowledgeListPrompt = allKnowledge.map((k, idx) => {
           const content = k.content
           const contentLength = content.length
           let preview = ''
+          let hasKeywordMatch = false
           
           if (contentLength <= 2000) {
             // 短文件：完整預覽
             preview = content.replace(/\n/g, ' ')
           } else {
-            // 長文件：分段採樣（開頭 800 + 中間 600 + 結尾 600 = 2000 字）
-            const head = content.substring(0, 800)
-            const middle = content.substring(Math.floor(contentLength / 2) - 300, Math.floor(contentLength / 2) + 300)
-            const tail = content.substring(contentLength - 600)
-            preview = `${head.replace(/\n/g, ' ')}\n...[中略]...\n${middle.replace(/\n/g, ' ')}\n...[中略]...\n${tail.replace(/\n/g, ' ')}`
+            // 長文件：先嘗試關鍵詞匹配
+            const keywordMatches: Array<{keyword: string, pos: number}> = []
+            keywords.forEach(keyword => {
+              const lowerContent = content.toLowerCase()
+              const lowerKeyword = keyword.toLowerCase()
+              let pos = lowerContent.indexOf(lowerKeyword)
+              while (pos !== -1) {
+                keywordMatches.push({ keyword, pos })
+                pos = lowerContent.indexOf(lowerKeyword, pos + 1)
+              }
+            })
+            
+            if (keywordMatches.length > 0) {
+              // 找到關鍵詞：優先顯示關鍵詞周圍的內容
+              hasKeywordMatch = true
+              const snippets: string[] = []
+              const sortedMatches = keywordMatches.sort((a, b) => a.pos - b.pos)
+              
+              // 取前3個關鍵詞位置，每個取前後各400字
+              for (let i = 0; i < Math.min(3, sortedMatches.length); i++) {
+                const match = sortedMatches[i]
+                const start = Math.max(0, match.pos - 400)
+                const end = Math.min(contentLength, match.pos + 400)
+                const snippet = content.substring(start, end)
+                snippets.push(`...${snippet.replace(/\n/g, ' ')}...`)
+              }
+              
+              preview = snippets.join('\n[關鍵內容]\n')
+            } else {
+              // 沒找到關鍵詞：使用原策略（開頭 + 中間 + 結尾）
+              const head = content.substring(0, 800)
+              const middle = content.substring(Math.floor(contentLength / 2) - 300, Math.floor(contentLength / 2) + 300)
+              const tail = content.substring(contentLength - 600)
+              preview = `${head.replace(/\n/g, ' ')}\n...[中略]...\n${middle.replace(/\n/g, ' ')}\n...[中略]...\n${tail.replace(/\n/g, ' ')}`
+            }
           }
           
-          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   內容長度: ${(contentLength / 1024).toFixed(1)}KB\n   預覽:\n${preview}${contentLength > 2000 ? '\n   [已截取關鍵片段]' : ''}`
+          const matchInfo = hasKeywordMatch ? ` ✓包含關鍵詞` : ''
+          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${matchInfo}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   內容長度: ${(contentLength / 1024).toFixed(1)}KB\n   預覽:\n${preview}${contentLength > 2000 ? '\n   [已截取關鍵片段]' : ''}`
         }).join('\n\n---\n\n')
         
         const selectionSystemPrompt = `你是知識庫選擇助手（高精準模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
@@ -942,14 +953,17 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 ${knowledgeListPrompt}
 
 ## 選擇策略：
-1. **優先保證數量**：至少選擇 2-3 個相關知識庫（除非真的完全無關）
-2. **深度分析**：仔細閱讀預覽內容（包含開頭、中間、結尾片段）
-3. **語意相關**：即使關鍵詞不完全匹配，只要主題相關就應選擇
-4. **最多選擇**：最多 5 個，確保質量
+1. **關鍵詞優先**：標記「✓包含關鍵詞」的知識庫通常最相關，優先選擇
+2. **精準匹配**：仔細閱讀預覽內容，確認是否真的回答用戶問題
+3. **深度而非廣度**：選1個完全相關的，勝過3個略有關聯的
+4. **數量控制**：
+   - 找到精準答案：選 1-2 個
+   - 需要組合多個知識：選 2-4 個
+   - 主題廣泛：最多 5 個
 
 ## 輸出格式：
-只回答知識庫的編號，用逗號分隔，例如：1,3,5
-如果完全無相關知識庫（非常罕見），回答：無`
+只回答知識庫的編號，用逗號分隔，例如：3,7,11
+如果完全無相關知識庫，回答：無`
 
         try {
           const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
@@ -968,7 +982,7 @@ ${knowledgeListPrompt}
           if (content && !content.includes('無') && !content.includes('没有')) {
             const matches = content.match(/\d+/g)
             if (matches) {
-              selectedIndices.push(...matches.map(n => parseInt(n) - 1))
+              selectedIndices.push(...matches.map((n: string) => parseInt(n) - 1))
             }
           }
           

@@ -298,8 +298,9 @@ export interface CopilotConfig {
 }
 
 export interface CopilotMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system' | 'info';
   content: string;
+  timestamp?: number;
 }
 
 export interface CopilotChatOptions {
