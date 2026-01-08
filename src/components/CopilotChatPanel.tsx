@@ -852,10 +852,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     
     // 初始化處理步驟
     const steps: ProcessingStep[] = [
-      { id: 'skills', label: '🎯 分析技能需求', status: 'pending' },
-      { id: 'index', label: '🔍 查詢知識索引', status: 'pending' },
-      { id: 'knowledge', label: '📚 載入知識庫', status: 'pending' },
-      { id: 'generate', label: '✨ 生成回應', status: 'pending' }
+      { id: 'skills', label: '🎯 分析技能需求 [本地算法]', status: 'pending' },
+      { id: 'index', label: '🔍 AI 智能選擇文檔 [AI 第 1 次]', status: 'pending' },
+      { id: 'knowledge', label: '📚 載入知識庫內容 [本地讀取]', status: 'pending' },
+      { id: 'generate', label: '✨ 生成完整回應 [AI 第 2 次]', status: 'pending' }
     ]
     setProcessingSteps(steps)
     setShowSteps(true)
@@ -1843,220 +1843,220 @@ ${skillsPrompt}${knowledgePrompt}
           </div>
 
           <div className="copilot-chat-actions">
-            <div style={{ 
-              padding: '12px', 
-              backgroundColor: '#1e1e1e', 
-              borderRadius: '6px',
-              border: '1px solid #2d2d2d',
-              width: '100%',
-              boxSizing: 'border-box'
-            }}>
-              {/* 終端選擇 */}
-              {availableTerminals.length > 0 && (
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '8px',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: '#8c8c8c',
-                    fontWeight: '600',
-                    flexShrink: 0,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    💻 終端
-                  </div>
-                  <select
-                    value={targetTerminalId}
-                    onChange={(e) => setTargetTerminalId(e.target.value)}
-                    style={{
-                      flex: 1,
-                      minWidth: '80px',
-                      maxWidth: '100%',
-                      padding: '6px 8px',
-                      fontSize: '12px',
-                      backgroundColor: '#2d2d2d',
-                      color: '#e0e0e0',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {availableTerminals.map(terminal => (
-                      <option key={terminal.id} value={terminal.id}>
-                        {terminal.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+            {(availableTerminals.length > 0 || oracleInstances.length > 0 || webViewInstances.length > 0) ? (
+              <div style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '8px 12px',
+                backgroundColor: '#1e1e1e', 
+                borderRadius: '6px',
+                border: '1px solid #2d2d2d',
+                width: '100%',
+                boxSizing: 'border-box',
+                flexWrap: 'wrap'
+              }}>
+                {/* 終端選擇 */}
+                {availableTerminals.length > 0 && (
+                  <>
+                    <div style={{ 
+                      fontSize: '14px',
+                      flexShrink: 0
+                    }}>
+                      💻
+                    </div>
+                    <select
+                      value={targetTerminalId}
+                      onChange={(e) => setTargetTerminalId(e.target.value)}
+                      style={{
+                        minWidth: '120px',
+                        padding: '6px 8px',
+                        fontSize: '12px',
+                        backgroundColor: '#2d2d2d',
+                        color: '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {availableTerminals.map(terminal => (
+                        <option key={terminal.id} value={terminal.id}>
+                          {terminal.title}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
 
-              {/* 資料庫選擇 */}
-              {oracleInstances.length > 0 && (
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '8px',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: '#8c8c8c',
-                    fontWeight: '600',
-                    flexShrink: 0,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    🗄️ 資料庫
-                  </div>
-                  <select
-                    value={selectedOracleId}
-                    onChange={(e) => {
-                      setSelectedOracleId(e.target.value)
-                      setLoadedOracleData(false) // 切換時清除已讀取狀態
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: '60px',
-                      maxWidth: '100%',
-                      padding: '6px 8px',
-                      fontSize: '12px',
-                      backgroundColor: '#2d2d2d',
-                      color: '#e0e0e0',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {oracleInstances.map(oracle => (
-                      <option key={oracle.id} value={oracle.id}>
-                        {oracle.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      const selectedOracle = oracleInstances.find(o => o.id === selectedOracleId)
-                      if (selectedOracle?.oracleQueryResult) {
-                        setLoadedOracleData(true)
-                        setLoadedWebPageData(false)
-                      } else {
-                        setError('請先執行 Oracle 查詢')
-                      }
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#dc2626',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      transition: 'background-color 0.15s'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.backgroundColor = '#e53e3e'
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.backgroundColor = '#dc2626'
-                    }}
-                  >
-                    🔍 分析
-                  </button>
-                </div>
-              )}
+                {/* 分隔線 */}
+                {availableTerminals.length > 0 && (oracleInstances.length > 0 || webViewInstances.length > 0) && (
+                  <div style={{
+                    width: '1px',
+                    height: '24px',
+                    backgroundColor: '#444',
+                    flexShrink: 0
+                  }} />
+                )}
 
-              {/* 網頁選擇 */}
-              {webViewInstances.length > 0 && (
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '8px'
-                }}>
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: '#8c8c8c',
-                    fontWeight: '600',
-                    flexShrink: 0,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    🌐 網頁
-                  </div>
-                  <select
-                    value={selectedWebViewId}
-                    onChange={(e) => {
-                      setSelectedWebViewId(e.target.value)
-                      setLoadedWebPageData(false) // 切換時清除已讀取狀態
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: '60px',
-                      maxWidth: '100%',
-                      padding: '6px 8px',
-                      fontSize: '12px',
-                      backgroundColor: '#2d2d2d',
-                      color: '#e0e0e0',
-                      border: '1px solid #444',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {webViewInstances.map(webview => (
-                      <option key={webview.id} value={webview.id}>
-                        {webview.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      const selectedWebView = webViewInstances.find(w => w.id === selectedWebViewId)
-                      if (selectedWebView?.webviewContent) {
-                        setLoadedWebPageData(true)
+                {/* 資料庫選擇 */}
+                {oracleInstances.length > 0 && (
+                  <>
+                    <div style={{ 
+                      fontSize: '14px',
+                      flexShrink: 0
+                    }}>
+                      🗄️
+                    </div>
+                    <select
+                      value={selectedOracleId}
+                      onChange={(e) => {
+                        setSelectedOracleId(e.target.value)
                         setLoadedOracleData(false)
-                      } else {
-                        setError('網頁內容為空，請確認網頁已加載')
-                      }
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#16a34a',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      transition: 'background-color 0.15s'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.backgroundColor = '#22c55e'
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.backgroundColor = '#16a34a'
-                    }}
-                  >
-                    🌐 分析
-                  </button>
-                </div>
-              )}
+                      }}
+                      style={{
+                        minWidth: '120px',
+                        padding: '6px 8px',
+                        fontSize: '12px',
+                        backgroundColor: '#2d2d2d',
+                        color: '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {oracleInstances.map(oracle => (
+                        <option key={oracle.id} value={oracle.id}>
+                          {oracle.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const selectedOracle = oracleInstances.find(o => o.id === selectedOracleId)
+                        if (selectedOracle?.oracleQueryResult) {
+                          setLoadedOracleData(true)
+                          setLoadedWebPageData(false)
+                        } else {
+                          setError('請先執行 Oracle 查詢')
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#dc2626',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        transition: 'background-color 0.15s'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.backgroundColor = '#e53e3e'
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.backgroundColor = '#dc2626'
+                      }}
+                    >
+                      分析
+                    </button>
+                  </>
+                )}
 
-              {availableTerminals.length === 0 && oracleInstances.length === 0 && webViewInstances.length === 0 && (
-                <div style={{ 
-                  padding: '20px', 
-                  textAlign: 'center', 
-                  color: '#666',
-                  fontSize: '12px'
-                }}>
-                  暫無可用的終端或實例
-                </div>
-              )}
-            </div>
+                {/* 分隔線 */}
+                {oracleInstances.length > 0 && webViewInstances.length > 0 && (
+                  <div style={{
+                    width: '1px',
+                    height: '24px',
+                    backgroundColor: '#444',
+                    flexShrink: 0
+                  }} />
+                )}
+
+                {/* 網頁選擇 */}
+                {webViewInstances.length > 0 && (
+                  <>
+                    <div style={{ 
+                      fontSize: '14px',
+                      flexShrink: 0
+                    }}>
+                      🌐
+                    </div>
+                    <select
+                      value={selectedWebViewId}
+                      onChange={(e) => {
+                        setSelectedWebViewId(e.target.value)
+                        setLoadedWebPageData(false)
+                      }}
+                      style={{
+                        minWidth: '120px',
+                        padding: '6px 8px',
+                        fontSize: '12px',
+                        backgroundColor: '#2d2d2d',
+                        color: '#e0e0e0',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {webViewInstances.map(webview => (
+                        <option key={webview.id} value={webview.id}>
+                          {webview.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const selectedWebView = webViewInstances.find(w => w.id === selectedWebViewId)
+                        if (selectedWebView?.webviewContent) {
+                          setLoadedWebPageData(true)
+                          setLoadedOracleData(false)
+                        } else {
+                          setError('網頁內容為空，請確認網頁已加載')
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#16a34a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        transition: 'background-color 0.15s'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.backgroundColor = '#22c55e'
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.backgroundColor = '#16a34a'
+                      }}
+                    >
+                      分析
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ 
+                padding: '12px',
+                backgroundColor: '#1e1e1e', 
+                borderRadius: '6px',
+                border: '1px solid #2d2d2d',
+                width: '100%',
+                boxSizing: 'border-box',
+                textAlign: 'center', 
+                color: '#666',
+                fontSize: '12px'
+              }}>
+                暫無可用的終端或實例
+              </div>
+            )}
           </div>
 
           <div className="copilot-chat-input-area">
