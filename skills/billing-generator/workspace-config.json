@@ -1,0 +1,11 @@
+{
+  "name": "账单产生器",
+  "folderPath": "C:\\_Repositories\\GitHub\\fareastone-mikekuan\\better-agent-terminal\\skills\\billing-generator",
+  "skillConfig": {
+    "isSkill": true,
+    "description": "UBL数据库出账流程模拟技能",
+    "tags": ["billing", "database", "UBL", "simulation"],
+    "author": "System",
+    "version": "1.0.0"
+  }
+}

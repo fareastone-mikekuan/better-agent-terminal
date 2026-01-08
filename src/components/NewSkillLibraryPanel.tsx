@@ -6,6 +6,56 @@ import { skillStore } from '../stores/skill-store'
 import { DEFAULT_CATEGORIES, SKILL_TEMPLATES, isAIAgentSkill } from '../types/skill'
 import type { UnifiedSkill, SkillStep, Skill } from '../types/skill'
 import { SkillMarketplacePanel } from './SkillMarketplacePanel'
+import { parseWorkflowFromMarkdown } from '../utils/workflow-parser'
+import { v4 as uuidv4 } from 'uuid'
+
+/**
+ * 從 Markdown 內容解析技能定義
+ */
+function parseMarkdownSkill(markdown: string, filename: string): Skill {
+  console.log('[parseMarkdownSkill] 開始解析 Markdown')
+  console.log('[parseMarkdownSkill] 檔案名稱:', filename)
+  console.log('[parseMarkdownSkill] 內容長度:', markdown.length)
+  
+  // 提取標題
+  const titleMatch = markdown.match(/^#\s+(.+)$/m)
+  const title = titleMatch ? titleMatch[1].trim() : filename.replace(/\.md$/, '')
+  console.log('[parseMarkdownSkill] 提取標題:', title)
+  
+  // 提取描述
+  const descMatch = markdown.match(/##\s+功能描述\s*\n([\s\S]*?)(?=\n##|$)/i)
+  const description = descMatch ? descMatch[1].trim() : ''
+  console.log('[parseMarkdownSkill] 提取描述:', description.substring(0, 50))
+  
+  // 提取標籤
+  const tagsMatch = markdown.match(/(?:tags|標籤)[:：]\s*\[([^\]]+)\]/i)
+  const tags = tagsMatch 
+    ? tagsMatch[1].split(',').map(t => t.trim())
+    : []
+  console.log('[parseMarkdownSkill] 提取標籤:', tags)
+  
+  // 提取分類
+  const categoryMatch = markdown.match(/(?:category|分類)[:：]\s*(.+)$/im)
+  const category = categoryMatch ? categoryMatch[1].trim() : '其他'
+  console.log('[parseMarkdownSkill] 提取分類:', category)
+  
+  // 解析工作流程步驟
+  const steps = parseWorkflowFromMarkdown(markdown)
+  console.log('[parseMarkdownSkill] 解析步驟數量:', steps.length)
+  console.log('[parseMarkdownSkill] 步驟詳情:', steps)
+  
+  return {
+    type: 'workflow',
+    id: uuidv4(),
+    name: title.replace(/^[📊🔧⚙️🎯🔍]+\s*/, ''), // 移除開頭的表情符號
+    description,
+    category,
+    tags,
+    steps,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }
+}
 
 interface NewSkillLibraryPanelProps {
   onClose: () => void
@@ -84,18 +134,33 @@ export function NewSkillLibraryPanel({ onClose }: NewSkillLibraryPanelProps) {
 
     try {
       const text = await file.text()
-      const data = JSON.parse(text)
+      const fileName = file.name.toLowerCase()
       
-      if (Array.isArray(data)) {
-        const count = skillStore.importSkills(data)
-        console.log('[SkillLibrary] 匯入了', count, '個技能')
-        loadSkills() // 強制刷新技能列表
-        alert(`成功匯入 ${count} 個技能`)
+      // 判斷檔案類型
+      if (fileName.endsWith('.md')) {
+        // Markdown 格式技能
+        const skill = parseMarkdownSkill(text, file.name)
+        skillStore.importSkill(skill)
+        console.log('[SkillLibrary] 從 Markdown 匯入了技能:', skill.name)
+        loadSkills()
+        alert(`成功匯入技能：${skill.name}`)
+      } else if (fileName.endsWith('.json')) {
+        // JSON 格式技能
+        const data = JSON.parse(text)
+        
+        if (Array.isArray(data)) {
+          const count = skillStore.importSkills(data)
+          console.log('[SkillLibrary] 匯入了', count, '個技能')
+          loadSkills()
+          alert(`成功匯入 ${count} 個技能`)
+        } else {
+          skillStore.importSkill(data)
+          console.log('[SkillLibrary] 匯入了 1 個技能')
+          loadSkills()
+          alert('成功匯入技能')
+        }
       } else {
-        skillStore.importSkill(data)
-        console.log('[SkillLibrary] 匯入了 1 個技能')
-        loadSkills() // 強制刷新技能列表
-        alert('成功匯入技能')
+        throw new Error('不支援的檔案格式，請使用 .md 或 .json 檔案')
       }
     } catch (error) {
       console.error('[SkillLibrary] 匯入失敗:', error)
@@ -567,7 +632,7 @@ export function NewSkillLibraryPanel({ onClose }: NewSkillLibraryPanelProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.skill.json"
+        accept=".json,.skill.json,.md"
         style={{ display: 'none' }}
         onChange={handleFileChange}
       />

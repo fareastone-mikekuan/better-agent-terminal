@@ -1,0 +1,114 @@
+{
+  "type": "workflow",
+  "name": "帳單產生器",
+  "description": "模擬 UBL 電信系統的完整帳單產生流程，包含帳戶驗證、費用計算、稅金處理、帳單與發票生成",
+  "category": "數據庫操作",
+  "tags": ["billing", "database", "UBL", "simulation", "invoice"],
+  "author": "System",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "type": "terminal",
+      "command": "Write-Host \"🔍 開始模擬出帳流程...\" -ForegroundColor Cyan",
+      "description": "初始化提示"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 帳戶資訊: ACCT_ID=123456, SUBSCR_ID=0912345678, CUST_TYPE=PERSONAL\" -ForegroundColor Yellow",
+      "description": "查詢帳戶資訊 (FET_TB_CM_ACCT)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 帳單週期: CYCLE=10, BILL_FROM=20260101, BILL_TO=20260131\" -ForegroundColor Yellow",
+      "description": "查詢帳單週期 (FET_TB_BL_BILL_CNTRL)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 訂閱產品: OFFER_ID=30001, CHARGE_CODE=RC_BASIC\" -ForegroundColor Yellow",
+      "description": "查詢訂閱產品 (FET_TB_PD_SUBSCR)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 費用計算: AMOUNT=1500, TAX_TYPE=TX1, DISCOUNT=-100\" -ForegroundColor Yellow",
+      "description": "計算費用資訊 (FET_TB_BL_CHARGE)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 狀態檢查: 無暫停或終止記錄\" -ForegroundColor Green",
+      "description": "檢查暫停終止狀態 (FET_TB_CM_ACCT_STATUS)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"💰 計算稅金與折扣中...\" -ForegroundColor Cyan",
+      "description": "計算提示"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB查詢] 稅金設定: INV_TYPE=2, TAX_RATE=5%\" -ForegroundColor Yellow",
+      "description": "查詢稅金與發票設定 (FET_TB_INV_CONFIG)"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"📄 生成帳單與發票...\" -ForegroundColor Cyan",
+      "description": "生成提示"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB模擬] INSERT 帳單主檔: BILL_NBR=B20260108001, AMOUNT=1500, TAX=75\" -ForegroundColor Magenta",
+      "description": "寫入帳單主檔 (FET_TB_BL_BILL_MAST) - 模擬"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"[DB模擬] INSERT 發票主檔: INV_NUMBER=AA2026010800000001, TAX_ID=12345678\" -ForegroundColor Magenta",
+      "description": "寫入發票主檔 (FET_TB_INV_INVOICE) - 模擬"
+    },
+    {
+      "type": "terminal",
+      "command": "Write-Host \"✅ 出帳模擬完成！總金額: NT$1575 (含稅)\" -ForegroundColor Green",
+      "description": "完成提示"
+    },
+    {
+      "type": "api",
+      "url": "https://httpbin.org/post",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "bill_id": "B20260108001",
+        "acct_id": 123456,
+        "amount": 1500,
+        "tax": 75,
+        "total": 1575,
+        "status": "completed",
+        "timestamp": "2026-01-08T19:00:00Z"
+      },
+      "description": "發送帳單完成通知（測試API）"
+    }
+  ],
+  "mockData": {
+    "account": {
+      "ACCT_ID": 123456,
+      "SUBSCR_ID": "0912345678",
+      "CUST_TYPE": "PERSONAL",
+      "PAYMENT_TIMING": "POSTPAID",
+      "CUST_NAME": "測試客戶",
+      "TAX_ID": "A123456789"
+    },
+    "bill": {
+      "CYCLE": 10,
+      "BILL_FROM": "20260101",
+      "BILL_TO": "20260131",
+      "BILL_SEQ": 2026010001
+    },
+    "charges": {
+      "RC_BASIC": 999,
+      "UC_DATA": 500,
+      "DSC_EBILL": -100,
+      "SUBTOTAL": 1399,
+      "TAX": 70,
+      "TOTAL": 1469
+    }
+  },
+  "notes": "此技能為模擬用途，不會實際寫入數據庫。所有 INSERT 語句僅顯示在終端輸出中。"
+}

@@ -14,6 +14,8 @@ interface StepResult {
   status: 'pending' | 'running' | 'success' | 'error' | 'skipped'
   message?: string
   duration?: number
+  startTime?: number
+  endTime?: number
 }
 
 export function WorkflowExecutor({
@@ -90,7 +92,7 @@ export function WorkflowExecutor({
 
   const executeStep = async (step: SkillWorkflowStep, index: number): Promise<boolean> => {
     const startTime = Date.now()
-    updateStepResult(index, { status: 'running' })
+    updateStepResult(index, { status: 'running', startTime })
     
     try {
       // 對於需要面板的步驟類型，先創建面板
@@ -101,7 +103,8 @@ export function WorkflowExecutor({
           updateStepResult(index, {
             status: 'error',
             message: '無法創建面板',
-            duration: Date.now() - startTime
+            duration: Date.now() - startTime,
+            endTime: Date.now()
           })
           return false
         }
@@ -117,7 +120,8 @@ export function WorkflowExecutor({
             updateStepResult(index, {
               status: 'success',
               message: `✅ 已在終端面板執行: ${step.command}`,
-              duration: Date.now() - startTime
+              duration: Date.now() - startTime,
+              endTime: Date.now()
             })
           }
           break
@@ -128,7 +132,8 @@ export function WorkflowExecutor({
             updateStepResult(index, {
               status: 'success',
               message: `✅ 已在 API Tester 面板執行: ${step.apiMethod} ${step.apiUrl}`,
-              duration: Date.now() - startTime
+              duration: Date.now() - startTime,
+              endTime: Date.now()
             })
           }
           break
@@ -139,7 +144,8 @@ export function WorkflowExecutor({
             updateStepResult(index, {
               status: 'success',
               message: `✅ 已在 Oracle 面板執行查詢`,
-              duration: Date.now() - startTime
+              duration: Date.now() - startTime,
+              endTime: Date.now()
             })
           }
           break
@@ -253,7 +259,7 @@ export function WorkflowExecutor({
   const getStatusIcon = (status: StepResult['status']) => {
     switch (status) {
       case 'pending': return '⏸️'
-      case 'running': return '▶️'
+      case 'running': return '🔄'
       case 'success': return '✅'
       case 'error': return '❌'
       case 'skipped': return '⏭️'
@@ -267,6 +273,24 @@ export function WorkflowExecutor({
       case 'success': return '#7bbda4'
       case 'error': return '#cb6077'
       case 'skipped': return '#666'
+    }
+  }
+
+  const getStatusLabel = (status: StepResult['status'], type: string) => {
+    const typeLabel = type === 'terminal' ? '終端執行' :
+                      type === 'api' ? 'API 調用' :
+                      type === 'db' ? '資料庫' :
+                      type === 'web' ? '網頁開啟' :
+                      type === 'file' ? '檔案操作' :
+                      type === 'wait' ? '等待中' : '執行中'
+    
+    switch (status) {
+      case 'pending': return `等待中`
+      case 'running': return `進行中`
+      case 'success': return `完成`
+      case 'error': return `失敗`
+      case 'skipped': return `跳過`
+      default: return ''
     }
   }
 
@@ -357,7 +381,7 @@ export function WorkflowExecutor({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  minWidth: '40px'
+                  minWidth: '50px'
                 }}>
                   <div style={{
                     fontSize: '20px',
@@ -372,17 +396,45 @@ export function WorkflowExecutor({
                   }}>
                     #{index + 1}
                   </div>
+                  {result.duration !== undefined && (
+                    <div style={{
+                      fontSize: '10px',
+                      color: getStatusColor(result.status),
+                      marginTop: '2px',
+                      fontWeight: 'bold'
+                    }}>
+                      {(result.duration / 1000).toFixed(1)}s
+                    </div>
+                  )}
                 </div>
 
                 {/* 步驟內容 */}
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontWeight: 'bold',
-                    fontSize: '13px',
-                    marginBottom: '4px',
-                    color: getStatusColor(result.status)
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '4px'
                   }}>
-                    {step.label}
+                    <span style={{
+                      fontWeight: 'bold',
+                      fontSize: '13px',
+                      color: getStatusColor(result.status)
+                    }}>
+                      {step.label}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '2px 6px',
+                      borderRadius: '3px',
+                      backgroundColor: result.status === 'running' ? 'rgba(74, 158, 255, 0.2)' : 
+                                     result.status === 'success' ? 'rgba(123, 189, 164, 0.2)' :
+                                     result.status === 'error' ? 'rgba(203, 96, 119, 0.2)' : 'rgba(136, 136, 136, 0.2)',
+                      color: getStatusColor(result.status),
+                      fontWeight: 'bold'
+                    }}>
+                      ({getStatusLabel(result.status, step.type)})
+                    </span>
                   </div>
                   
                   <div style={{

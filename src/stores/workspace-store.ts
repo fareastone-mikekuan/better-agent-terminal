@@ -465,7 +465,7 @@ class WorkspaceStore {
   // Get terminals for current workspace
   getWorkspaceTerminals(workspaceId: string): TerminalInstance[] {
     const terminals = this.state.terminals.filter(t => t.workspaceId === workspaceId)
-    console.log('[WorkspaceStore] getWorkspaceTerminals for', workspaceId, ':', terminals.length, 'terminals')
+    // console.log('[WorkspaceStore] getWorkspaceTerminals for', workspaceId, ':', terminals.length, 'terminals')
     return terminals
   }
 

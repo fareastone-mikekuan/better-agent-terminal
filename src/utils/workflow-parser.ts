@@ -16,23 +16,63 @@ import type { SkillWorkflowStep } from '../types'
 export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] {
   const steps: SkillWorkflowStep[] = []
   
+  console.log('[workflow-parser] 開始解析 Workflow')
+  console.log('[workflow-parser] 內容長度:', content.length)
+  
   // 找到 Workflow 區塊
   const workflowMatch = content.match(/##\s+Workflow\s*\n([\s\S]*?)(?=\n##|\n---|\n```|$)/i)
   if (!workflowMatch) {
+    console.log('[workflow-parser] 未找到 Workflow 區塊')
     return steps
   }
   
+  console.log('[workflow-parser] 找到 Workflow 區塊')
   const workflowContent = workflowMatch[1]
+  console.log('[workflow-parser] Workflow 內容長度:', workflowContent.length)
+  console.log('[workflow-parser] Workflow 內容:', workflowContent.substring(0, 200))
   
-  // 解析每一行
-  const lines = workflowContent.split('\n')
+  // 合併被自動換行的長行
+  // 如果一行不是以數字開頭（即不是新的步驟），則合併到上一行
+  const rawLines = workflowContent.split('\n').map(l => l.replace(/\r/g, ''))
+  const mergedLines: string[] = []
+  let currentLine = ''
   
-  for (const line of lines) {
+  for (const line of rawLines) {
+    const trimmed = line.trim()
+    // 檢查是否是新步驟的開始（數字 + 點 + 空格 + 方括號）
+    if (/^\d+\.\s*\[/.test(trimmed)) {
+      // 這是新步驟，保存上一行（如果有）
+      if (currentLine) {
+        mergedLines.push(currentLine)
+      }
+      currentLine = trimmed
+    } else if (trimmed) {
+      // 這是續行，合併到當前行
+      currentLine += ' ' + trimmed
+    }
+  }
+  // 保存最後一行
+  if (currentLine) {
+    mergedLines.push(currentLine)
+  }
+  
+  const lines = mergedLines
+  console.log('[workflow-parser] 合併後行數:', lines.length)
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    console.log(`[workflow-parser] 第${i+1}行:`, JSON.stringify(line.substring(0, 100)))
+    
     // 匹配格式: 1. [TYPE] content - description
     // 使用更精确的匹配，避免把命令中的 "-" 当作分隔符
     // 分隔符必须是 " - "（前后有空格）
     const match = line.match(/^\s*\d+\.\s*\[(\w+(?::\w+)?)\]\s+(.+)$/)
-    if (!match) continue
+    if (!match) {
+      console.log(`[workflow-parser] 第${i+1}行不匹配正則`)
+      continue
+    }
+    
+    console.log('[workflow-parser] 匹配成功! 解析步驟:', line.substring(0, 80))
     
     const [, type, rest] = match
     
@@ -144,9 +184,13 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
     
     if (step) {
       steps.push(step)
+      console.log('[workflow-parser] 成功添加步驟:', step.type, step.label?.substring(0, 50))
+    } else {
+      console.log('[workflow-parser] 無法解析步驟:', line.substring(0, 80))
     }
   }
   
+  console.log('[workflow-parser] 完成解析，共', steps.length, '個步驟')
   return steps
 }
 
