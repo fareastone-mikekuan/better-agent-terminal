@@ -15,7 +15,7 @@ interface KnowledgeBasePanelProps {
 }
 
 export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
-  const [activeTab, setActiveTab] = useState<'skills' | 'knowledge' | 'categories'>('knowledge')
+  const [activeTab, setActiveTab] = useState<'skills' | 'knowledge' | 'index'>('knowledge')
   const [entries, setEntries] = useState(knowledgeStore.getEntries())
   const [isLearning, setIsLearning] = useState(false)
   const [learningStatus, setLearningStatus] = useState<string>('')
@@ -422,6 +422,76 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
     }
   }, [])
 
+  // 生成智能索引
+  const generateIndex = async (entry: KnowledgeEntry): Promise<void> => {
+    try {
+      // 取前 10,000 字元用於生成索引
+      const preview = entry.content.slice(0, 10000)
+      
+      const prompt = `請為以下文件生成詳細索引，用於後續精準查詢：
+
+文件名：${entry.name}
+分類：${entry.category}
+大小：${(entry.size / 1024).toFixed(1)} KB
+
+內容預覽：
+${preview}
+
+請提供 JSON 格式（不要包含任何其他文字）：
+{
+  "summary": "100-200字內的摘要，說明這個文件的核心內容和用途",
+  "keywords": ["關鍵詞1", "關鍵詞2", ...],
+  "topics": ["主題1", "主題2", ...],
+  "businessProcesses": ["業務流程1", "業務流程2", ...],
+  "technicalAreas": ["技術領域1", "技術領域2", ...]
+}
+
+要求：
+- keywords: 10-20個關鍵詞，包含專有名詞、功能名稱、表名、API名、程序名
+- topics: 5-10個主題標籤，高層次分類
+- businessProcesses: 相關業務流程，例如：立帳、開發票、折扣計算、退費、帳單生成
+- technicalAreas: 技術領域，例如：PL/SQL、資料庫設計、API設計、批次處理`
+
+      const response = await window.electronAPI.copilot.chat(`index-${entry.id}`, {
+        messages: [{ role: 'user', content: prompt }]
+      })
+
+      if (response.error) {
+        throw new Error(response.error)
+      }
+
+      // 解析 JSON
+      const content = String(response.content).trim()
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('無法解析索引 JSON')
+      }
+
+      const indexData = JSON.parse(jsonMatch[0])
+      
+      const index: import('../types/knowledge-base').KnowledgeIndex = {
+        fileId: entry.id,
+        fileName: entry.name,
+        category: entry.category,
+        summary: indexData.summary || '',
+        keywords: Array.isArray(indexData.keywords) ? indexData.keywords : [],
+        topics: Array.isArray(indexData.topics) ? indexData.topics : [],
+        businessProcesses: Array.isArray(indexData.businessProcesses) ? indexData.businessProcesses : [],
+        technicalAreas: Array.isArray(indexData.technicalAreas) ? indexData.technicalAreas : [],
+        relatedFiles: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+
+      // 更新到 entry
+      await knowledgeStore.updateEntry(entry.id, { index })
+      
+    } catch (error) {
+      console.error('[KnowledgeBase] 生成索引失敗:', error)
+      // 索引生成失敗不影響主流程，靜默處理
+    }
+  }
+
   // 學習知識（使用 Copilot API 驗證）
   // sourceContent: optional override so we can learn large files without persisting the raw content into localStorage.
   const learnKnowledge = async (
@@ -456,8 +526,8 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       let offset = 0
       while (offset < contentForLearning.length) {
         const remaining = contentForLearning.slice(offset)
-        // Keep each chunk comfortably sized; final prompt will be clamped again below.
-        const chunk = sliceToTokenBudget(remaining, 22000)
+        // 深度學習：使用較小的 chunk 確保每個部分都被完整處理
+        const chunk = sliceToTokenBudget(remaining, 15000)
         if (!chunk) break
         chunks.push(chunk)
         offset += chunk.length
@@ -468,39 +538,50 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       const summaries: string[] = []
       let lastResponseModel: string | undefined
       
-      // Balanced compression: keep enough detail to be useful.
-      const MAX_EXTRACT_CHARS_PER_PART = 12000
+      // 深度學習模式：保留最大限度的細節（大幅提升輸出限制避免壓縮）
+      const MAX_EXTRACT_CHARS_PER_PART = 60000
 
       for (let i = 0; i < chunks.length; i++) {
-        setLearningStatus(`正在分析「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
+        setLearningStatus(`正在深度學習「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
         
-        const promptPrefix = `請分析以下文檔內容並「精簡但保留足夠細節」提取關鍵信息：
-      - 只移除冗詞/重複，避免把關鍵細節濃縮掉
-      - 請以條列/小節輸出（不要長篇敘述），保留專有名詞、代碼、欄位名、錯誤碼
-      - 每一部分輸出總長度不超過 ${MAX_EXTRACT_CHARS_PER_PART} 個字元
-      - 盡量包含：規則/限制、例外情況、常見錯誤、最小可用範例（若有）
+        const promptPrefix = `請以【深度學習】模式處理以下文檔內容：
 
-如果是 API 文檔：列出 API 名稱、用途、關鍵參數/回傳、注意事項與範例（若有）
-如果是數據表：列出表/欄位結構、主鍵/索引、關鍵規則與例子（若有）
-如果是說明文檔：列出規則、流程、限制、常見錯誤與例子（若有）
+🎯 核心要求：保留原始內容，不要總結或濃縮
+
+深度學習規則：
+✓ 保留所有表格的完整資料（包括每一行）
+✓ 保留所有代碼、SQL 語句、配置的完整內容
+✓ 保留所有欄位名稱、數值、參數
+✓ 保留所有規則說明、注意事項、範例
+✓ 只做格式整理（如：將 CSV 轉為 Markdown 表格）
+✗ 不要省略任何資料行
+✗ 不要用「...等」或「其他類似」代替實際內容
+✗ 不要只列出前幾筆資料
+✗ 不要總結或濃縮
+
+輸出格式：
+- 使用 Markdown 表格格式（對於表格資料）
+- 使用代碼塊（對於代碼/SQL）
+- 保持原始結構和完整性
+- 每一部分最多 ${MAX_EXTRACT_CHARS_PER_PART} 個字元（如果原始內容更長，就分多個部分處理）
 
 文檔名稱：${entry.name}
 部分：${i + 1}/${chunks.length}
 
-內容：
+原始內容：
 `
 
   const promptSuffix = `
 
-請以結構化格式輸出關鍵信息：`
+請保持原始內容的完整性，只做格式優化。`
 
-  // Final safety clamp against model prompt limits.
-  const MODEL_PROMPT_TOKEN_LIMIT = 64000
-  const HEADROOM_TOKENS = 2500
+  // 深度學習：較小的chunk確保完整處理
+  const MODEL_PROMPT_TOKEN_LIMIT = 60000
+  const HEADROOM_TOKENS = 3000
   const targetTotalTokens = MODEL_PROMPT_TOKEN_LIMIT - HEADROOM_TOKENS
   const baseTokens = estimateTokens(promptPrefix + promptSuffix)
-  const chunkBudget = Math.max(2000, targetTotalTokens - baseTokens)
-  const safeChunk = sliceToTokenBudget(chunks[i], Math.min(22000, chunkBudget))
+  const chunkBudget = Math.max(5000, targetTotalTokens - baseTokens)
+  const safeChunk = sliceToTokenBudget(chunks[i], Math.min(15000, chunkBudget))
   const extractPrompt = `${promptPrefix}${safeChunk}${promptSuffix}`
 
         const response = await window.electronAPI.copilot.chat(`extract-${entry.id}-${i}`, {
@@ -522,27 +603,32 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       
       // 合併所有總結（先合併，再做一次整體壓縮）
       const mergedSummaries = summaries.join('\n\n')
-      let extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${mergedSummaries}`
+      let extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n學習模式：💎 深度學習\n\n${mergedSummaries}`
 
-      // 若合併後仍偏大，做第二次「整體壓縮」
-      // Only do the second pass when the merged result is clearly too large.
-      const SHOULD_COMPRESS = chunks.length > 2 || extractedContent.length > 60000
+      // 深度學習模式：只在內容過大時做適度整合，不進行激進壓縮
+      const SHOULD_COMPRESS = chunks.length > 3 && extractedContent.length > 100000
       if (SHOULD_COMPRESS) {
-        setLearningStatus(`正在壓縮「${entry.name}」...\n整合所有部分並生成更精簡版本`)
+        setLearningStatus(`正在整合「${entry.name}」...\n合併所有部分並保持完整性`)
 
-        const MAX_FINAL_CHARS = 35000
-        const compressPrompt = `你將收到一份已分段提取的重點，請再「整體整理與適度精簡」成一份更好用的知識卡：
-- 僅保留關鍵規則/介面/欄位/流程/限制/注意事項
-- 盡量用條列與小節
-- 最終輸出總長度不超過 ${MAX_FINAL_CHARS} 個字元
-- 不要加入與原文無關的推測
+        const MAX_FINAL_CHARS = 120000  // 深度學習：保留 120,000 字元
+        const compressPrompt = `你將收到一份已分段的深度學習內容，請進行合併整合（重點：保留完整資料，不要濃縮）：
+
+整合規則：
+✓ 保留所有分段的完整內容
+✓ 合併重複的標題/章節
+✓ 統一格式（如：統一表格格式）
+✗ 不要刪減資料行數
+✗ 不要省略任何欄位
+✗ 不要用摘要代替實際內容
+
+最終輸出總長度上限：${MAX_FINAL_CHARS} 個字元（如果內容本身就很長，保持原樣）
 
 文檔名稱：${entry.name}
 
-分段重點：
+分段內容：
 ${mergedSummaries}
 
-請輸出最終壓縮版：`
+請輸出整合後的完整內容（保持所有資料）：`
 
         const compressResponse = await window.electronAPI.copilot.chat(`compress-${entry.id}`, {
           messages: [{ role: 'user', content: compressPrompt }]
@@ -558,9 +644,11 @@ ${mergedSummaries}
 
         const compressed = String(compressResponse.content || '').trim()
         // Safety: if compress becomes too short (often loses useful detail), keep merged summaries.
-        extractedContent = compressed.length < 5000
-          ? `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${mergedSummaries}`
-          : `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n${compressed}`
+        extractedContent = compressed.length < 10000
+          ? `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n學習模式：💎 深度學習\n\n${mergedSummaries}`
+          : `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n學習模式：💎 深度學習\n\n${compressed}`
+      } else {
+        extractedContent = `# ${entry.name}\n原始大小：${contentSizeKB} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n學習模式：💎 深度學習\n\n${mergedSummaries}`
       }
 
       const learnedBytes = new Blob([extractedContent]).size
@@ -593,10 +681,31 @@ ${mergedSummaries}
       const newSizeKB = (learnedBytes / 1024).toFixed(1)
       const ratio = originalBytes > 0 ? ((1 - learnedBytes / originalBytes) * 100).toFixed(1) : '0.0'
 
+      // 深度學習模式：檢查壓縮率是否合理
+      const compressionRatio = parseFloat(ratio)
+      let statusMessage = `✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%`
+      
+      if (compressionRatio > 80) {
+        statusMessage += `\n\n⚠️ 注意：壓縮率過高（${ratio}%），可能遺漏了大量內容。\n建議：檢查文件內容是否完整讀取。`
+      } else if (compressionRatio > 50) {
+        statusMessage += `\n\n⚠️ 壓縮率較高（${ratio}%），深度學習建議保留 50% 以上內容。`
+      } else {
+        statusMessage += `\n\n✓ 深度學習模式：已保留 ${(100 - compressionRatio).toFixed(1)}% 內容\n內容已結構化，可在對話中使用！`
+      }
+
       const note = shouldStoreOriginalContent
         ? ''
         : '\n\n⚠️ 原始內容過大，為避免儲存空間不足，僅保存學習後內容（可重新匯入原檔再學習）。'
-      setLearningStatus(`✅ 已成功學習「${entry.name}」\n\n原始大小：${contentSizeKB} KB\n提取後：${newSizeKB} KB\n壓縮率：${ratio}%\n\n內容已結構化，可在對話中高效使用！${note}`)
+      setLearningStatus(statusMessage + note)
+      
+      // 學習完成後自動生成索引（背景執行）
+      const updatedEntry = knowledgeStore.getEntries().find(e => e.id === entry.id)
+      if (updatedEntry && updatedEntry.isLearned) {
+        setLearningStatus(statusMessage + note + '\n\n🔍 正在生成智能索引...')
+        generateIndex(updatedEntry).then(() => {
+          setEntries(knowledgeStore.getEntries())
+        })
+      }
       
       // 5秒後清除狀態
       setTimeout(() => {
@@ -643,9 +752,9 @@ ${mergedSummaries}
           const arrayBuffer = await file.arrayBuffer()
           const workbook = XLSX.read(arrayBuffer, { type: 'array' })
           
-          // 將所有工作表轉換為文本（限制行數避免過大）
+          // 將所有工作表轉換為文本（深度學習模式：讀取更多行）
           const sheets: string[] = []
-          const MAX_ROWS_PER_SHEET = 500 // 每個工作表最多讀取 500 行
+          const MAX_ROWS_PER_SHEET = 5000 // 深度學習：每個工作表最多讀取 5000 行
           
           workbook.SheetNames.forEach(sheetName => {
             const worksheet = workbook.Sheets[sheetName]
@@ -716,8 +825,32 @@ ${mergedSummaries}
           originalContent: content  // 保存完整的原始內容
         })
 
-        // 自動學習（使用 sourceContent，避免先把超大原文寫入 storage）
-        await learnKnowledge(entry, content, contentBytes)
+        // 深度學習模式：對於表格/結構化數據，直接保存轉換後格式，不經過 AI 處理
+        const isStructuredData = fileExt === 'xlsx' || fileExt === 'xls' || fileExt === 'csv'
+        
+        if (isStructuredData) {
+          // 表格數據：直接保存 Markdown 格式，不經過 AI
+          const learnedContent = `# ${fileName}\n原始大小：${(originalBytes / 1024).toFixed(1)} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n學習模式：💎 深度學習（表格完整保留）\n\n${content}`
+          const learnedBytes = new Blob([learnedContent]).size
+          const learnedModel = settingsStore.getCopilotConfig()?.model || 'direct-conversion'
+          
+          await knowledgeStore.updateEntry(entry.id, { 
+            content: learnedContent,
+            isLearned: true,
+            enabled: true,
+            learnedAt: Date.now(),
+            learnedSize: learnedBytes,
+            learnedModel
+          })
+          
+          const learnedKB = (learnedBytes / 1024).toFixed(1)
+          const ratio = originalBytes > 0 ? ((1 - learnedBytes / originalBytes) * 100).toFixed(1) : '0.0'
+          
+          setLearningStatus(`✅ 已完成深度學習「${fileName}」\n\n原始大小：${(originalBytes / 1024).toFixed(1)} KB\n學習後：${learnedKB} KB\n壓縮率：${ratio}%\n\n💎 表格數據已完整保留（未經 AI 壓縮）\n所有工作表和資料行都已轉換為 Markdown 格式！`)
+        } else {
+          // 其他文件：使用 AI 深度學習
+          await learnKnowledge(entry, content, contentBytes)
+        }
         
       } catch (error) {
         console.error('Failed to upload file:', error)
@@ -853,22 +986,22 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
               fontWeight: activeTab === 'knowledge' ? 'bold' : 'normal'
             }}
           >
-            📄 知識文檔
+            📚 知識文檔
           </button>
           <button
-            onClick={() => setActiveTab('categories')}
+            onClick={() => setActiveTab('index')}
             style={{
               padding: '8px 16px',
-              backgroundColor: activeTab === 'categories' ? '#2a3826' : 'transparent',
-              color: activeTab === 'categories' ? '#7bbda4' : '#888',
+              backgroundColor: activeTab === 'index' ? '#2a3826' : 'transparent',
+              color: activeTab === 'index' ? '#7bbda4' : '#888',
               border: 'none',
-              borderBottom: activeTab === 'categories' ? '2px solid #7bbda4' : '2px solid transparent',
+              borderBottom: activeTab === 'index' ? '2px solid #7bbda4' : '2px solid transparent',
               cursor: 'pointer',
               fontSize: '14px',
-              fontWeight: activeTab === 'categories' ? 'bold' : 'normal'
+              fontWeight: activeTab === 'index' ? 'bold' : 'normal'
             }}
           >
-            📂 分類管理
+            🔍 索引管理
           </button>
         </div>
 
@@ -986,7 +1119,7 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
             </div>
           )}
 
-          {/* Knowledge Tab */}
+          {/* Knowledge Documents Tab */}
           {activeTab === 'knowledge' && (
             <>
           {/* 統計資訊 */}
@@ -1337,6 +1470,24 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
             </div>
           </div>
 
+          {/* 進度顯示區域 */}
+          {learningStatus && (
+            <div style={{
+              marginBottom: '15px',
+              padding: '12px 15px',
+              backgroundColor: '#2a3826',
+              border: '1px solid #3a5836',
+              borderRadius: '6px',
+              color: '#7bbda4',
+              fontSize: '13px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-line',
+              fontFamily: 'monospace'
+            }}>
+              {learningStatus}
+            </div>
+          )}
+
           {/* 知識列表 */}
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
             {filteredEntries.length === 0 ? (
@@ -1626,14 +1777,517 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
           </>
           )}
 
-          {/* Categories Tab */}
-          {activeTab === 'categories' && (
+          {/* Index Management Tab */}
+          {activeTab === 'index' && (
             <div>
-              <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
-                管理知識庫分類，為每個分類啟用或停用提供給 AI。
-              </p>
-              <div style={{ color: '#888', fontSize: '13px' }}>
-                🚧 分類管理功能開發中...
+              {/* 進度顯示區域 */}
+              {learningStatus && (
+                <div style={{
+                  marginBottom: '15px',
+                  padding: '12px 15px',
+                  backgroundColor: '#2a3826',
+                  border: '1px solid #3a5836',
+                  borderRadius: '6px',
+                  color: '#7bbda4',
+                  fontSize: '13px',
+                  lineHeight: '1.6',
+                  whiteSpace: 'pre-line',
+                  fontFamily: 'monospace'
+                }}>
+                  {learningStatus}
+                </div>
+              )}
+
+              {/* 智能索引說明 */}
+              <div style={{ 
+                marginBottom: '20px',
+                padding: '15px',
+                backgroundColor: '#2a2826',
+                borderRadius: '6px',
+                border: '1px solid #3a3836'
+              }}>
+                <h3 style={{ color: '#dfdbc3', marginBottom: '10px', fontSize: '14px' }}>
+                  🔍 智能索引系統
+                </h3>
+                <p style={{ color: '#888', fontSize: '12px', marginBottom: '8px' }}>
+                  自動分析並建立知識庫索引，提升 AI 查詢準確度。上傳新文件時會自動學習並生成索引。
+                </p>
+                <p style={{ color: '#7bbda4', fontSize: '11px', marginBottom: '12px' }}>
+                  🤖 使用模型：<strong>gpt-4o</strong> | 📊 分析內容：前 10,000 字元 | ⚡ 每個文件約 5 秒
+                </p>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '12px', color: '#7bbda4', marginBottom: '12px' }}>
+                  <span>📊 總檔案：{entries.length}</span>
+                  <span>•</span>
+                  <span>✅ 已索引：{entries.filter(e => e.index).length}</span>
+                  <span>•</span>
+                  <span>⏳ 待索引：{entries.filter(e => !e.index && e.isLearned).length}</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    const unindexed = entries.filter(e => e.isLearned && !e.index)
+                    if (unindexed.length === 0) {
+                      alert('✅ 所有已學習的文件都已建立索引！')
+                      return
+                    }
+                    if (!confirm(`🔍 批量生成索引\n\n📊 待處理文件：${unindexed.length} 個\n🤖 使用模型：${copilotConfig?.model || 'gpt-4o'}\n⏱️ 預計時間：${unindexed.length * 5} 秒\n\n確定要繼續嗎？`)) return
+                    
+                    setIsLearning(true)
+                    let successCount = 0
+                    let failCount = 0
+                    
+                    for (let i = 0; i < unindexed.length; i++) {
+                      const currentFile = unindexed[i]
+                      const progress = `${i + 1}/${unindexed.length}`
+                      setLearningStatus(`🔍 正在分析並生成索引...（${progress}）\n📄 ${currentFile.name}\n⏱️ 使用 ${copilotConfig?.model || 'gpt-4o'} 分析中...`)
+                      
+                      const beforeCount = knowledgeStore.getEntries().filter(e => e.index).length
+                      await generateIndex(currentFile)
+                      const afterCount = knowledgeStore.getEntries().filter(e => e.index).length
+                      
+                      if (afterCount > beforeCount) {
+                        successCount++
+                      } else {
+                        failCount++
+                      }
+                      
+                      // 每處理一個文件就刷新一次列表，讓使用者看到即時更新
+                      setEntries(knowledgeStore.getEntries())
+                    }
+                    
+                    setIsLearning(false)
+                    const resultMsg = `✅ 批量索引生成完成！\n\n成功：${successCount} 個\n失敗：${failCount} 個\n總計：${unindexed.length} 個`
+                    setLearningStatus(resultMsg)
+                    alert(resultMsg)
+                    setTimeout(() => setLearningStatus(''), 5000)
+                  }}
+                  disabled={isLearning || entries.filter(e => e.isLearned && !e.index).length === 0}
+                  style={{
+                    marginTop: '12px',
+                    padding: '8px 16px',
+                    backgroundColor: '#2a3826',
+                    color: '#7bbda4',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isLearning ? 'not-allowed' : 'pointer',
+                    fontSize: '13px',
+                    opacity: isLearning || entries.filter(e => e.isLearned && !e.index).length === 0 ? 0.5 : 1,
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {isLearning ? '⏳ 生成中...' : '🔄 批量生成索引'}
+                </button>
+              </div>
+
+              {/* 操作按鈕區 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".txt,.md,.json,.csv,.log,.xlsx,.xls"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={importLearnedDocuments}
+                style={{ display: 'none' }}
+              />
+              
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLearning}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a5826',
+                    color: '#7bbda4',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isLearning ? 'not-allowed' : 'pointer',
+                    opacity: isLearning ? 0.5 : 1,
+                    fontSize: '13px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  📤 上傳學習文件
+                </button>
+                <button
+                  onClick={async () => {
+                    const unlearned = entries.filter(e => !e.isLearned)
+                    if (unlearned.length === 0) {
+                      alert('✅ 所有文件都已學習完畢！')
+                      return
+                    }
+                    if (!confirm(`🎓 學習全部文件\n\n📊 待學習文件：${unlearned.length} 個\n⏱️ 預計時間：${unlearned.length * 10} 秒\n\n確定要繼續嗎？`)) return
+                    for (const entry of unlearned) {
+                      await learnKnowledge(entry)
+                    }
+                  }}
+                  disabled={isLearning || entries.filter(e => !e.isLearned).length === 0}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#3a2836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isLearning || entries.filter(e => !e.isLearned).length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: isLearning || entries.filter(e => !e.isLearned).length === 0 ? 0.5 : 1,
+                    fontSize: '13px'
+                  }}
+                >
+                  🎓 學習全部文件
+                </button>
+                <button
+                  onClick={() => {
+                    const learnedEntries = entries.filter(e => e.isLearned)
+                    if (learnedEntries.length === 0) {
+                      alert('⚠️ 沒有已學習的文件')
+                      return
+                    }
+                    if (confirm(`❌ 忘記全部文件\n\n📊 將影響：${learnedEntries.length} 個文件\n⚠️ 文件將變回「待學習」狀態\n\n確定要繼續嗎？`)) {
+                      for (const entry of learnedEntries) {
+                        const restoredContent = typeof entry.originalContent === 'string' ? entry.originalContent : entry.content
+                        const restoredSize = typeof entry.originalSize === 'number' ? entry.originalSize : entry.size
+                        knowledgeStore.updateEntry(entry.id, {
+                          content: restoredContent,
+                          size: restoredSize,
+                          isLearned: false,
+                          learnedAt: undefined,
+                          learnedSize: undefined,
+                          learnedModel: undefined,
+                          enabled: false,
+                          originalContent: undefined,
+                          originalSize: undefined
+                        })
+                      }
+                      setLearningStatus(`✅ 已忘記全部：${learnedEntries.length} 個文件`)
+                      setTimeout(() => setLearningStatus(''), 5000)
+                    }
+                  }}
+                  disabled={isLearning || entries.filter(e => e.isLearned).length === 0}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a2836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isLearning || entries.filter(e => e.isLearned).length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: isLearning || entries.filter(e => e.isLearned).length === 0 ? 0.5 : 1,
+                    fontSize: '13px'
+                  }}
+                >
+                  ❌ 忘記全部文件
+                </button>
+                <button
+                  onClick={() => {
+                    const active = knowledgeStore.getActiveKnowledge()
+                    const msg = active.length > 0
+                      ? `✅ 知識庫狀態正常\n\n可用知識: ${active.length} 個\n${active.map(k => `• ${k.name} (${(k.content.length / 1024).toFixed(1)} KB)`).join('\n')}`
+                      : `⚠️ 知識庫為空\n\n請確認：\n1. 文件已上傳並學習\n2. 文件已勾選「提供給 AI」`
+                    alert(msg)
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a3836',
+                    color: '#7bbda4',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  🔍 檢查文件狀態
+                </button>
+                <button
+                  onClick={exportLearnedDocuments}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a2836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  💾 全部匯出知識
+                </button>
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2a2836',
+                    color: '#dfdbc3',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  📥 匯入知識
+                </button>
+              </div>
+
+              {/* 模型選擇和排序 */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                <div style={{ flex: 1, padding: '12px', backgroundColor: '#2a2826', borderRadius: '6px', border: '1px solid #3a3836' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#888', fontWeight: '500' }}>
+                    🤖 選擇模型
+                  </label>
+                  <select
+                    value={copilotConfig?.model || 'gpt-4o'}
+                    onChange={async (e) => {
+                      const newConfig = { ...copilotConfig, model: e.target.value }
+                      settingsStore.setCopilotConfig(newConfig)
+                      await window.electronAPI.copilot.setConfig(newConfig)
+                      setCopilotConfig(newConfig)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#1f1d1a',
+                      color: '#dfdbc3',
+                      border: '1px solid #3a3836',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {(availableCopilotModels.length > 0 ? availableCopilotModels : ['gpt-4o', 'gpt-4o-2024-11-20', 'gpt-4', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini', 'claude-sonnet-4.5']).map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ padding: '12px', backgroundColor: '#2a2826', borderRadius: '6px', border: '1px solid #3a3836' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#888', fontWeight: '500' }}>
+                    ⇅ 排序
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={sortKey}
+                      onChange={(e) => setSortKey(e.target.value as any)}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#1f1d1a',
+                        color: '#dfdbc3',
+                        border: '1px solid #3a3836',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="uploadedAt">上傳時間</option>
+                      <option value="name">名稱</option>
+                      <option value="size">大小</option>
+                      <option value="learnedAt">學習時間</option>
+                      <option value="learnedSize">學習大小</option>
+                    </select>
+                    <button
+                      onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#1f1d1a',
+                        color: '#dfdbc3',
+                        border: '1px solid #3a3836',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        minWidth: '40px'
+                      }}
+                    >
+                      {sortDir === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 已索引文件列表 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {(() => {
+                  const indexedEntries = entries.filter(e => e.index)
+                  
+                  // 排序已索引的文件
+                  const sortedIndexed = [...indexedEntries].sort((a, b) => {
+                    let aVal: any, bVal: any
+                    
+                    switch (sortKey) {
+                      case 'name':
+                        aVal = a.name.toLowerCase()
+                        bVal = b.name.toLowerCase()
+                        break
+                      case 'size':
+                        aVal = a.size || 0
+                        bVal = b.size || 0
+                        break
+                      case 'uploadedAt':
+                        aVal = a.uploadedAt || 0
+                        bVal = b.uploadedAt || 0
+                        break
+                      case 'learnedAt':
+                        aVal = a.learnedAt || 0
+                        bVal = b.learnedAt || 0
+                        break
+                      case 'learnedSize':
+                        aVal = a.learnedSize || 0
+                        bVal = b.learnedSize || 0
+                        break
+                      default:
+                        aVal = a.uploadedAt || 0
+                        bVal = b.uploadedAt || 0
+                    }
+                    
+                    if (sortDir === 'asc') {
+                      return aVal > bVal ? 1 : -1
+                    } else {
+                      return aVal < bVal ? 1 : -1
+                    }
+                  })
+                  
+                  return sortedIndexed.map(entry => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: '#2a2826',
+                      borderRadius: '6px',
+                      border: '1px solid #3a3836'
+                    }}
+                  >
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'space-between',
+                      marginBottom: '8px'
+                    }}>
+                      <div style={{ fontWeight: 'bold', color: '#dfdbc3', fontSize: '13px' }}>
+                        📄 {entry.name}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`🔄 重建索引\n\n📄 文件：${entry.name}\n🤖 模型：${copilotConfig?.model || 'gpt-4o'}\n⏱️ 預計：5 秒\n\n確定要重建嗎？`)) return
+                            setIsLearning(true)
+                            setLearningStatus(`🔍 正在使用 ${copilotConfig?.model || 'gpt-4o'} 重建索引...\n📄 ${entry.name}`)
+                            
+                            const beforeIndex = entry.index ? JSON.stringify(entry.index) : null
+                            await generateIndex(entry)
+                            const updatedEntry = knowledgeStore.getEntries().find(e => e.id === entry.id)
+                            const afterIndex = updatedEntry?.index ? JSON.stringify(updatedEntry.index) : null
+                            
+                            setEntries(knowledgeStore.getEntries())
+                            setIsLearning(false)
+                            
+                            if (afterIndex && afterIndex !== beforeIndex) {
+                              setLearningStatus(`✅ 已完成「${entry.name}」索引重建！`)
+                            } else {
+                              setLearningStatus(`⚠️ 索引重建可能失敗，請檢查 Console`)
+                            }
+                            setTimeout(() => setLearningStatus(''), 3000)
+                          }}
+                          disabled={isLearning}
+                          style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#2a3826',
+                            color: '#7bbda4',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: isLearning ? 'not-allowed' : 'pointer',
+                            fontSize: '11px'
+                          }}
+                        >
+                          🔄 重建
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`🗑️ 刪除索引\n\n📄 文件：${entry.name}\n\n⚠️ 僅刪除索引，文件內容保留\n確定要刪除嗎？`)) return
+                            
+                            await knowledgeStore.updateEntry(entry.id, { index: undefined })
+                            setEntries(knowledgeStore.getEntries())
+                            setLearningStatus(`✅ 已刪除「${entry.name}」的索引`)
+                            setTimeout(() => setLearningStatus(''), 3000)
+                          }}
+                          disabled={isLearning}
+                          style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#3a2826',
+                            color: '#f87171',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: isLearning ? 'not-allowed' : 'pointer',
+                            fontSize: '11px'
+                          }}
+                        >
+                          🗑️ 刪除
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {entry.index && (
+                      <>
+                        <div style={{ 
+                          color: '#888', 
+                          fontSize: '12px', 
+                          marginBottom: '8px',
+                          lineHeight: '1.6'
+                        }}>
+                          💎 {entry.index.summary}
+                        </div>
+                        
+                        <div style={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: '4px',
+                          marginBottom: '6px'
+                        }}>
+                          {entry.index.keywords.slice(0, 10).map((kw, i) => (
+                            <span
+                              key={i}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#3a3836',
+                                color: '#7bbda4',
+                                borderRadius: '3px',
+                                fontSize: '10px'
+                              }}
+                            >
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                        
+                        {entry.index.businessProcesses.length > 0 && (
+                          <div style={{ fontSize: '11px', color: '#58a6ff', marginTop: '6px' }}>
+                            📋 業務流程：{entry.index.businessProcesses.join('、')}
+                          </div>
+                        )}
+                        
+                        {entry.index.technicalAreas.length > 0 && (
+                          <div style={{ fontSize: '11px', color: '#b89bdb', marginTop: '4px' }}>
+                            🔧 技術領域：{entry.index.technicalAreas.join('、')}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  ))
+                })()}
+                
+                {entries.filter(e => e.index).length === 0 && (
+                  <div style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: '#888',
+                    fontSize: '13px'
+                  }}>
+                    <div style={{ fontSize: '48px', marginBottom: '10px' }}>🔍</div>
+                    <div>尚無索引資料</div>
+                    <div style={{ fontSize: '11px', marginTop: '5px' }}>
+                      上傳並學習文件後會自動生成索引
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

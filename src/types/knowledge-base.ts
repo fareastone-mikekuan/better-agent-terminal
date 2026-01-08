@@ -141,6 +141,27 @@ export interface KnowledgeEntry {
   hash: string  // 用於檢測文件是否有變更
   suggestedSkills?: string[] // 建議關聯的 skill IDs
   tags?: string // 標籤（用於搜索和分類）
+  index?: KnowledgeIndex // 智能索引（用於精準查詢）
+}
+
+// 智能索引：用於兩階段查詢
+export interface KnowledgeIndex {
+  fileId: string
+  fileName: string
+  category: string
+  
+  // 自動生成的索引資訊
+  summary: string              // 100-200字摘要
+  keywords: string[]           // 關鍵詞（10-20個）
+  topics: string[]             // 主題標籤（5-10個）
+  businessProcesses: string[]  // 相關業務流程
+  technicalAreas: string[]     // 技術領域
+  
+  // 關聯資訊
+  relatedFiles: string[]       // 相關檔案ID
+  
+  createdAt: number
+  updatedAt: number
 }
 
 export interface KnowledgeCategory {

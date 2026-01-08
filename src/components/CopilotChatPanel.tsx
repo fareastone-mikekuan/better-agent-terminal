@@ -60,6 +60,16 @@ interface CopilotChatPanelProps {
   focusedTerminalId?: string | null  // 當前 focused 的 terminal ID
 }
 
+// 處理步驟定義
+interface ProcessingStep {
+  id: string
+  label: string
+  status: 'pending' | 'running' | 'completed' | 'error'
+  detail?: string
+  startTime?: number
+  endTime?: number
+}
+
 export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId, collapsed = false, onCollapse, focusedTerminalId }: Readonly<CopilotChatPanelProps>) {
   // 根據設定決定使用共用或獨立的 localStorage 鍵
   const [settings, setSettings] = useState(() => settingsStore.getSettings())
@@ -68,6 +78,11 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [currentCopilotConfig, setCurrentCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const isShared = settings.sharedPanels?.copilot !== false
   const storageKey = isShared ? 'copilot-messages' : `copilot-messages-${workspaceId || 'default'}`
+  
+  // 處理步驟狀態
+  const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([])
+  const [showSteps, setShowSteps] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
   
   // 訂閱設定變更
   useEffect(() => {
@@ -834,6 +849,37 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     setInput('')
     setIsLoading(true)
     setError(null)
+    
+    // 初始化處理步驟
+    const steps: ProcessingStep[] = [
+      { id: 'skills', label: '🎯 分析技能需求', status: 'pending' },
+      { id: 'index', label: '🔍 查詢知識索引', status: 'pending' },
+      { id: 'knowledge', label: '📚 載入知識庫', status: 'pending' },
+      { id: 'generate', label: '✨ 生成回應', status: 'pending' }
+    ]
+    setProcessingSteps(steps)
+    setShowSteps(true)
+    
+    // 創建 AbortController
+    abortControllerRef.current = new AbortController()
+    
+    // 更新步驟狀態的輔助函數（帶錯誤保護）
+    const updateStep = (stepId: string, updates: Partial<ProcessingStep>) => {
+      try {
+        setProcessingSteps(prev => prev.map(step => 
+          step.id === stepId 
+            ? { 
+                ...step, 
+                ...updates, 
+                ...(updates.status === 'running' && !step.startTime ? { startTime: Date.now() } : {}), 
+                ...(updates.status === 'completed' || updates.status === 'error' ? { endTime: Date.now() } : {}) 
+              }
+            : step
+        ))
+      } catch (err) {
+        console.error('[CopilotChat] Failed to update step:', stepId, err)
+      }
+    }
 
     // 獲取 config 放在 try 外面，這樣 catch 也能訪問
     const copilotConfig = settingsStore.getCopilotConfig()
@@ -869,6 +915,8 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 6. **保持簡潔**：回應要專業、準確、直接`
 
       // 使用智能選擇器分析用戶問題，自動選擇相關的 skills 和 knowledge
+      updateStep('skills', { status: 'running', detail: '分析問題並選擇相關技能...' })
+      
       const userQuestion = userMessage.content
       const allSkills = settingsStore.getCopilotSkills()
       const allKnowledge = knowledgeStore.getActiveKnowledge()
@@ -879,7 +927,13 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       let selectedKnowledge: any[] = []
       let analysis: any = null
       
+      // 檢查是否被取消
+      if (abortControllerRef.current?.signal.aborted) {
+        throw new Error('用戶已取消操作')
+      }
+      
       if (selectionMode === 'ai' && allKnowledge.length > 0) {
+        updateStep('index', { status: 'running', detail: `掃描 ${allKnowledge.length} 個知識索引...` })
         // AI 驅動的知識庫選擇（兩階段方法）- 高精準度模式
         console.log('[CopilotChat] Using AI-driven knowledge selection (HIGH PRECISION), available knowledge:', allKnowledge.length)
         
@@ -946,24 +1000,46 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
           return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${matchInfo}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   內容長度: ${(contentLength / 1024).toFixed(1)}KB\n   預覽:\n${preview}${contentLength > 2000 ? '\n   [已截取關鍵片段]' : ''}`
         }).join('\n\n---\n\n')
         
-        const selectionSystemPrompt = `你是知識庫選擇助手（高精準模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
+        const indexedCount = allKnowledge.filter(k => k.index).length
+        const selectionSystemPrompt = `你是知識庫選擇助手（智能索引模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
 
-## 可用知識庫（共 ${allKnowledge.length} 個）：
+## 🔍 兩階段查詢原理
+第一階段（現在）：根據**索引**快速匹配相關文件
+第二階段（之後）：讀取選中文件的**完整內容**進行精準回答
+
+## 📚 可用知識庫（共 ${allKnowledge.length} 個，已索引 ${indexedCount} 個）：
 
 ${knowledgeListPrompt}
 
-## 選擇策略：
-1. **關鍵詞優先**：標記「✓包含關鍵詞」的知識庫通常最相關，優先選擇
-2. **精準匹配**：仔細閱讀預覽內容，確認是否真的回答用戶問題
-3. **深度而非廣度**：選1個完全相關的，勝過3個略有關聯的
-4. **數量控制**：
-   - 找到精準答案：選 1-2 個
-   - 需要組合多個知識：選 2-4 個
-   - 主題廣泛：最多 5 個
+## 🎯 選擇策略（按優先級）：
+1. **索引優先** ✨ [已索引] 標記的文件
+   - 查看摘要、業務流程、技術領域是否匹配用戶問題
+   - 關鍵詞命中度高的優先
+   - 索引信息比內容預覽更可靠
 
-## 輸出格式：
+2. **語義匹配**
+   - 業務流程匹配：用戶問「立帳」→ 選擇包含「立帳」業務流程的文件
+   - 技術領域匹配：用戶問「PL/SQL」→ 選擇技術領域包含「PL/SQL」的文件
+   - 關鍵詞匹配：用戶問「開發票」→ 選擇關鍵詞包含「invoice, 發票」的文件
+
+3. **質量優於數量**
+   - 找到精準答案：選 1-2 個即可
+   - 需要交叉參考：選 2-3 個
+   - 主題廣泛探索：最多 4-5 個
+   - 寧缺毋濫：不確定就不要選
+
+4. **降級處理** ⚠️ [未索引] 標記的文件
+   - 只在沒有索引文件時才考慮
+   - 使用內容預覽進行匹配（較慢且不精準）
+
+## 📤 輸出格式：
 只回答知識庫的編號，用逗號分隔，例如：3,7,11
-如果完全無相關知識庫，回答：無`
+如果完全無相關知識庫，回答：無
+
+## ⚠️ 注意：
+- 選擇後會讀取完整文件內容（可能很大），所以要精準
+- 索引信息是 AI 分析生成的，準確度很高
+- 沒有索引的文件匹配準確度較低，謹慎選擇`
 
         try {
           const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
@@ -993,6 +1069,8 @@ ${knowledgeListPrompt}
           console.log('[CopilotChat] AI selected knowledge indices:', selectedIndices)
           console.log('[CopilotChat] AI selected knowledge names:', selectedKnowledge.map(k => k.name))
           
+          updateStep('index', { status: 'completed', detail: `找到 ${selectedKnowledge.length} 個相關索引` })
+          
           // 顯示 AI 選擇結果
           if (selectedKnowledge.length > 0) {
             const knowledgeListMsg: CopilotMessage = {
@@ -1004,11 +1082,13 @@ ${knowledgeListPrompt}
           
         } catch (error) {
           console.error('[CopilotChat] AI selection failed, falling back to keyword matching:', error)
+          updateStep('index', { status: 'error', detail: 'AI 選擇失敗，使用關鍵詞匹配' })
           // 失敗時回退到關鍵詞匹配
           const result = smartSelect(userQuestion, allSkills, allKnowledge)
           analysis = result.analysis
           selectedSkills = result.selectedSkills
           selectedKnowledge = result.selectedKnowledge
+          updateStep('index', { status: 'completed', detail: `關鍵詞匹配：${selectedKnowledge.length} 個` })
         }
         
         // Skills 仍使用關鍵詞匹配選擇
@@ -1034,6 +1114,8 @@ ${knowledgeListPrompt}
         knowledgeSelected: selectedKnowledge.length
       })
       
+      updateStep('skills', { status: 'completed', detail: `${selectedSkills.length} 個技能已啟用` })
+      
       // 如果是關鍵詞模式且置信度足夠，顯示選擇的 skills
       if (selectionMode === 'keyword' && analysis && analysis.confidence > 0.5 && selectedSkills.length > 0) {
         const skillsList = selectedSkills.map(s => `${s.icon} **${s.name}**`).join(', ')
@@ -1054,6 +1136,7 @@ ${knowledgeListPrompt}
       }
       
       // 構建 skills prompt
+      updateStep('knowledge', { status: 'running', detail: '載入知識庫內容...' })
       const skillsPrompt = buildSystemPromptFromSkills(selectedSkills)
       
       // 根據當前模型獲取知識庫限制
@@ -1168,6 +1251,8 @@ ${knowledgeListPrompt}
           totalLength: totalLength
         })
         
+        updateStep('knowledge', { status: 'completed', detail: `載入 ${includedKnowledge.length} 個文檔` })
+        
         if (includedKnowledge.length > 0) {
           const knowledgeList = includedKnowledge
             .map(item => {
@@ -1257,6 +1342,13 @@ ${skillsPrompt}${knowledgePrompt}
         knowledgeEntries: selectedKnowledge.map(k => ({ name: k.name, size: k.content.length }))
       })
       
+      updateStep('generate', { status: 'running', detail: `使用 ${copilotConfig.model} 生成中...` })
+      
+      // 檢查是否被取消
+      if (abortControllerRef.current?.signal.aborted) {
+        throw new Error('用戶已取消操作')
+      }
+      
       // 檢查總長度是否超過限制（根據模型動態調整）
       const totalLength = systemPrompt.length + recentMessages.reduce((sum, m) => sum + m.content.length, 0)
       const maxTotalLength = modelLimits.tokenLimit * 3 // 1 token ≈ 3-4 字元，保守估計用 3
@@ -1282,12 +1374,20 @@ ${skillsPrompt}${knowledgePrompt}
         hasResponse: !!response,
         hasContent: !!response?.content,
         contentLength: response?.content?.length || 0,
-        error: response?.error
+        error: response?.error,
+        isTruncated: response?.content && response.content.length > 0 && !response.content.trim().endsWith('。') && !response.content.trim().endsWith('.') && !response.content.trim().endsWith('！') && !response.content.trim().endsWith('!')
       })
 
       if (!response || !response.content) {
         const errorMsg = response?.error || '未收到回應'
         throw new Error(errorMsg)
+      }
+      
+      // 檢查回應是否被截斷
+      const contentEnding = response.content.trim().slice(-50)
+      console.log('[CopilotChat] Response ending:', contentEnding)
+      if (response.content.length > 100 && !contentEnding.match(/[。.！!？?」』】\)）]$/)) {
+        console.warn('[CopilotChat] Response may be truncated, ending:', contentEnding)
       }
 
       // Record the actual model used (Copilot may resolve to a versioned model id)
@@ -1302,6 +1402,8 @@ ${skillsPrompt}${knowledgePrompt}
         content: response.content
       }
 
+      updateStep('generate', { status: 'completed', detail: '回應生成完成' })
+      
       const updatedMessages = [...newMessages, assistantMessage]
       
       // 如果使用了知識庫，添加知識來源信息
@@ -1338,8 +1440,32 @@ ${skillsPrompt}${knowledgePrompt}
       } else {
         setError(errorMsg)
       }
+      // 標記所有步驟為錯誤
+      updateStep('skills', { status: 'error', detail: '處理失敗' })
+      updateStep('index', { status: 'error', detail: '處理失敗' })
+      updateStep('knowledge', { status: 'error', detail: '處理失敗' })
+      updateStep('generate', { status: 'error', detail: '處理失敗' })
     } finally {
       setIsLoading(false)
+      // 延遲隱藏步驟，讓用戶看到完整的結果
+      setTimeout(() => {
+        setShowSteps(false)
+      }, 3000)
+      abortControllerRef.current = null
+    }
+  }
+  
+  // 停止當前操作
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      setIsLoading(false)
+      setShowSteps(false)
+      const cancelMsg: CopilotMessage = {
+        role: 'info',
+        content: '⏹️ 用戶已取消操作'
+      }
+      setMessages(prev => [...prev, cancelMsg])
     }
   }
 
@@ -1515,6 +1641,7 @@ ${skillsPrompt}${knowledgePrompt}
                 <p>有什麼可以幫助你的嗎？</p>
               </div>
             )}
+            
             {messages.map((msg, idx) => {
               const commands = msg.role === 'assistant' ? extractCommands(msg.content) : []
               const fetchUrls = msg.role === 'assistant' ? extractFetchUrls(msg.content) : []
@@ -1933,6 +2060,113 @@ ${skillsPrompt}${knowledgePrompt}
           </div>
 
           <div className="copilot-chat-input-area">
+            {/* 處理步驟展示 - 固定在輸入框上方 */}
+            {showSteps && (
+              <div style={{
+                marginBottom: '12px',
+                padding: '12px',
+                backgroundColor: '#1a1a1a',
+                borderRadius: '6px',
+                border: '1px solid #2d2d2d',
+                fontFamily: 'Consolas, Monaco, monospace'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid #2d2d2d'
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#58a6ff' }}>
+                    ⚙️ 處理中
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>
+                    {processingSteps.filter(s => s.status === 'completed').length} / {processingSteps.length}
+                  </div>
+                </div>
+                
+                {processingSteps.map((step) => {
+                  const isRunning = step.status === 'running'
+                  const isCompleted = step.status === 'completed'
+                  const isError = step.status === 'error'
+                  const isPending = step.status === 'pending'
+                  
+                  let icon = '⏺️'
+                  let statusText = '等待中'
+                  let color = '#888'
+                  
+                  if (isRunning) {
+                    icon = '🔄'
+                    statusText = '進行中'
+                    color = '#58a6ff'
+                  } else if (isCompleted) {
+                    icon = '✅'
+                    statusText = '完成'
+                    color = '#3fb950'
+                  } else if (isError) {
+                    icon = '❌'
+                    statusText = '錯誤'
+                    color = '#f85149'
+                  }
+                  
+                  const duration = step.startTime && step.endTime 
+                    ? `${((step.endTime - step.startTime) / 1000).toFixed(1)}s`
+                    : step.startTime && isRunning
+                    ? `${((Date.now() - step.startTime) / 1000).toFixed(1)}s`
+                    : null
+                  
+                  return (
+                    <div 
+                      key={step.id} 
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '6px 0',
+                        opacity: isPending ? 0.6 : 1,
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <div style={{
+                        fontSize: '14px',
+                        lineHeight: '14px',
+                        animation: isRunning ? 'spin 1s linear infinite' : 'none'
+                      }}>
+                        {icon}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: color
+                        }}>
+                          {step.label}
+                          <span style={{ 
+                            marginLeft: '8px',
+                            fontSize: '11px',
+                            color: '#666',
+                            fontWeight: 'normal'
+                          }}>
+                            ({statusText})
+                          </span>
+                        </div>
+                      </div>
+                      {duration && (
+                        <div style={{
+                          fontSize: '10px',
+                          color: '#666',
+                          fontFamily: 'monospace'
+                        }}>
+                          {duration}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            
             {(loadedFile || loadedOracleData || loadedWebPageData) && (
               <div className="copilot-data-loaded-hint">
                 ✅ 已讀取
@@ -1966,22 +2200,63 @@ ${skillsPrompt}${knowledgePrompt}
                   // Prevent sending message during IME composition (e.g., Chinese input)
                   if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                     e.preventDefault()
-                    handleSendMessage()
+                    if (!isLoading) {
+                      handleSendMessage()
+                    }
                   }
                 }}
-                placeholder="輸入訊息... (Enter 發送, Shift+Enter 換行)"
+                placeholder={isLoading ? "正在處理中..." : "輸入訊息... (Enter 發送, Shift+Enter 換行)"}
                 className="copilot-chat-input"
                 rows={3}
                 style={{ flex: 1 }}
+                disabled={isLoading}
               />
-              <button
-                onClick={handleSendMessage}
-                disabled={isLoading || !input.trim()}
-                className="copilot-send-btn"
-                style={{ height: 'fit-content', alignSelf: 'flex-end' }}
-              >
-                {isLoading ? '⏳' : '發送'}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {isLoading ? (
+                  <button
+                    onClick={handleStopGeneration}
+                    className="copilot-stop-btn"
+                    style={{
+                      height: '40px',
+                      padding: '0 16px',
+                      backgroundColor: '#dc2626',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = '#b91c1c'
+                      e.currentTarget.style.transform = 'scale(1.05)'
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = '#dc2626'
+                      e.currentTarget.style.transform = 'scale(1)'
+                    }}
+                    title="停止生成"
+                  >
+                    ⏹️ 停止
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!input.trim()}
+                    className="copilot-send-btn"
+                    style={{ 
+                      height: '40px',
+                      padding: '0 16px'
+                    }}
+                  >
+                    📤 發送
+                  </button>
+                )}
+              </div>
             </div>
 
             <div style={{

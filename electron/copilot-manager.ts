@@ -252,7 +252,7 @@ gh auth token
         model: options.model || this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
-        max_tokens: options.maxTokens ?? 2048,
+        max_tokens: options.maxTokens ?? 4096, // 增加到 4096 以避免截斷長回應
         stream: false
       }
 
@@ -285,7 +285,7 @@ gh auth token
         model: options.model || this.config?.model || 'gpt-4o',
         temperature: options.temperature ?? 0.7,
         top_p: 1,
-        max_tokens: options.maxTokens ?? 2048,
+        max_tokens: options.maxTokens ?? 4096, // 增加到 4096 以避免截斷長回應
         stream: true
       }
 
