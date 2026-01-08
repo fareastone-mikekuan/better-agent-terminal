@@ -522,12 +522,12 @@ ${preview}
       setLearningStatus(`正在分析「${entry.name}」(${contentSizeKB} KB)...\n使用 AI 提取關鍵信息中...`)
       
       // 對於大文件，分批提取（以 token 預算切分，避免 400 prompt token count exceeds limit）
+      // 使用 5000 tokens（約 16KB）確保每段都能完整輸出，避免截斷
       const chunks: string[] = []
       let offset = 0
       while (offset < contentForLearning.length) {
         const remaining = contentForLearning.slice(offset)
-        // 深度學習：使用較小的 chunk 確保每個部分都被完整處理
-        const chunk = sliceToTokenBudget(remaining, 15000)
+        const chunk = sliceToTokenBudget(remaining, 5000)
         if (!chunk) break
         chunks.push(chunk)
         offset += chunk.length
@@ -537,16 +537,17 @@ ${preview}
       
       const summaries: string[] = []
       let lastResponseModel: string | undefined
+      let failedChunks = 0
       
       // 深度學習模式：保留最大限度的細節（大幅提升輸出限制避免壓縮）
       const MAX_EXTRACT_CHARS_PER_PART = 60000
 
       for (let i = 0; i < chunks.length; i++) {
-        setLearningStatus(`正在深度學習「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分`)
+        setLearningStatus(`正在深度學習「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分 (已完成 ${summaries.length}/${chunks.length})`)
         
         const promptPrefix = `請以【深度學習】模式處理以下文檔內容：
 
-🎯 核心要求：保留原始內容，不要總結或濃縮
+🎯 核心要求：保留原始內容的 100%，絕對不要總結或濃縮
 
 深度學習規則：
 ✓ 保留所有表格的完整資料（包括每一行）
@@ -554,16 +555,26 @@ ${preview}
 ✓ 保留所有欄位名稱、數值、參數
 ✓ 保留所有規則說明、注意事項、範例
 ✓ 只做格式整理（如：將 CSV 轉為 Markdown 表格）
+
+❌ 嚴格禁止以下行為：
 ✗ 不要省略任何資料行
-✗ 不要用「...等」或「其他類似」代替實際內容
+✗ 不要用「...等」、「其他類似」、「後續省略」代替實際內容
 ✗ 不要只列出前幾筆資料
 ✗ 不要總結或濃縮
+✗ 不要寫「*(文檔內容完整，後續部分省略格式化示範，請參考以上結構)*」這類文字
+✗ 不要因為內容長就省略後半部分
+
+⚠️ 特別注意：
+- 如果內容很長，也要全部輸出，不可省略
+- 每個章節、每個表格、每行資料都要完整保留
+- 即使重複，也要保留所有內容
+- 這是第 ${i + 1}/${chunks.length} 部分，請完整處理這部分的所有內容
 
 輸出格式：
 - 使用 Markdown 表格格式（對於表格資料）
 - 使用代碼塊（對於代碼/SQL）
 - 保持原始結構和完整性
-- 每一部分最多 ${MAX_EXTRACT_CHARS_PER_PART} 個字元（如果原始內容更長，就分多個部分處理）
+- 不限制輸出長度，務必完整
 
 文檔名稱：${entry.name}
 部分：${i + 1}/${chunks.length}
@@ -573,32 +584,41 @@ ${preview}
 
   const promptSuffix = `
 
-請保持原始內容的完整性，只做格式優化。`
+⚠️ 再次提醒：請保持原始內容的完整性，輸出這部分的所有內容，不要省略任何後續部分！`
 
-  // 深度學習：較小的chunk確保完整處理
-  const MODEL_PROMPT_TOKEN_LIMIT = 60000
-  const HEADROOM_TOKENS = 3000
-  const targetTotalTokens = MODEL_PROMPT_TOKEN_LIMIT - HEADROOM_TOKENS
-  const baseTokens = estimateTokens(promptPrefix + promptSuffix)
-  const chunkBudget = Math.max(5000, targetTotalTokens - baseTokens)
-  const safeChunk = sliceToTokenBudget(chunks[i], Math.min(15000, chunkBudget))
-  const extractPrompt = `${promptPrefix}${safeChunk}${promptSuffix}`
+  // 直接使用已分段好的 chunk（在第 530 行已經按 15000 tokens 分段）
+  // 不再進行二次截斷，確保所有內容都被完整學習
+  const extractPrompt = `${promptPrefix}${chunks[i]}${promptSuffix}`
 
-        const response = await window.electronAPI.copilot.chat(`extract-${entry.id}-${i}`, {
-          messages: [
-            { role: 'user', content: extractPrompt }
-          ]
-        })
+        try {
+          const response = await window.electronAPI.copilot.chat(`extract-${entry.id}-${i}`, {
+            messages: [
+              { role: 'user', content: extractPrompt }
+            ],
+            maxTokens: 16384  // 知識庫深度學習：提升輸出限制避免截斷
+          })
 
-        if (response.error) {
-          throw new Error(response.error)
+          if (response.error) {
+            console.error(`[KnowledgeBase] Chunk ${i + 1} failed:`, response.error)
+            failedChunks++
+            summaries.push(`=== 第 ${i + 1} 部分 (處理失敗) ===\n⚠️ 此部分處理失敗: ${response.error}`)
+            continue
+          }
+
+          if (response.model) {
+            lastResponseModel = String(response.model)
+          }
+
+          summaries.push(`=== 第 ${i + 1} 部分 ===\n${response.content}`)
+        } catch (error) {
+          console.error(`[KnowledgeBase] Chunk ${i + 1} exception:`, error)
+          failedChunks++
+          summaries.push(`=== 第 ${i + 1} 部分 (處理失敗) ===\n⚠️ 此部分處理時發生錯誤: ${(error as Error).message}`)
         }
-
-        if (response.model) {
-          lastResponseModel = String(response.model)
-        }
-
-        summaries.push(`=== 第 ${i + 1} 部分 ===\n${response.content}`)
+      }
+      
+      if (failedChunks > 0) {
+        setLearningStatus(`學習完成，但有 ${failedChunks}/${chunks.length} 個部分失敗\n已完成 ${summaries.length - failedChunks}/${chunks.length} 部分`)
       }
       
       // 合併所有總結（先合併，再做一次整體壓縮）
@@ -610,25 +630,28 @@ ${preview}
       if (SHOULD_COMPRESS) {
         setLearningStatus(`正在整合「${entry.name}」...\n合併所有部分並保持完整性`)
 
-        const MAX_FINAL_CHARS = 120000  // 深度學習：保留 120,000 字元
         const compressPrompt = `你將收到一份已分段的深度學習內容，請進行合併整合（重點：保留完整資料，不要濃縮）：
 
 整合規則：
 ✓ 保留所有分段的完整內容
 ✓ 合併重複的標題/章節
 ✓ 統一格式（如：統一表格格式）
+
+❌ 嚴格禁止：
 ✗ 不要刪減資料行數
 ✗ 不要省略任何欄位
 ✗ 不要用摘要代替實際內容
+✗ 不要寫「後續省略」、「參考以上結構」等文字
+✗ 不要因為內容長就省略
 
-最終輸出總長度上限：${MAX_FINAL_CHARS} 個字元（如果內容本身就很長，保持原樣）
+⚠️ 重要：這是合併多個分段，每個分段都要完整保留，不限制輸出長度
 
 文檔名稱：${entry.name}
 
 分段內容：
 ${mergedSummaries}
 
-請輸出整合後的完整內容（保持所有資料）：`
+請輸出整合後的完整內容（保持所有資料，不要省略）：`
 
         const compressResponse = await window.electronAPI.copilot.chat(`compress-${entry.id}`, {
           messages: [{ role: 'user', content: compressPrompt }]
@@ -665,6 +688,7 @@ ${mergedSummaries}
       )
       
       // 更新條目為提取後的內容，並同時標記為已學習
+      // ⭐ 重要：默認使用原始內容，AI 學習內容作為備選
       await knowledgeStore.updateEntry(entry.id, { 
         originalContent: shouldStoreOriginalContent
           ? (typeof entry.originalContent === 'string' ? entry.originalContent : contentForLearning)
@@ -673,6 +697,7 @@ ${mergedSummaries}
         content: extractedContent,
         isLearned: true,
         enabled: true,
+        useOriginalContent: shouldStoreOriginalContent,  // 默認使用原始內容
         learnedAt: Date.now(),
         learnedSize: learnedBytes,
         learnedModel
@@ -694,7 +719,7 @@ ${mergedSummaries}
       }
 
       const note = shouldStoreOriginalContent
-        ? ''
+        ? '\n\n📄 已自動設定為「使用原始檔案」，保證內容完整。\n💡 若需使用 AI 結構化內容，可點擊檔案切換。'
         : '\n\n⚠️ 原始內容過大，為避免儲存空間不足，僅保存學習後內容（可重新匯入原檔再學習）。'
       setLearningStatus(statusMessage + note)
       
@@ -1765,7 +1790,9 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                           fontFamily: 'monospace',
                           color: '#dfdbc3'
                         }}>
-                          {entry.content}
+                          {entry.useOriginalContent && entry.originalContent 
+                            ? entry.originalContent 
+                            : entry.content}
                         </div>
                       )}
                     </div>

@@ -213,6 +213,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
   const [loadedFile, setLoadedFile] = useState<{ content: string; fileName: string } | null>(null)
+  const [fileChunks, setFileChunks] = useState<{ chunks: string[]; fileName: string; currentIndex: number } | null>(null)
   const [userInfo, setUserInfo] = useState<{ username: string; hostname: string }>({ username: '', hostname: '' })
   
   // 样式控制状态
@@ -227,6 +228,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   const isDragging = useRef(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const isLoadingMessages = useRef(false)
+  const hasMoreChunks = useRef(false)  // 追蹤是否有後續分段需要處理
   const shouldFocusInput = useRef(false)
 
   // Get system user info
@@ -446,8 +448,28 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       const customEvent = event as CustomEvent<{ fileContent: string; fileName: string }>
       const { fileContent, fileName } = customEvent.detail
       
-      // 保存已加載的文件，不直接填充輸入框
-      setLoadedFile({ content: fileContent, fileName })
+      // 檢測文件大小，決定是否需要分段
+      const CHUNK_SIZE = 8000 // 每段約 8000 字元
+      const needsChunking = fileContent.length > CHUNK_SIZE
+      
+      if (needsChunking) {
+        // 將文件分段
+        const chunks: string[] = []
+        let offset = 0
+        while (offset < fileContent.length) {
+          const chunk = fileContent.slice(offset, offset + CHUNK_SIZE)
+          chunks.push(chunk)
+          offset += CHUNK_SIZE
+        }
+        
+        console.log(`[Copilot] File "${fileName}" (${fileContent.length} chars) split into ${chunks.length} chunks`)
+        setFileChunks({ chunks, fileName, currentIndex: 0 })
+        setLoadedFile(null)
+      } else {
+        // 文件不大，直接加載
+        setLoadedFile({ content: fileContent, fileName })
+        setFileChunks(null)
+      }
       
       // 自動滾動到底部
       setTimeout(() => {
@@ -845,6 +867,33 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     if (loadedFile) {
       messageContent = `請分析以下文件內容（${loadedFile.fileName}）：\n\n${loadedFile.content}\n\n我的問題：${messageContent}${skillContext}`
       setLoadedFile(null)  // 清除已加載的文件
+      hasMoreChunks.current = false
+    }
+    // 如果有分段文件，處理當前分段
+    else if (fileChunks && fileChunks.currentIndex < fileChunks.chunks.length) {
+      const currentChunk = fileChunks.chunks[fileChunks.currentIndex]
+      const progressInfo = `第 ${fileChunks.currentIndex + 1}/${fileChunks.chunks.length} 部分`
+      
+      if (fileChunks.currentIndex === 0) {
+        // 第一段：包含用戶問題
+        messageContent = `請分析以下文件內容（${fileChunks.fileName}，${progressInfo}）：\n\n${currentChunk}\n\n我的問題：${messageContent}${skillContext}\n\n⚠️ 注意：這是大文件的第一部分，後續還有 ${fileChunks.chunks.length - 1} 個部分，請先分析這部分內容。`
+      } else {
+        // 後續段落：繼續分析
+        messageContent = `繼續分析文件（${fileChunks.fileName}，${progressInfo}）：\n\n${currentChunk}\n\n請基於之前的分析繼續處理這部分內容。${fileChunks.currentIndex === fileChunks.chunks.length - 1 ? '\n\n✅ 這是最後一部分，請提供完整的分析結論。' : ''}`
+      }
+      
+      // 移動到下一個分段（如果還有的話）
+      if (fileChunks.currentIndex < fileChunks.chunks.length - 1) {
+        setFileChunks({
+          ...fileChunks,
+          currentIndex: fileChunks.currentIndex + 1
+        })
+        hasMoreChunks.current = true  // 標記還有後續分段
+      } else {
+        // 所有分段處理完畢
+        setFileChunks(null)
+        hasMoreChunks.current = false
+      }
     }
     // 如果有已讀取的分析數據，附加到消息中
     else if (loadedOracleData) {
@@ -1477,6 +1526,16 @@ ${skillsPrompt}${knowledgePrompt}
         setShowSteps(false)
       }, 3000)
       abortControllerRef.current = null
+      
+      // 如果還有更多文件分段需要處理，自動繼續
+      if (hasMoreChunks.current) {
+        console.log(`[Copilot] Auto-continuing to next chunk`)
+        hasMoreChunks.current = false  // 重置標記
+        setTimeout(() => {
+          // 自動發送繼續分析的請求
+          handleSendMessage()
+        }, 1500)
+      }
     }
   }
   
@@ -2198,18 +2257,21 @@ ${skillsPrompt}${knowledgePrompt}
               </div>
             )}
             
-            {(loadedFile || loadedOracleData || loadedWebPageData) && (
+            {(loadedFile || fileChunks || loadedOracleData || loadedWebPageData) && (
               <div className="copilot-data-loaded-hint">
                 ✅ 已讀取
                 {loadedFile
                   ? `文件（${loadedFile.fileName}）`
-                  : loadedOracleData 
-                    ? `Oracle 查詢結果（${oracleInstances.find(o => o.id === selectedOracleId)?.title}）`
-                    : `網頁內容（${webViewInstances.find(w => w.id === selectedWebViewId)?.title}）`
+                  : fileChunks
+                    ? `文件（${fileChunks.fileName}）- 第 ${fileChunks.currentIndex + 1}/${fileChunks.chunks.length} 部分`
+                    : loadedOracleData 
+                      ? `Oracle 查詢結果（${oracleInstances.find(o => o.id === selectedOracleId)?.title}）`
+                      : `網頁內容（${webViewInstances.find(w => w.id === selectedWebViewId)?.title}）`
                 }，請輸入您的問題
                 <button
                   onClick={() => {
                     setLoadedFile(null)
+                    setFileChunks(null)
                     setLoadedOracleData(false)
                     setLoadedWebPageData(false)
                   }}
