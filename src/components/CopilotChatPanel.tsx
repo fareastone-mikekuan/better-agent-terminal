@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
+import katex from 'katex'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
 import { knowledgeStore } from '../stores/knowledge-store'
@@ -10,6 +11,7 @@ import { buildSystemPromptFromSkills } from '../types/copilot-skills'
 import { smartSelect } from '../types/skill-selector'
 import type { CopilotChatOptions, CopilotMessage, TerminalInstance } from '../types'
 import 'highlight.js/styles/github-dark.css'
+import 'katex/dist/katex.min.css'
 
 // Configure marked with syntax highlighting
 const renderer = new marked.Renderer()
@@ -48,6 +50,29 @@ marked.setOptions({
   breaks: true,
   renderer: renderer
 })
+
+// 自定義渲染數學公式的函數
+function renderMathInHtml(html: string): string {
+  // 處理塊級公式 $$...$$
+  html = html.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex) => {
+    try {
+      return katex.renderToString(tex, { displayMode: true, throwOnError: false })
+    } catch (e) {
+      return match
+    }
+  })
+  
+  // 處理行內公式 $...$
+  html = html.replace(/\$([^\$\n]+?)\$/g, (match, tex) => {
+    try {
+      return katex.renderToString(tex, { displayMode: false, throwOnError: false })
+    } catch (e) {
+      return match
+    }
+  })
+  
+  return html
+}
 
 interface CopilotChatPanelProps {
   isVisible: boolean
@@ -1661,7 +1686,7 @@ ${skillsPrompt}${knowledgePrompt}
                   <div 
                     className="copilot-message-content markdown-body"
                     dangerouslySetInnerHTML={{
-                      __html: DOMPurify.sanitize(marked.parse(msg.content) as string)
+                      __html: DOMPurify.sanitize(renderMathInHtml(marked.parse(msg.content) as string))
                     }}
                   />
                   {fetchUrls.length > 0 && (
@@ -1847,14 +1872,15 @@ ${skillsPrompt}${knowledgePrompt}
               <div style={{ 
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                padding: '8px 12px',
+                gap: '8px',
+                padding: '4px 8px',
                 backgroundColor: '#1e1e1e', 
-                borderRadius: '6px',
+                borderRadius: '4px',
                 border: '1px solid #2d2d2d',
                 width: '100%',
                 boxSizing: 'border-box',
-                flexWrap: 'wrap'
+                flexWrap: 'wrap',
+                minHeight: '32px'
               }}>
                 {/* 終端選擇 */}
                 {availableTerminals.length > 0 && (
@@ -1869,14 +1895,15 @@ ${skillsPrompt}${knowledgePrompt}
                       value={targetTerminalId}
                       onChange={(e) => setTargetTerminalId(e.target.value)}
                       style={{
-                        minWidth: '120px',
-                        padding: '6px 8px',
-                        fontSize: '12px',
+                        minWidth: '100px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
                         backgroundColor: '#2d2d2d',
                         color: '#e0e0e0',
                         border: '1px solid #444',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        height: '24px'
                       }}
                     >
                       {availableTerminals.map(terminal => (
@@ -1892,7 +1919,7 @@ ${skillsPrompt}${knowledgePrompt}
                 {availableTerminals.length > 0 && (oracleInstances.length > 0 || webViewInstances.length > 0) && (
                   <div style={{
                     width: '1px',
-                    height: '24px',
+                    height: '20px',
                     backgroundColor: '#444',
                     flexShrink: 0
                   }} />
@@ -1914,14 +1941,15 @@ ${skillsPrompt}${knowledgePrompt}
                         setLoadedOracleData(false)
                       }}
                       style={{
-                        minWidth: '120px',
-                        padding: '6px 8px',
-                        fontSize: '12px',
+                        minWidth: '100px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
                         backgroundColor: '#2d2d2d',
                         color: '#e0e0e0',
                         border: '1px solid #444',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        height: '24px'
                       }}
                     >
                       {oracleInstances.map(oracle => (
@@ -1941,17 +1969,18 @@ ${skillsPrompt}${knowledgePrompt}
                         }
                       }}
                       style={{
-                        padding: '6px 12px',
+                        padding: '4px 8px',
                         backgroundColor: '#dc2626',
                         color: '#ffffff',
                         border: 'none',
-                        borderRadius: '4px',
+                        borderRadius: '3px',
                         cursor: 'pointer',
-                        fontSize: '11px',
+                        fontSize: '10px',
                         fontWeight: '600',
                         whiteSpace: 'nowrap',
                         flexShrink: 0,
-                        transition: 'background-color 0.15s'
+                        transition: 'background-color 0.15s',
+                        height: '24px'
                       }}
                       onMouseOver={(e) => {
                         e.currentTarget.style.backgroundColor = '#e53e3e'
@@ -1969,7 +1998,7 @@ ${skillsPrompt}${knowledgePrompt}
                 {oracleInstances.length > 0 && webViewInstances.length > 0 && (
                   <div style={{
                     width: '1px',
-                    height: '24px',
+                    height: '20px',
                     backgroundColor: '#444',
                     flexShrink: 0
                   }} />
@@ -1991,14 +2020,15 @@ ${skillsPrompt}${knowledgePrompt}
                         setLoadedWebPageData(false)
                       }}
                       style={{
-                        minWidth: '120px',
-                        padding: '6px 8px',
-                        fontSize: '12px',
+                        minWidth: '100px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
                         backgroundColor: '#2d2d2d',
                         color: '#e0e0e0',
                         border: '1px solid #444',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        height: '24px'
                       }}
                     >
                       {webViewInstances.map(webview => (
@@ -2018,17 +2048,18 @@ ${skillsPrompt}${knowledgePrompt}
                         }
                       }}
                       style={{
-                        padding: '6px 12px',
+                        padding: '4px 8px',
                         backgroundColor: '#16a34a',
                         color: '#ffffff',
                         border: 'none',
-                        borderRadius: '4px',
+                        borderRadius: '3px',
                         cursor: 'pointer',
-                        fontSize: '11px',
+                        fontSize: '10px',
                         fontWeight: '600',
                         whiteSpace: 'nowrap',
                         flexShrink: 0,
-                        transition: 'background-color 0.15s'
+                        transition: 'background-color 0.15s',
+                        height: '24px'
                       }}
                       onMouseOver={(e) => {
                         e.currentTarget.style.backgroundColor = '#22c55e'
@@ -2189,7 +2220,7 @@ ${skillsPrompt}${knowledgePrompt}
                 </button>
               </div>
             )}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+            <div style={{ position: 'relative' }}>
               <textarea
                 ref={inputRef}
                 value={input}
@@ -2208,55 +2239,81 @@ ${skillsPrompt}${knowledgePrompt}
                 placeholder={isLoading ? "正在處理中..." : "輸入訊息... (Enter 發送, Shift+Enter 換行)"}
                 className="copilot-chat-input"
                 rows={3}
-                style={{ flex: 1 }}
+                style={{ width: '100%', paddingRight: '50px' }}
                 disabled={isLoading}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {isLoading ? (
-                  <button
-                    onClick={handleStopGeneration}
-                    className="copilot-stop-btn"
-                    style={{
-                      height: '40px',
-                      padding: '0 16px',
-                      backgroundColor: '#dc2626',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.backgroundColor = '#b91c1c'
-                      e.currentTarget.style.transform = 'scale(1.05)'
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.backgroundColor = '#dc2626'
+              {isLoading ? (
+                <button
+                  onClick={handleStopGeneration}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    bottom: '8px',
+                    width: '32px',
+                    height: '32px',
+                    backgroundColor: '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                    padding: 0
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.backgroundColor = '#b91c1c'
+                    e.currentTarget.style.transform = 'scale(1.1)'
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.backgroundColor = '#dc2626'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }}
+                  title="停止生成"
+                >
+                  ⏹
+                </button>
+              ) : (
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!input.trim()}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    bottom: '8px',
+                    width: '32px',
+                    height: '32px',
+                    backgroundColor: input.trim() ? '#0066cc' : '#444',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: input.trim() ? 'pointer' : 'not-allowed',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                    padding: 0
+                  }}
+                  onMouseOver={(e) => {
+                    if (input.trim()) {
+                      e.currentTarget.style.backgroundColor = '#0052a3'
+                      e.currentTarget.style.transform = 'scale(1.1)'
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (input.trim()) {
+                      e.currentTarget.style.backgroundColor = '#0066cc'
                       e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                    title="停止生成"
-                  >
-                    ⏹️ 停止
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!input.trim()}
-                    className="copilot-send-btn"
-                    style={{ 
-                      height: '40px',
-                      padding: '0 16px'
-                    }}
-                  >
-                    📤 發送
-                  </button>
-                )}
-              </div>
+                    }
+                  }}
+                  title="發送訊息"
+                >
+                  ▲
+                </button>
+              )}
             </div>
 
             <div style={{
