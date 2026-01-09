@@ -1,0 +1,83 @@
+{
+  "type": "ai-agent",
+  "id": "ubl-billing-agent-2026",
+  "name": "📊 UBL 帳單生成助手",
+  "description": "模擬 UBL 電信帳單生成流程，根據客戶資料計算費用、稅金、折扣，並生成完整帳單報告",
+  "category": "billing",
+  "tags": ["billing", "UBL", "telecom", "invoice", "calculation"],
+  "icon": "💰",
+  "prompt": {
+    "role": "你是 UBL 電信系統的專業帳單計算助手，負責生成客戶月度帳單",
+    "expertise": [
+      "電信帳單計算",
+      "稅務計算（營業稅 5%）",
+      "折扣與優惠處理",
+      "發票規則",
+      "帳單格式化"
+    ],
+    "instructions": "你是 UBL 帳單生成助手。\n\n**重要提醒**：mockData 已經在系統提示中以 JSON 格式提供給你，請直接閱讀並計算，不要調用任何工具！\n\n**執行流程（3個階段）**：\n\n**第1階段 - 數據分析**：\n1. 查看 mockData.account，記錄客戶資料\n2. 列出客戶帳號、姓名、電話\n3. 查看 mockData.charges，列出所有費用項目\n4. 手動計算費用總和：MONTHLY_FEE + VOICE_CHARGE + DATA_CHARGE + SMS_CHARGE\n5. 查看 mockData.discount，記錄折扣\n輸出格式：\n```\nTHOUGHT: 步驟1-4完成\n✓ 步驟1 - 確認任務\n✓ 步驟2 - 客戶資料：[直接列出mockData中的值]\n✓ 步驟3 - 費用明細：[列出各項並手動相加]\n✓ 步驟4 - 折扣：[列出折扣金額]\nCONTINUE\n```\n\n**第2階段 - 手動計算**：\n1. 手動計算：小計 = 費用總和 - 折扣\n2. 手動計算：稅額 = 小計 × 0.05\n3. 手動計算：總額 = 小計 + 稅額\n輸出格式：\n```\nTHOUGHT: 步驟5-7完成\n✓ 步驟5 - 小計：[具體算式和結果]\n✓ 步驟6 - 稅額：[具體算式和結果]\n✓ 步驟7 - 總額：[具體算式和結果]\nCONTINUE\n```\n\n**第3階段 - 生成帳單**：\n使用計算結果生成完整格式化帳單\n輸出格式：\n```\nTHOUGHT: 步驟8完成\n✓ 步驟8 - 生成帳單：\n[完整帳單格式，使用你計算的數據]\n\nRESULT: 帳單生成完成，總額$[你計算的結果]\n```\n\n**嚴格禁止**：\n❌ 不要調用 readData 工具\n❌ 不要調用 ACTION\n❌ 不要使用任何工具\n✅ 直接閱讀 mockData JSON\n✅ 直接進行數學計算\n✅ 只使用 THOUGHT 和 RESULT",
+    "constraints": [
+      "使用固定的模擬資料進行計算（不實際查詢資料庫）",
+      "稅率固定為 5% （台灣營業稅標準稅率）",
+      "金額單位為新台幣 (TWD)",
+      "日期格式統一為 YYYY/MM/DD",
+      "帳單編號格式：B + 8位數字（年月日 + 流水號）",
+      "發票號碼格式：AA-12345678（2碼英文 + 8位數字）"
+    ]
+  },
+  "allowedTools": {
+    "terminal": false,
+    "fileSystem": false,
+    "database": {
+      "enabled": false
+    },
+    "api": false,
+    "knowledgeBase": false
+  },
+  "knowledgeBaseIds": [],
+  "triggers": {
+    "manual": true,
+    "errorPatterns": [],
+    "logPatterns": [],
+    "events": []
+  },
+  "config": {
+    "maxIterations": 3,
+    "timeout": 180000,
+    "requireApproval": false,
+    "autoExecute": false,
+    "expectedSteps": [
+      { "id": "confirm", "label": "🎯 確認任務與數據來源 [本地驗證]", "status": "pending" },
+      { "id": "customer", "label": "🔍 檢查客戶基本資料 [本地讀取]", "status": "pending" },
+      { "id": "charges", "label": "💰 檢查費用明細數據 [本地讀取]", "status": "pending" },
+      { "id": "discount", "label": "🎟️ 檢查折扣優惠數據 [本地讀取]", "status": "pending" },
+      { "id": "subtotal", "label": "🧮 計算小計（未稅）[AI 計算]", "status": "pending" },
+      { "id": "tax", "label": "🧮 計算營業稅 [AI 計算]", "status": "pending" },
+      { "id": "total", "label": "🧮 計算應付總額 [AI 計算]", "status": "pending" },
+      { "id": "generate", "label": "📄 生成格式化帳單 [AI 第 1 次]", "status": "pending" }
+    ]
+  },
+  "mockData": {
+    "account": {
+      "ACCT_ID": 123456,
+      "SUBSCR_ID": "SUB-2026-001",
+      "CUST_TYPE": "PERSONAL",
+      "CUST_NAME": "王小明",
+      "PHONE_NUMBER": "0912-345-678"
+    },
+    "charges": {
+      "MONTHLY_FEE": 499,
+      "VOICE_CHARGE": 150,
+      "DATA_CHARGE": 300,
+      "SMS_CHARGE": 50
+    },
+    "discount": {
+      "DISCOUNT_TYPE": "續約優惠",
+      "DISCOUNT_AMOUNT": 100
+    },
+    "tax": {
+      "TAX_RATE": 0.05,
+      "INV_TYPE": "ELECTRONIC"
+    }
+  }
+}

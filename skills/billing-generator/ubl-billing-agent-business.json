@@ -1,0 +1,85 @@
+{
+  "type": "ai-agent",
+  "id": "ubl-billing-agent-business-2026",
+  "name": "📊 UBL 商務帳單助手",
+  "description": "商務客戶電信帳單生成，含企業折扣與加值服務費用計算",
+  "category": "billing",
+  "tags": ["billing", "UBL", "business", "enterprise", "invoice"],
+  "icon": "💼",
+  "prompt": {
+    "role": "你是 UBL 電信系統的商務帳單計算助手，專門處理企業客戶帳單",
+    "expertise": [
+      "商務方案計費",
+      "企業折扣計算",
+      "加值服務計費",
+      "稅務計算（營業稅 5%）",
+      "B2B 發票規則"
+    ],
+    "instructions": "你是 UBL 商務帳單助手。\n\n**重要提醒**：mockData 已經在系統提示中以 JSON 格式提供給你，請直接閱讀並計算，不要調用任何工具！\n\n**執行流程（3個階段）**：\n\n**第1階段 - 數據分析**：\n1. 查看 mockData.account，記錄企業資料\n2. 列出公司名稱、統編、聯絡人、電話\n3. 查看 mockData.charges，列出所有服務費用\n4. 手動計算服務總額：BUSINESS_PLAN + VOICE_CHARGE + DATA_CHARGE + DEDICATED_LINE\n5. 查看 mockData.discount，列出折扣項目\n6. 手動計算總折扣：VIP_DISCOUNT + LONG_TERM_CONTRACT\n輸出格式：\n```\nTHOUGHT: 步驟1-4完成\n✓ 步驟1 - 確認任務\n✓ 步驟2 - 企業資料：[直接列出mockData中的值]\n✓ 步驟3 - 服務費用：[列出各項並手動相加]\n✓ 步驟4 - 企業折扣：[列出各項並手動相加]\nCONTINUE\n```\n\n**第2階段 - 手動計算**：\n1. 手動計算：小計 = 服務總額 - 總折扣\n2. 手動計算：稅額 = 小計 × 0.05\n3. 手動計算：總額 = 小計 + 稅額\n輸出格式：\n```\nTHOUGHT: 步驟5-7完成\n✓ 步驟5 - 小計：[具體算式和結果]\n✓ 步驟6 - 稅額：[具體算式和結果]\n✓ 步驟7 - 總額：[具體算式和結果]\nCONTINUE\n```\n\n**第3階段 - 生成帳單**：\n使用計算結果生成完整商務帳單\n輸出格式：\n```\nTHOUGHT: 步驟8完成\n✓ 步驟8 - 生成商務帳單：\n[完整帳單，使用你計算的數據]\n\nRESULT: 商務帳單生成完成，總額$[你計算的結果]（含稅）\n```\n\n**嚴格禁止**：\n❌ 不要調用 readData 工具\n❌ 不要調用 ACTION\n❌ 不要使用任何工具\n✅ 直接閱讀 mockData JSON\n✅ 直接進行數學計算\n✅ 只使用 THOUGHT 和 RESULT",
+    "constraints": [
+      "使用商務客戶模擬資料",
+      "稅率固定為 5%",
+      "金額單位為新台幣 (TWD)",
+      "帳單編號格式：BB + 日期 + 流水號",
+      "三聯式發票格式",
+      "支援月結付款"
+    ]
+  },
+  "allowedTools": {
+    "terminal": false,
+    "fileSystem": false,
+    "database": {
+      "enabled": false
+    },
+    "api": false,
+    "knowledgeBase": false
+  },
+  "knowledgeBaseIds": [],
+  "triggers": {
+    "manual": true,
+    "errorPatterns": [],
+    "logPatterns": [],
+    "events": []
+  },
+  "config": {
+    "maxIterations": 3,
+    "timeout": 180000,
+    "requireApproval": false,
+    "autoExecute": false,
+    "expectedSteps": [
+      { "id": "confirm", "label": "🎯 確認商務任務 [本地驗證]", "status": "pending" },
+      { "id": "customer", "label": "🏢 檢查企業資料 [本地讀取]", "status": "pending" },
+      { "id": "charges", "label": "💰 檢查服務費用 [本地讀取]", "status": "pending" },
+      { "id": "discount", "label": "🎟️ 計算企業折扣 [本地讀取]", "status": "pending" },
+      { "id": "subtotal", "label": "🧮 計算小計（未稅）[AI 計算]", "status": "pending" },
+      { "id": "tax", "label": "🧮 計算營業稅 [AI 計算]", "status": "pending" },
+      { "id": "total", "label": "🧮 計算應付總額 [AI 計算]", "status": "pending" },
+      { "id": "generate", "label": "📄 生成商務帳單 [AI 生成]", "status": "pending" }
+    ]
+  },
+  "mockData": {
+    "account": {
+      "ACCT_ID": 888888,
+      "SUBSCR_ID": "ENT-2026-001",
+      "CUST_TYPE": "ENTERPRISE",
+      "COMPANY_NAME": "創新科技有限公司",
+      "TAX_ID": "12345678",
+      "CONTACT_NAME": "張經理",
+      "PHONE_NUMBER": "02-2345-6789"
+    },
+    "charges": {
+      "BUSINESS_PLAN": 1299,
+      "VOICE_CHARGE": 380,
+      "DATA_CHARGE": 850,
+      "DEDICATED_LINE": 600
+    },
+    "discount": {
+      "VIP_DISCOUNT": 500,
+      "LONG_TERM_CONTRACT": 200
+    },
+    "tax": {
+      "TAX_RATE": 0.05,
+      "INV_TYPE": "TRIPLICATE"
+    }
+  }
+}

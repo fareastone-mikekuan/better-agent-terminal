@@ -102,6 +102,27 @@ export class AIAgentExecutor {
         if (thought.type === 'analysis') {
           consecutiveAnalysisCount++
           
+          // 檢查是否包含 CONTINUE（多階段技能的標記）
+          if (thought.content.includes('CONTINUE')) {
+            // 根據當前進度給出具體指引
+            let guidance = ''
+            if (iteration >= maxIterations - 1) {
+              // 已經是倒數第二次迭代，下次必須完成
+              guidance = `你已完成階段 ${iteration}/${maxIterations}。\n\n⚠️ 這是最後一次迭代！請執行最終階段：\n- 如果是帳單生成任務，請生成完整格式化帳單\n- 最後必須使用 RESULT: 格式結束，不要再用 CONTINUE\n- 例如：RESULT: 帳單生成完成，總額$XXX`
+            } else {
+              // 還有多次迭代，繼續下一階段
+              guidance = `你已完成階段 ${iteration}/${maxIterations}。請繼續執行下一階段的步驟。`
+            }
+            
+            this.state.conversationHistory.push({
+              role: 'user',
+              content: guidance,
+              timestamp: Date.now()
+            })
+            consecutiveAnalysisCount = 0 // 重置計數
+            continue
+          }
+          
           // 如果連續 3 次只分析不行動，強制要求給出結果
           if (consecutiveAnalysisCount >= 3) {
             this.state.conversationHistory.push({
@@ -289,6 +310,15 @@ export class AIAgentExecutor {
       systemPrompt += `## ⚠️ 被限制的工具（不可使用）\n`
       systemPrompt += restrictedTools.map(t => `- ❌ ${t}`).join('\n') + '\n'
       systemPrompt += `\n**重要**: 如果用戶要求使用以上工具，請明確告知該功能已被限制，並建議替代方案。\n\n`
+    }
+    
+    // 模擬數據（如果技能有提供）
+    if ((this.skill as any).mockData) {
+      systemPrompt += `## 可用數據 (mockData)\n`
+      systemPrompt += `以下是技能提供的數據，請直接使用這些數據進行計算，不需要調用工具讀取：\n\n`
+      systemPrompt += '```json\n'
+      systemPrompt += JSON.stringify((this.skill as any).mockData, null, 2)
+      systemPrompt += '\n```\n\n'
     }
     
     // 知識庫

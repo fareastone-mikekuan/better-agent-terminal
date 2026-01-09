@@ -763,10 +763,226 @@ export function NewSkillPanel({
                       </div>
                     </div>
                     
-                    {/* Agent 狀態 */}
+                    {/* Agent 狀態與 TODO 進度 */}
                     {agentState && (
-                      <div style={{ marginTop: '12px' }}>
-                        <div
+                      <>
+                        {/* TODO 進度顯示（緊湊型） */}
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '12px 16px',
+                          backgroundColor: 'var(--bg-primary)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '12px',
+                            paddingBottom: '8px',
+                            borderBottom: '1px solid var(--border-color)'
+                          }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: agentState.status === 'completed' ? '#3fb950' : '#58a6ff' }}>
+                              {agentState.status === 'completed' ? '✅ 執行完成' : 
+                               agentState.status === 'error' ? '❌ 執行錯誤' :
+                               agentState.status === 'waiting-approval' ? '⏸️ 等待批准' :
+                               '⚙️ AI 思考中'}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>
+                              迭代 {agentState.currentIteration} / {executingSkill.config?.maxIterations || 10}
+                            </div>
+                          </div>
+
+                          {/* 根據 expectedSteps 或 thoughts 生成 TODO 步驟 */}
+                          {(() => {
+                            const expectedSteps = executingSkill.config?.expectedSteps
+                            
+                            // 如果有預定義步驟，顯示預定義步驟（類似 CHAT 的固定步驟）
+                            if (expectedSteps && Array.isArray(expectedSteps)) {
+                              const totalSteps = expectedSteps.length
+                              const maxIter = executingSkill.config?.maxIterations || 10
+                              const currentIter = agentState.currentIteration
+                              
+                              // 根據迭代進度計算已完成的步驟數
+                              const stepsPerIteration = totalSteps / maxIter
+                              const completedSteps = Math.floor((currentIter - 1) * stepsPerIteration)
+                              const currentStepIndex = Math.floor(currentIter * stepsPerIteration) - 1
+                              
+                              return expectedSteps.map((step, index) => {
+                                const isCompleted = index < completedSteps
+                                const isCurrent = index === currentStepIndex && agentState.status === 'thinking'
+                                const isPending = index > currentStepIndex
+                                
+                                let icon = '⏺️'
+                                let statusText = '等待中'
+                                let color = '#888'
+                                
+                                if (isCurrent) {
+                                  icon = '🔄'
+                                  statusText = '進行中'
+                                  color = '#58a6ff'
+                                } else if (isCompleted || (agentState.status === 'completed' && index <= currentStepIndex)) {
+                                  icon = '✓'
+                                  statusText = '完成'
+                                  color = '#3fb950'
+                                }
+                                
+                                return (
+                                  <div key={step.id} style={{ marginBottom: '4px' }}>
+                                    {/* 外層：預定義業務步驟 */}
+                                    <div 
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '10px',
+                                        padding: '6px 0',
+                                        opacity: isPending ? 0.4 : 1,
+                                        transition: 'all 0.3s ease'
+                                      }}
+                                    >
+                                      <div style={{
+                                        fontSize: '14px',
+                                        lineHeight: '14px',
+                                        animation: isCurrent ? 'spin 1s linear infinite' : 'none'
+                                      }}>
+                                        {icon}
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{
+                                          fontSize: '12px',
+                                          fontWeight: 500,
+                                          color: color
+                                        }}>
+                                          {step.label}
+                                          <span style={{ 
+                                            marginLeft: '8px',
+                                            fontSize: '11px',
+                                            color: '#666',
+                                            fontWeight: 'normal'
+                                          }}>
+                                            ({statusText})
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* 內層：當前步驟的 AI 思考過程（嵌套顯示） */}
+                                    {isCurrent && agentState.thoughts.length > 0 && (
+                                      <div style={{
+                                        marginLeft: '34px',
+                                        paddingLeft: '12px',
+                                        borderLeft: '2px solid #30363d',
+                                        marginTop: '4px'
+                                      }}>
+                                        {agentState.thoughts.slice(-3).map((thought, tIndex) => {
+                                          // thought 可能是字符串或對象 {type, content, timestamp}
+                                          const thoughtText = typeof thought === 'string' ? thought : thought.content
+                                          const displayText = thoughtText.length > 100 ? thoughtText.substring(0, 100) + '...' : thoughtText
+                                          
+                                          return (
+                                            <div 
+                                              key={`thought-${currentIter}-${tIndex}`}
+                                              style={{
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '8px',
+                                                padding: '4px 0',
+                                                fontSize: '11px',
+                                                color: '#8b949e',
+                                                opacity: 0.8
+                                              }}
+                                            >
+                                              <div style={{ 
+                                                fontSize: '10px',
+                                                marginTop: '2px',
+                                                color: '#58a6ff'
+                                              }}>
+                                                ↳
+                                              </div>
+                                              <div style={{ flex: 1, lineHeight: '1.4' }}>
+                                                {displayText}
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })
+                            }
+                            
+                            // 否則顯示 thoughts（原有邏輯，用於沒有預定義步驟的 AI Agent）
+                            return agentState.thoughts.slice(-5).map((thought, index) => {
+                              const isLatest = index === agentState.thoughts.slice(-5).length - 1
+                              const isCompleted = !isLatest
+                              
+                              let icon = '⏺️'
+                              let statusText = '等待中'
+                              let color = '#888'
+                              
+                              if (isLatest && agentState.status === 'thinking') {
+                                icon = '🔄'
+                                statusText = '進行中'
+                                color = '#58a6ff'
+                              } else if (isCompleted) {
+                                icon = thought.type === 'result' ? '✅' : '✓'
+                                statusText = '完成'
+                                color = '#3fb950'
+                              }
+                              
+                              const typeLabel = 
+                                thought.type === 'analysis' ? '🧠 分析任務' :
+                                thought.type === 'knowledge' ? '📚 查詢知識' :
+                                thought.type === 'decision' ? '💡 制定計畫' :
+                                thought.type === 'action' ? '⚡ 執行動作' :
+                                thought.type === 'result' ? '✅ 生成結果' : '🔍 處理中'
+                              
+                              return (
+                                <div 
+                                  key={index}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    padding: '6px 0',
+                                    opacity: isCompleted ? 1 : 0.6,
+                                    transition: 'all 0.3s ease'
+                                  }}
+                                >
+                                  <div style={{
+                                    fontSize: '14px',
+                                    lineHeight: '14px',
+                                    animation: (isLatest && agentState.status === 'thinking') ? 'spin 1s linear infinite' : 'none'
+                                  }}>
+                                    {icon}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{
+                                      fontSize: '12px',
+                                      fontWeight: 500,
+                                      color: color
+                                    }}>
+                                      {typeLabel}
+                                      <span style={{ 
+                                        marginLeft: '8px',
+                                        fontSize: '11px',
+                                        color: '#666',
+                                        fontWeight: 'normal'
+                                      }}>
+                                        ({statusText})
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+
+                        {/* 原有的狀態指示器（保留作為備用） */}
+                        <div style={{ marginTop: '12px', display: 'none' }}>
+                          <div
                           style={{
                             padding: '8px 12px',
                             backgroundColor: 'var(--bg-secondary)',
@@ -801,6 +1017,7 @@ export function NewSkillPanel({
                           </span>
                         </div>
                       </div>
+                    </>
                     )}
 
                     {/* 控制按鈕 */}
