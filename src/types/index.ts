@@ -41,6 +41,7 @@ export type SkillShortcutType = 'terminal' | 'api' | 'db' | 'web' | 'file' | 'wa
 
 // 工作流程步驟（從 skill.md 解析）
 export interface SkillWorkflowStep {
+  id?: string;
   type: SkillShortcutType;
   label: string;
   

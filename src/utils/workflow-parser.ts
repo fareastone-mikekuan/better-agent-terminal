@@ -1,4 +1,5 @@
 import type { SkillWorkflowStep } from '../types'
+import { v4 as uuidv4 } from 'uuid'
 
 /**
  * 從 skill.md 檔案內容解析工作流程步驟
@@ -16,20 +17,13 @@ import type { SkillWorkflowStep } from '../types'
 export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] {
   const steps: SkillWorkflowStep[] = []
   
-  console.log('[workflow-parser] 開始解析 Workflow')
-  console.log('[workflow-parser] 內容長度:', content.length)
-  
   // 找到 Workflow 區塊
   const workflowMatch = content.match(/##\s+Workflow\s*\n([\s\S]*?)(?=\n##|\n---|\n```|$)/i)
   if (!workflowMatch) {
-    console.log('[workflow-parser] 未找到 Workflow 區塊')
     return steps
   }
   
-  console.log('[workflow-parser] 找到 Workflow 區塊')
   const workflowContent = workflowMatch[1]
-  console.log('[workflow-parser] Workflow 內容長度:', workflowContent.length)
-  console.log('[workflow-parser] Workflow 內容:', workflowContent.substring(0, 200))
   
   // 合併被自動換行的長行
   // 如果一行不是以數字開頭（即不是新的步驟），則合併到上一行
@@ -57,11 +51,9 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
   }
   
   const lines = mergedLines
-  console.log('[workflow-parser] 合併後行數:', lines.length)
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    console.log(`[workflow-parser] 第${i+1}行:`, JSON.stringify(line.substring(0, 100)))
     
     // 匹配格式: 1. [TYPE] content - description
     // 使用更精确的匹配，避免把命令中的 "-" 当作分隔符
@@ -93,104 +85,86 @@ export function parseWorkflowFromMarkdown(content: string): SkillWorkflowStep[] 
     const typeUpper = type.toUpperCase()
     const label = description || content
     
+    // 處理 DB:connection 類型
+    const isDbType = typeUpper === 'DB' || typeUpper.startsWith('DB:')
+    
     let step: SkillWorkflowStep | null = null
     
-    switch (typeUpper) {
-      case 'TERMINAL':
-        step = {
-          type: 'terminal',
-          label,
-          command: content.trim()
-        }
-        break
-        
-      case 'API': {
-        // 解析 API: METHOD URL [body]
-        // 支持两种格式：
-        // 1. POST https://api.com/endpoint {"key":"value"}
-        // 2. POST https://api.com/endpoint (无 body)
-        const apiMatch = content.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(\S+)(.*)$/i)
-        if (apiMatch) {
-          const [, method, url, bodyPart] = apiMatch
-          // 提取 body（去除前导空格，但保留 JSON 内的空格）
-          const body = bodyPart.trim() || undefined
-          step = {
-            type: 'api',
-            label,
-            apiMethod: method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
-            apiUrl: url,
-            apiBody: body
-          }
-        }
-        break
+    if (typeUpper === 'TERMINAL') {
+      step = {
+        id: uuidv4(),
+        type: 'terminal',
+        label,
+        command: content.trim()
       }
-        
-      case 'DB': {
-        // 支持两种格式：
-        // 1. [DB] SELECT * FROM users - 使用默认连接
-        // 2. [DB:connection_name] SELECT * FROM users - 指定连接名称
-        const dbConnectionMatch = type.match(/^DB:(.+)$/i)
-        const connectionName = dbConnectionMatch ? dbConnectionMatch[1] : undefined
-        
+    } else if (typeUpper === 'API') {
+      // 解析 API: METHOD URL [body]
+      const apiMatch = content.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(\S+)(.*)$/i)
+      if (apiMatch) {
+        const [, method, url, bodyPart] = apiMatch
+        const body = bodyPart.trim() || undefined
         step = {
-          type: 'db',
+          id: uuidv4(),
+          type: 'api',
           label,
-          dbQuery: content.trim(),
-          dbConnection: connectionName
+          apiMethod: method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+          apiUrl: url,
+          apiBody: body
         }
-        break
       }
-        break
-        
-      case 'WEB':
+    } else if (isDbType) {
+      // 處理 DB 或 DB:connection_name
+      const dbConnectionMatch = type.match(/^DB:(.+)$/i)
+      const connectionName = dbConnectionMatch ? dbConnectionMatch[1] : undefined
+      
+      step = {
+        id: uuidv4(),
+        type: 'db',
+        label,
+        dbQuery: content.trim(),
+        dbConnection: connectionName
+      }
+    } else if (typeUpper === 'WEB') {
+      step = {
+        id: uuidv4(),
+        type: 'web',
+        label,
+        webUrl: content.trim()
+      }
+    } else if (typeUpper === 'FILE') {
+      // 解析 FILE: action path
+      const fileMatch = content.match(/^(download|upload|open)\s+(.+)$/i)
+      if (fileMatch) {
+        const [, action, path] = fileMatch
         step = {
-          type: 'web',
+          id: uuidv4(),
+          type: 'file',
           label,
-          webUrl: content.trim()
+          fileAction: action.toLowerCase() as 'download' | 'upload' | 'open',
+          filePath: path.trim()
         }
-        break
-        
-      case 'FILE': {
-        // 解析 FILE: action path
-        const fileMatch = content.match(/^(download|upload|open)\s+(.+)$/i)
-        if (fileMatch) {
-          const [, action, path] = fileMatch
-          step = {
-            type: 'file',
-            label,
-            fileAction: action.toLowerCase() as 'download' | 'upload' | 'open',
-            filePath: path.trim()
-          }
-        }
-        break
       }
-        
-      case 'WAIT': {
-        // 解析 WAIT: condition target [timeout]
-        const waitMatch = content.match(/^(log_contains|api_status|file_exists|time)\s+["]?([^"]+)["]?(?:\s+(\d+))?$/i)
-        if (waitMatch) {
-          const [, condition, target, timeout] = waitMatch
-          step = {
-            type: 'wait',
-            label,
-            waitCondition: condition.toLowerCase() as 'log_contains' | 'api_status' | 'file_exists' | 'time',
-            waitTarget: target.trim(),
-            waitTimeout: timeout ? parseInt(timeout) : 300
-          }
+    } else if (typeUpper === 'WAIT') {
+      // 解析 WAIT: condition target [timeout]
+      const waitMatch = content.match(/^(log_contains|api_status|file_exists|time)\s+["]?([^"]+)["]?(?:\s+(\d+))?$/i)
+      if (waitMatch) {
+        const [, condition, target, timeout] = waitMatch
+        step = {
+          id: uuidv4(),
+          type: 'wait',
+          label,
+          waitCondition: condition.toLowerCase() as 'log_contains' | 'api_status' | 'file_exists' | 'time',
+          waitTarget: target.trim(),
+          waitTimeout: timeout ? parseInt(timeout) : 300
         }
-        break
       }
     }
     
     if (step) {
       steps.push(step)
-      console.log('[workflow-parser] 成功添加步驟:', step.type, step.label?.substring(0, 50))
-    } else {
-      console.log('[workflow-parser] 無法解析步驟:', line.substring(0, 80))
     }
   }
   
-  console.log('[workflow-parser] 完成解析，共', steps.length, '個步驟')
   return steps
 }
 

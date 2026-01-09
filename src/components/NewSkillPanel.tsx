@@ -56,6 +56,7 @@ export function NewSkillPanel({
   const [isPaused, setIsPaused] = useState(false)
   const [results, setResults] = useState<StepResult[]>([])
   const [executingTerminalId, setExecutingTerminalId] = useState<string | null>(null)
+  const [isExecutionCompleted, setIsExecutionCompleted] = useState(false)
 
   // AI Agent 執行狀態
   const [agentExecutor, setAgentExecutor] = useState<AIAgentExecutor | null>(null)
@@ -524,6 +525,7 @@ export function NewSkillPanel({
     }
     
     setIsRunning(false)
+    setIsExecutionCompleted(true)  // 標記執行完成
   }
 
   const handleReset = () => {
@@ -533,6 +535,7 @@ export function NewSkillPanel({
     setIsPaused(false)
     setResults([])
     setExecutingTerminalId(null) // 清除 terminal ID
+    setIsExecutionCompleted(false)  // 重置完成狀態
   }
 
   const handleManageSkills = () => {
@@ -1109,73 +1112,105 @@ export function NewSkillPanel({
                 </div>
               </div>
 
-              {/* 步驟列表 */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+              {/* 步驟列表 - 緊湊顯示 */}
+              <div style={{ 
+                flex: 1, 
+                overflowY: 'auto', 
+                padding: '12px 16px',
+                backgroundColor: 'var(--bg-primary)',
+                maxHeight: isExecutionCompleted ? '200px' : 'none',
+                transition: 'max-height 0.3s ease'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '12px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid var(--border-color)'
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: isExecutionCompleted ? '#3fb950' : '#58a6ff' }}>
+                    {isExecutionCompleted ? '✅ 執行完成' : '⚙️ 執行中'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>
+                    {results.filter(r => r.status === 'success').length} / {executingSkill.steps.length}
+                  </div>
+                </div>
+
                 {executingSkill.steps.map((step, index) => {
                   const result = results[index] || { status: 'pending' }
-                  const isCurrentStep = index === currentStep
+                  const isRunning = result.status === 'running'
+                  const isCompleted = result.status === 'success'
+                  const isError = result.status === 'error'
+                  const isPending = result.status === 'pending'
+                  
+                  let icon = '⏺️'
+                  let statusText = '等待中'
+                  let color = '#888'
+                  
+                  if (isRunning) {
+                    icon = '🔄'
+                    statusText = '進行中'
+                    color = '#58a6ff'
+                  } else if (isCompleted) {
+                    icon = '✅'
+                    statusText = '完成'
+                    color = '#3fb950'
+                  } else if (isError) {
+                    icon = '❌'
+                    statusText = '錯誤'
+                    color = '#f85149'
+                  }
+                  
+                  const duration = result.duration
+                    ? `${(result.duration / 1000).toFixed(1)}s`
+                    : null
                   
                   return (
-                    <div
+                    <div 
                       key={step.id}
                       style={{
-                        marginBottom: '8px',
-                        padding: '12px',
-                        backgroundColor: isCurrentStep ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-                        border: `1px solid ${isCurrentStep ? '#7bbda4' : 'var(--border-color)'}`,
-                        borderRadius: '6px'
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '6px 0',
+                        opacity: isPending ? 0.6 : 1,
+                        transition: 'all 0.3s ease'
                       }}
                     >
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                        <span
-                          style={{
-                            fontSize: '16px',
-                            color: getStepStatusColor(result.status),
-                            fontWeight: 'bold',
-                            display: 'inline-block',
-                            animation: result.status === 'running' ? 'spin 1s linear infinite' : 'none'
-                          }}
-                        >
-                          {getStepStatusIcon(result.status)}
-                        </span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              步驟 {index + 1}
-                            </span>
-                            {result.duration && (
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                {(result.duration / 1000).toFixed(2)}s
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontWeight: 600, fontSize: '13px', marginTop: '4px' }}>
-                            {step.name}
-                          </div>
-                          {step.description && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                              {step.description}
-                            </div>
-                          )}
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            類型: {getStepTypeLabel(step.type)}
-                          </div>
-                          {result.message && (
-                            <div
-                              style={{
-                                marginTop: '8px',
-                                padding: '6px 8px',
-                                backgroundColor: result.status === 'error' ? 'rgba(244, 67, 54, 0.1)' : 'rgba(123, 189, 164, 0.1)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                color: result.status === 'error' ? '#f44336' : '#7bbda4'
-                              }}
-                            >
-                              {result.message}
-                            </div>
-                          )}
+                      <div style={{
+                        fontSize: '14px',
+                        lineHeight: '14px',
+                        animation: isRunning ? 'spin 1s linear infinite' : 'none'
+                      }}>
+                        {icon}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: color
+                        }}>
+                          {step.label || step.name}
+                          <span style={{ 
+                            marginLeft: '8px',
+                            fontSize: '11px',
+                            color: '#666',
+                            fontWeight: 'normal'
+                          }}>
+                            ({statusText})
+                          </span>
                         </div>
                       </div>
+                      {duration && (
+                        <div style={{
+                          fontSize: '10px',
+                          color: '#666',
+                          fontFamily: 'monospace'
+                        }}>
+                          {duration}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

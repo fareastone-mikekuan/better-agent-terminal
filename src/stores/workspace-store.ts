@@ -567,18 +567,14 @@ class WorkspaceStore {
       // Save to localStorage first (primary storage - always works)
       try {
         localStorage.setItem(this.BACKUP_KEY, data)
-        console.log('[WorkspaceStore] Saved to localStorage (primary)')
       } catch (e) {
         console.error('[WorkspaceStore] Failed to save to localStorage:', e)
       }
       
       // Try to save to file as well (backup, non-blocking)
       // Don't await this - let it run in background
-      window.electronAPI.workspace.save(data).then(success => {
-        if (success) {
-          console.log('[WorkspaceStore] File backup saved')
-        }
-        // Silent fail for file - localStorage is the truth
+      window.electronAPI.workspace.save(data).then(() => {
+        // Silent success - localStorage is the truth
       }).catch(() => {
         // Silent fail - localStorage is primary
       })
