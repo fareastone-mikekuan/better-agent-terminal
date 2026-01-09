@@ -367,25 +367,158 @@ export class AIAgentExecutor {
         this.notifyStateChange()
         await new Promise(resolve => setTimeout(resolve, 800))
         
-        // 子步驟2：查詢知識庫
+        // ========== 兩階段知識庫查詢（仿 CHAT 機制）==========
+        // 第一階段：使用輕量級索引進行匹配
+        const searchKeywords = isCalculateStep 
+          ? ['計費', '稅率', 'TAX', 'BILL', 'BI', 'CI', 'CHARGE', '帳單', '費用', '價格']
+          : ['UBL', 'XML', 'Invoice', '發票', '格式', '帳單', '電信']
+        
+        // 使用索引資訊進行智能匹配（不載入完整內容）
+        interface KnowledgeWithScore {
+          kb: typeof this.context.knowledgeBase[0]
+          score: number
+          matchedKeywords: string[]
+        }
+        
+        const scoredKnowledge: KnowledgeWithScore[] = this.context.knowledgeBase
+          .filter(kb => kb && (kb.title || kb.name))
+          .map(kb => {
+            const titleOrName = (kb.title || kb.name || '').toLowerCase()
+            const index = (kb as any).index // KnowledgeIndex
+            let score = 0
+            const matchedKeywords: string[] = []
+            
+            // 匹配標題（權重高）
+            searchKeywords.forEach(keyword => {
+              if (titleOrName.includes(keyword.toLowerCase())) {
+                score += 10
+                matchedKeywords.push(keyword)
+              }
+            })
+            
+            // 匹配索引資訊（如果有）
+            if (index) {
+              // 匹配索引摘要
+              const summary = (index.summary || '').toLowerCase()
+              searchKeywords.forEach(keyword => {
+                if (summary.includes(keyword.toLowerCase())) {
+                  score += 5
+                  if (!matchedKeywords.includes(keyword)) matchedKeywords.push(keyword)
+                }
+              })
+              
+              // 匹配索引關鍵詞
+              const indexKeywords = index.keywords || []
+              indexKeywords.forEach((kw: string) => {
+                searchKeywords.forEach(sk => {
+                  if (kw.toLowerCase().includes(sk.toLowerCase())) {
+                    score += 8
+                    if (!matchedKeywords.includes(sk)) matchedKeywords.push(sk)
+                  }
+                })
+              })
+              
+              // 匹配業務流程
+              const processes = index.businessProcesses || []
+              processes.forEach((proc: string) => {
+                searchKeywords.forEach(sk => {
+                  if (proc.toLowerCase().includes(sk.toLowerCase())) {
+                    score += 6
+                    if (!matchedKeywords.includes(sk)) matchedKeywords.push(sk)
+                  }
+                })
+              })
+            }
+            
+            return { kb, score, matchedKeywords }
+          })
+          .filter(item => item.score > 0)
+          .sort((a, b) => b.score - a.score)
+        
+        // 只取前 3 個最相關的
+        const relevantKnowledge = scoredKnowledge.slice(0, 3).map(item => item.kb)
+        
+        console.log('[AI Agent] 索引匹配結果:', {
+          總數: this.context.knowledgeBase.length,
+          相關: relevantKnowledge.length,
+          關鍵詞: searchKeywords,
+          匹配詳情: scoredKnowledge.slice(0, 5).map(item => ({
+            title: item.kb.title || item.kb.name,
+            score: item.score,
+            matched: item.matchedKeywords
+          }))
+        })
+        
+        // 子步驟2：顯示索引查詢結果
         this.state.thoughts.push({
           type: 'analysis',
-          content: isCalculateStep ? '🔍 查詢計費規則知識庫 [AI 查詢中...]' : '🔍 查詢 UBL 格式知識庫 [AI 查詢中...]',
+          content: isCalculateStep 
+            ? `🔍 查詢計費規則索引 [找到 ${relevantKnowledge.length} 筆相關資料]` 
+            : `🔍 查詢 UBL 格式索引 [找到 ${relevantKnowledge.length} 筆相關資料]`,
           timestamp: Date.now()
         })
         this.notifyStateChange()
         await new Promise(resolve => setTimeout(resolve, 800))
         
-        // 子步驟3：載入知識
+        // 子步驟3：載入知識摘要（顯示找到的知識標題）
+        const knowledgeTitles = relevantKnowledge.slice(0, 3).map(kb => kb.title || kb.name || '未命名').join(', ')
         this.state.thoughts.push({
           type: 'analysis',
-          content: isCalculateStep ? '📚 載入計費公式與稅率規則 [本地讀取]' : '📚 載入 UBL 2.1 模板與規範 [本地讀取]',
+          content: relevantKnowledge.length > 0 
+            ? `📚 載入知識: ${knowledgeTitles}${relevantKnowledge.length > 3 ? '...' : ''}`
+            : isCalculateStep ? '📚 使用內建計費規則 [無額外知識庫]' : '📚 使用 UBL 2.1 標準 [無額外知識庫]',
           timestamp: Date.now()
         })
         this.notifyStateChange()
         await new Promise(resolve => setTimeout(resolve, 800))
         
-        // 構建AI請求，包含已收集的數據
+        // ========== 第二階段：載入精簡的知識內容 ==========
+        // 優先使用索引摘要，否則取內容開頭的關鍵部分
+        const MAX_KNOWLEDGE_ENTRIES = 3
+        const MAX_CHARS_PER_ENTRY = 500  // 單筆最大字符
+        const MAX_TOTAL_CHARS = 1200     // 總計最大字符
+        
+        const knowledgeParts: string[] = []
+        let totalChars = 0
+        
+        for (const kb of relevantKnowledge.slice(0, MAX_KNOWLEDGE_ENTRIES)) {
+          if (totalChars >= MAX_TOTAL_CHARS) break
+          
+          const kbTitle = kb.title || kb.name || '未命名'
+          const index = (kb as any).index
+          
+          let summary = ''
+          if (index && index.summary) {
+            // 優先使用索引摘要（最精簡）
+            summary = index.summary.substring(0, 200)  // 摘要限制 200 字
+            if (index.keywords && index.keywords.length > 0) {
+              summary += `\n關鍵詞: ${index.keywords.slice(0, 5).join(', ')}`
+            }
+          } else if (kb.content) {
+            // 沒有索引時，取內容開頭
+            summary = kb.content.length > MAX_CHARS_PER_ENTRY 
+              ? kb.content.substring(0, MAX_CHARS_PER_ENTRY) + '...'
+              : kb.content
+          }
+          
+          if (summary) {
+            const part = `### ${kbTitle}\n${summary}`
+            if (totalChars + part.length <= MAX_TOTAL_CHARS) {
+              knowledgeParts.push(part)
+              totalChars += part.length
+            }
+          }
+        }
+        
+        const knowledgeContent = knowledgeParts.join('\n\n---\n\n')
+        
+        // Debug: 顯示知識庫內容
+        console.log('[AI Agent] 知識庫內容長度:', knowledgeContent.length)
+        if (knowledgeContent.length > 0) {
+          console.log('[AI Agent] 知識庫內容預覽:', knowledgeContent.substring(0, 500))
+        }
+        
+        // 構建AI請求，包含已收集的數據和知識庫內容
         const aiPrompt = isCalculateStep 
           ? `你現在在步驟 ${i + 1}/${expectedSteps.length}: ${step.label}
 
@@ -394,7 +527,12 @@ export class AIAgentExecutor {
 ${JSON.stringify(collectedData, null, 2)}
 \`\`\`
 
-請根據以上數據進行詳細計算，必須包含：
+${knowledgeContent ? `## 📚 相關知識庫內容（必須參考）：
+${knowledgeContent}
+
+**重要**：請根據上述知識庫中的計費規則和公式進行計算，不要使用通用假設。
+
+` : ''}請根據以上數據進行詳細計算，必須包含：
 1. 使用的計費公式
 2. 每一步的計算過程（含數字和運算符號）
 3. 稅率計算方式
@@ -430,11 +568,16 @@ RESULT: 帳單總金額為 NT$ 2,550.45 元（含稅）`
 ${JSON.stringify(collectedData, null, 2)}
 \`\`\`
 
-請生成標準的 UBL 2.1 Invoice XML 格式帳單。
+${knowledgeContent ? `## 📚 相關知識庫內容（必須參考）：
+${knowledgeContent}
+
+**重要**：此處的「UBL」是指知識庫中描述的 UBL 帳單系統，不是通用的 Universal Business Language。請根據上述知識庫中的 UBL 系統架構生成帳單。
+
+` : ''}請根據知識庫中的 UBL 帳單系統規範生成帳單格式。
 
 輸出格式：
-THOUGHT: [說明使用的 UBL 標準、XML 結構等]
-RESULT: [生成的 XML 內容摘要]`
+THOUGHT: [說明使用了哪些知識庫中的 UBL 規則、Package 結構等]
+RESULT: [基於 UBL 帳單系統生成的帳單內容]`
         
         this.state.conversationHistory.push({
           role: 'user',
@@ -468,22 +611,21 @@ RESULT: [生成的 XML 內容摘要]`
         if (thought.type === 'result' && i === expectedSteps.length - 1) {
           this.state.status = 'completed'
           
-          // 只提取 RESULT 部分作為簡短摘要，完整內容保留在 thoughts 中
-          let shortSummary = thought.content
+          // 提取 RESULT 後面的完整帳單內容作為 summary（給技能面板顯示）
+          // 完整的 THOUGHT + RESULT 保留在 thought.content（給詳細記錄顯示）
+          let billContent = thought.content
           if (thought.content.includes('RESULT:')) {
+            // 提取 RESULT: 後面的所有內容（完整帳單）
             const resultPart = thought.content.split('RESULT:').pop()?.trim() || ''
-            // 取 RESULT 的第一行或前100個字符作為摘要
-            const firstLine = resultPart.split('\n')[0].replace(/```.*$/, '').trim()
-            shortSummary = firstLine.length > 100 ? firstLine.substring(0, 100) + '...' : firstLine
-          } else if (thought.content.length > 150) {
-            // 如果沒有 RESULT: 標記，取最後一行或截取
-            const lines = thought.content.trim().split('\n')
-            const lastLine = lines[lines.length - 1].trim()
-            shortSummary = lastLine.length > 100 ? lastLine.substring(0, 100) + '...' : lastLine
+            // 清理 markdown code block 標記
+            billContent = resultPart
+              .replace(/^```[\w]*\n?/m, '')  // 開頭的 ```
+              .replace(/\n?```$/m, '')       // 結尾的 ```
+              .trim()
           }
           
           this.state.result = {
-            summary: shortSummary,
+            summary: billContent,  // 完整帳單內容
             findings: [],
             recommendations: []
           }
@@ -565,12 +707,24 @@ RESULT: [生成的 XML 內容摘要]`
       systemPrompt += '\n```\n\n'
     }
     
-    // 知識庫
+    // 知識庫索引（只放摘要，不放完整內容，避免 token 超限）
     if (this.context.knowledgeBase.length > 0) {
-      systemPrompt += `## 知識庫\n`
-      this.context.knowledgeBase.forEach(kb => {
-        systemPrompt += `### ${kb.title}\n${kb.content}\n\n`
+      systemPrompt += `## 可用知識庫（${this.context.knowledgeBase.length} 個文件）\n`
+      systemPrompt += `以下是可查詢的知識庫列表，在需要時會載入相關內容：\n\n`
+      this.context.knowledgeBase.slice(0, 10).forEach((kb, idx) => {
+        const title = kb.title || kb.name || '未命名'
+        const index = (kb as any).index
+        if (index && index.summary) {
+          // 有索引時顯示摘要
+          systemPrompt += `${idx + 1}. **${title}**\n   摘要: ${index.summary.substring(0, 100)}...\n\n`
+        } else {
+          // 沒有索引時只顯示標題
+          systemPrompt += `${idx + 1}. **${title}**\n\n`
+        }
       })
+      if (this.context.knowledgeBase.length > 10) {
+        systemPrompt += `... 還有 ${this.context.knowledgeBase.length - 10} 個文件\n\n`
+      }
     }
     
     // 工作環境

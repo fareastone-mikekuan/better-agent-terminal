@@ -419,9 +419,7 @@ ipcMain.handle('dialog:select-folder', async () => {
 ipcMain.handle('workspace:save', async (_event, data: string) => {
   const configPath = path.join(app.getPath('userData'), 'workspaces.json')
   const success = await safeWriteFile(configPath, data)
-  if (success) {
-    console.log('[Main] Workspaces saved successfully')
-  } else {
+  if (!success) {
     console.warn('[Main] Workspaces file save failed, data is in localStorage backup')
   }
   return success

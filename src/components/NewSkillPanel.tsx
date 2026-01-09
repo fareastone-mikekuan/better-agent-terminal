@@ -8,6 +8,7 @@ import type { UnifiedSkill, SkillStep, AIAgentSkill, AgentExecutionState } from 
 import { isAIAgentSkill } from '../types/skill'
 import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
+import { knowledgeStore } from '../stores/knowledge-store'
 import { DEFAULT_CATEGORIES } from '../types/skill'
 import { createPanelForStep } from '../services/workflow-panel-service'
 import { AIAgentExecutor, type AgentContext } from '../services/ai-agent-executor'
@@ -437,6 +438,23 @@ export function NewSkillPanel({
           terminalBuffers.set(t.id, t.scrollbackBuffer || [])
         })
       
+      // 從 knowledgeStore 載入知識庫內容（過濾無效資料）
+      const allKnowledge = knowledgeStore.getActiveKnowledge()
+      console.log('[AI Agent] knowledgeStore.getActiveKnowledge() 返回:', allKnowledge.length, '筆')
+      
+      // 注意：KnowledgeEntry 使用 name 而非 title
+      const knowledgeBaseContent = allKnowledge
+        .filter(k => k && k.id && k.name && k.content)
+        .map(k => ({
+          id: k.id,
+          title: k.name,  // 映射 name → title 供 executor 使用
+          content: k.content
+        }))
+      console.log('[AI Agent] 載入知識庫:', knowledgeBaseContent.length, '筆')
+      if (knowledgeBaseContent.length > 0) {
+        console.log('[AI Agent] 知識庫標題:', knowledgeBaseContent.map(k => k.title).join(', '))
+      }
+      
       // 建構 Agent 上下文
       const context: AgentContext = {
         workspaceId: workspace.id,
@@ -453,7 +471,7 @@ export function NewSkillPanel({
             task: userTask
           }
         },
-        knowledgeBase: [] // TODO: 從 knowledgeStore 載入知識
+        knowledgeBase: knowledgeBaseContent
       }
       
       // 創建 Agent 執行器，傳入狀態更新回調
@@ -1138,19 +1156,19 @@ export function NewSkillPanel({
                        agentState?.thoughts && 
                        agentState.thoughts.length > 0 && (
                         <button
-                          onClick={() => setShowDetailedLog(!showDetailedLog)}
+                          onClick={() => setShowDetailedLog(true)}
                           style={{
                             padding: '8px 12px',
                             fontSize: '13px',
-                            backgroundColor: showDetailedLog ? '#58a6ff' : 'var(--bg-secondary)',
-                            color: showDetailedLog ? '#fff' : 'var(--text-primary)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
                             border: '1px solid var(--border-color)',
                             borderRadius: '4px',
                             cursor: 'pointer',
                             transition: 'all 0.2s'
                           }}
                         >
-                          📋 {showDetailedLog ? '隱藏記錄' : '詳細記錄'}
+                          📋 詳細記錄
                         </button>
                       )}
                       
@@ -1171,151 +1189,6 @@ export function NewSkillPanel({
                       </button>
                     </div>
                   </div>
-
-                  {/* AI Agent 詳細記錄面板 */}
-                  {showDetailedLog && agentState && (
-                    <div style={{
-                      padding: '16px',
-                      backgroundColor: 'var(--bg-primary)',
-                      borderTop: '1px solid var(--border-color)',
-                      maxHeight: '400px',
-                      overflowY: 'auto'
-                    }}>
-                      <div style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        marginBottom: '12px'
-                      }}>
-                        🕒 執行歷程
-                      </div>
-                      
-                      {/* 基本信息 */}
-                      <div style={{
-                        padding: '12px',
-                        backgroundColor: 'var(--bg-secondary)',
-                        borderRadius: '6px',
-                        marginBottom: '12px'
-                      }}>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                          <strong>技能名稱：</strong>{(selectedSkill as any)?.name}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                          <strong>執行狀態：</strong>
-                          {agentState.status === 'completed' && <span style={{ color: '#3fb950' }}>✓ 已完成</span>}
-                          {agentState.status === 'error' && <span style={{ color: '#f85149' }}>✗ 錯誤</span>}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          <strong>思考次數：</strong>{agentState.thoughts.length}
-                        </div>
-                      </div>
-                      
-                      {/* AI思考歷程 */}
-                      <div style={{
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        marginBottom: '8px'
-                      }}>
-                        💭 AI 思考與計算過程
-                      </div>
-                      
-                      {agentState.thoughts.map((thought, index) => {
-                        const thoughtText = typeof thought === 'string' ? thought : thought.content
-                        const timestamp = typeof thought === 'string' ? Date.now() : thought.timestamp
-                        const type = typeof thought === 'string' ? 'analysis' : thought.type
-                        
-                        // 判斷是否為標準化子步驟（簡短單行提示）
-                        const isStandardStep = (
-                          thoughtText.includes('🎯 分析技能需求') || 
-                          thoughtText.includes('🔍 AI 智能選擇文檔') ||
-                          thoughtText.includes('📚 載入知識庫內容') ||
-                          thoughtText.includes('✨ 生成完整回應') ||
-                          thoughtText.includes('✓ 已讀取')
-                        ) && thoughtText.split('\n').length <= 2 // 只過濾單行或兩行的標準步驟
-                        
-                        // 如果是標準化子步驟，跳過顯示
-                        if (isStandardStep) return null
-                        
-                        return (
-                          <div
-                            key={index}
-                            style={{
-                              marginBottom: '12px',
-                              padding: '12px',
-                              backgroundColor: 'var(--bg-secondary)',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '4px',
-                              fontSize: '12px'
-                            }}
-                          >
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              marginBottom: '8px',
-                              color: 'var(--text-secondary)'
-                            }}>
-                              <span style={{ fontSize: '16px' }}>
-                                {type === 'analysis' && '🧠'}
-                                {type === 'action' && '⚡'}
-                                {type === 'result' && '✅'}
-                              </span>
-                              <span style={{ fontWeight: 600, fontSize: '13px' }}>
-                                {type === 'analysis' && 'AI 分析與計算'}
-                                {type === 'action' && '執行動作'}
-                                {type === 'result' && '最終結果'}
-                              </span>
-                              <span style={{ marginLeft: 'auto', fontSize: '11px' }}>
-                                {new Date(timestamp).toLocaleTimeString()}
-                              </span>
-                            </div>
-                            <div style={{
-                              color: 'var(--text-primary)',
-                              lineHeight: '1.6',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              fontFamily: 'Consolas, Monaco, monospace',
-                              fontSize: '11px',
-                              maxHeight: '500px',
-                              overflowY: 'auto',
-                              padding: '8px',
-                              backgroundColor: 'var(--bg-primary)',
-                              borderRadius: '4px'
-                            }}>
-                              {thoughtText}
-                            </div>
-                          </div>
-                        )
-                      })}
-                      
-                      {/* 最終結果 */}
-                      {agentState.result && (
-                        <div style={{ marginTop: '12px' }}>
-                          <div style={{
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            marginBottom: '8px'
-                          }}>
-                            🎯 最終結果
-                          </div>
-                          <div style={{
-                            padding: '12px',
-                            backgroundColor: '#d4edda',
-                            border: '1px solid #8bc34a',
-                            borderRadius: '4px',
-                            color: '#155724',
-                            fontSize: '13px',
-                            lineHeight: '1.5',
-                            whiteSpace: 'pre-wrap'
-                          }}>
-                            {agentState.result.summary}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* Agent 思考過程 */}
                   <div 
@@ -1595,19 +1468,19 @@ export function NewSkillPanel({
                    agentState?.thoughts && 
                    agentState.thoughts.length > 0 && (
                     <button
-                      onClick={() => setShowDetailedLog(!showDetailedLog)}
+                      onClick={() => setShowDetailedLog(true)}
                       style={{
                         padding: '8px 12px',
                         fontSize: '13px',
-                        backgroundColor: showDetailedLog ? '#58a6ff' : 'var(--bg-secondary)',
-                        color: showDetailedLog ? '#fff' : 'var(--text-primary)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
                         border: '1px solid var(--border-color)',
                         borderRadius: '4px',
                         cursor: 'pointer',
                         transition: 'all 0.2s'
                       }}
                     >
-                      📋 {showDetailedLog ? '隱藏記錄' : '詳細記錄'}
+                      📋 詳細記錄
                     </button>
                   )}
                   
@@ -1627,127 +1500,6 @@ export function NewSkillPanel({
                   </button>
                 </div>
               </div>
-
-              {/* 詳細記錄區域 */}
-              {showDetailedLog && agentState && (
-                <div style={{
-                  padding: '16px',
-                  backgroundColor: 'var(--bg-primary)',
-                  borderTop: '1px solid var(--border-color)',
-                  maxHeight: '400px',
-                  overflowY: 'auto'
-                }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    marginBottom: '12px'
-                  }}>
-                    🕒 執行歷程
-                  </div>
-                  
-                  {/* 基本信息 */}
-                  <div style={{
-                    padding: '12px',
-                    backgroundColor: 'var(--bg-secondary)',
-                    borderRadius: '6px',
-                    marginBottom: '12px'
-                  }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      <strong>技能名稱：</strong>{executingSkill?.name}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      <strong>執行狀態：</strong>
-                      {agentState.status === 'completed' && <span style={{ color: '#3fb950' }}>✓ 已完成</span>}
-                      {agentState.status === 'error' && <span style={{ color: '#f85149' }}>✗ 錯誤</span>}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      <strong>迭代次數：</strong>{agentState.currentIteration} / {executingSkill?.config?.maxIterations || 10}
-                    </div>
-                  </div>
-                  
-                  {/* AI思考歷程 */}
-                  <div style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    marginBottom: '8px'
-                  }}>
-                    💭 AI 思考歷程
-                  </div>
-                  
-                  {agentState.thoughts.map((thought, index) => {
-                    const thoughtText = typeof thought === 'string' ? thought : thought.content
-                    const timestamp = typeof thought === 'string' ? Date.now() : thought.timestamp
-                    const type = typeof thought === 'string' ? 'analysis' : thought.type
-                    
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          marginBottom: '8px',
-                          padding: '10px',
-                          backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '4px',
-                          fontSize: '12px'
-                        }}
-                      >
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          marginBottom: '6px',
-                          color: 'var(--text-secondary)'
-                        }}>
-                          <span>
-                            {type === 'analysis' && '🧠'}
-                            {type === 'action' && '⚡'}
-                            {type === 'result' && '✓'}
-                          </span>
-                          <span style={{ fontWeight: 600 }}>迭代 {index + 1}</span>
-                          <span style={{ marginLeft: 'auto', fontSize: '11px' }}>
-                            {new Date(timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <div style={{
-                          color: 'var(--text-primary)',
-                          lineHeight: '1.5',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word'
-                        }}>
-                          {thoughtText}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  
-                  {/* 最終結果 */}
-                  {agentState.result && (
-                    <div style={{ marginTop: '12px' }}>
-                      <div style={{
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        marginBottom: '8px'
-                      }}>
-                        🎯 最終結果
-                      </div>
-                      <div style={{
-                        padding: '12px',
-                        backgroundColor: '#238636',
-                        color: '#fff',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        lineHeight: '1.5',
-                        whiteSpace: 'pre-wrap'
-                      }}>
-                        {agentState.result.summary}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* 步驟列表 - 緊湊顯示 */}
               <div style={{ 
@@ -2382,6 +2134,14 @@ export function NewSkillPanel({
         </div>
       </div>
     )}
+    
+    {/* 詳細記錄 Modal */}
+    <DetailedLogModal
+      isOpen={showDetailedLog}
+      onClose={() => setShowDetailedLog(false)}
+      skillName={(selectedSkill as any)?.name || '未命名技能'}
+      agentState={agentState}
+    />
     </>
   )
 }
@@ -2395,4 +2155,233 @@ function getStepTypeLabel(type: SkillStep['type']): string {
     file: '檔案'
   }
   return labels[type] || type
+}
+
+// 詳細記錄 Modal 元件
+interface DetailedLogModalProps {
+  isOpen: boolean
+  onClose: () => void
+  skillName: string
+  agentState: AgentExecutionState | null
+}
+
+function DetailedLogModal({ isOpen, onClose, skillName, agentState }: DetailedLogModalProps) {
+  if (!isOpen || !agentState) return null
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        style={{
+          width: '80%',
+          maxWidth: '900px',
+          maxHeight: '85vh',
+          backgroundColor: 'var(--bg-primary)',
+          borderRadius: '12px',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: 'var(--bg-secondary)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>📝</span>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                AI 執行詳細記錄
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                {skillName} - {agentState.thoughts.length} 個思考步驟
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: 'transparent',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+              fontSize: '14px'
+            }}
+          >
+            ✕ 關閉
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '20px'
+          }}
+        >
+          {/* 執行狀態摘要 */}
+          <div
+            style={{
+              padding: '16px',
+              backgroundColor: agentState.status === 'completed' ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
+              border: `1px solid ${agentState.status === 'completed' ? '#3fb950' : '#f85149'}`,
+              borderRadius: '8px',
+              marginBottom: '20px',
+              display: 'flex',
+              gap: '20px'
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>執行狀態</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: agentState.status === 'completed' ? '#3fb950' : '#f85149' }}>
+                {agentState.status === 'completed' ? '✓ 成功完成' : '✗ 執行失敗'}
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>思考步驟</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {agentState.thoughts.length} 步
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>開始時間</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {agentState.thoughts.length > 0 ? new Date(agentState.thoughts[0].timestamp).toLocaleTimeString() : '-'}
+              </div>
+            </div>
+          </div>
+
+          {/* AI 思考歷程 */}
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' }}>
+            🧠 AI 思考與執行過程
+          </div>
+
+          {agentState.thoughts.map((thought, index) => {
+            const thoughtText = typeof thought === 'string' ? thought : thought.content
+            const timestamp = typeof thought === 'string' ? Date.now() : thought.timestamp
+            const type = typeof thought === 'string' ? 'analysis' : thought.type
+
+            return (
+              <div
+                key={index}
+                style={{
+                  marginBottom: '12px',
+                  padding: '14px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: '10px',
+                    paddingBottom: '10px',
+                    borderBottom: '1px solid var(--border-color)'
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      backgroundColor: type === 'result' ? '#3fb950' : type === 'action' ? '#58a6ff' : '#8b949e',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px'
+                    }}
+                  >
+                    {type === 'analysis' && '🧠'}
+                    {type === 'knowledge' && '📚'}
+                    {type === 'decision' && '💡'}
+                    {type === 'action' && '⚡'}
+                    {type === 'result' && '✓'}
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
+                      步驟 {index + 1}: {type === 'analysis' && '分析'}
+                      {type === 'knowledge' && '知識查詢'}
+                      {type === 'decision' && '決策'}
+                      {type === 'action' && '執行動作'}
+                      {type === 'result' && '結果'}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    {new Date(timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--text-primary)',
+                    lineHeight: '1.7',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                    backgroundColor: 'var(--bg-primary)',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    maxHeight: '400px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {thoughtText}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* 最終結果 */}
+          {agentState.result && (
+            <div style={{ marginTop: '20px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' }}>
+                🎯 最終結果
+              </div>
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: 'rgba(63, 185, 80, 0.1)',
+                  border: '1px solid #3fb950',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  lineHeight: '1.6',
+                  whiteSpace: 'pre-wrap'
+                }}
+              >
+                {agentState.result.summary}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
