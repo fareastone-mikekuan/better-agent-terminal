@@ -40,6 +40,7 @@ export function NewSkillPanel({
   const [linkedSkillIds, setLinkedSkillIds] = useState<string[]>([])
   const [selectedSkill, setSelectedSkill] = useState<UnifiedSkill | null>(null)
   const [showSkillSelector, setShowSkillSelector] = useState(false)
+  const [showDetailedLog, setShowDetailedLog] = useState(false) // 顯示詳細記錄
   
   // 取得共用/獨立狀態（即時計算）
   const settings = settingsStore.getSettings()
@@ -64,7 +65,91 @@ export function NewSkillPanel({
   const [showTaskInput, setShowTaskInput] = useState(false)
   const [pendingAgentSkill, setPendingAgentSkill] = useState<AIAgentSkill | null>(null)
   const [taskInput, setTaskInput] = useState('')
+  const [visualProgress, setVisualProgress] = useState(0) // 視覺進度（用於模擬步驟逐步完成）
   const agentThoughtsRef = useRef<HTMLDivElement>(null)
+  const completionAnimationRef = useRef<NodeJS.Timeout | null>(null)
+
+  // 漸進式顯示步驟完成
+  useEffect(() => {
+    console.log('[UI] useEffect 觸發', {
+      hasAgentState: !!agentState,
+      status: agentState?.status,
+      selectedSkillType: selectedSkill?.type,
+      selectedSkillId: selectedSkill?.id
+    })
+    
+    if (!agentState) {
+      setVisualProgress(0)
+      // 清理動畫
+      if (completionAnimationRef.current) {
+        clearInterval(completionAnimationRef.current)
+        completionAnimationRef.current = null
+      }
+      return
+    }
+
+    const skill = selectedSkill as AIAgentSkill | undefined
+    const expectedSteps = skill?.config?.expectedSteps
+    
+    console.log('[UI] 檢查 expectedSteps', {
+      hasSkill: !!skill,
+      hasConfig: !!skill?.config,
+      hasExpectedSteps: !!expectedSteps,
+      isArray: Array.isArray(expectedSteps),
+      stepsLength: expectedSteps?.length
+    })
+    
+    if (!expectedSteps || !Array.isArray(expectedSteps)) {
+      return // 沒有預定義步驟，不需要模擬進度
+    }
+
+    const totalSteps = expectedSteps.length
+
+    console.log('[UI] 步驟進度更新:', {
+      status: agentState.status,
+      thoughtsCount: agentState.thoughts.length,
+      visualProgress,
+      totalSteps
+    })
+
+    // 執行中：根據 thoughts 數量漸進顯示
+    if (agentState.status === 'thinking') {
+      const thoughtCount = agentState.thoughts.length
+      const targetProgress = Math.min(thoughtCount, totalSteps - 1) // 最多到倒數第二步
+      console.log('[UI] thinking 階段，設置進度為:', targetProgress)
+      setVisualProgress(targetProgress)
+    } 
+    // 完成時：啟動動畫從當前進度推進到最後
+    else if ((agentState.status === 'completed' || agentState.status === 'error') && !completionAnimationRef.current) {
+      console.log('[UI] 開始完成動畫，從', visualProgress, '到', totalSteps)
+      
+      // 使用當前 visualProgress 的快照
+      const startProgress = visualProgress
+      let currentStep = startProgress
+      
+      completionAnimationRef.current = setInterval(() => {
+        currentStep++
+        console.log('[UI] 動畫推進到步驟:', currentStep)
+        setVisualProgress(currentStep)
+        
+        if (currentStep >= totalSteps) {
+          console.log('[UI] 動畫完成')
+          if (completionAnimationRef.current) {
+            clearInterval(completionAnimationRef.current)
+            completionAnimationRef.current = null
+          }
+        }
+      }, 300) // 每300ms顯示下一步完成
+    }
+
+    // 清理函數
+    return () => {
+      if (agentState?.status !== 'completed' && agentState?.status !== 'error' && completionAnimationRef.current) {
+        clearInterval(completionAnimationRef.current)
+        completionAnimationRef.current = null
+      }
+    }
+  }, [agentState?.status, agentState?.thoughts?.length, selectedSkill])
 
   // 自動滾動到最新的 AI 回覆
   useEffect(() => {
@@ -258,9 +343,13 @@ export function NewSkillPanel({
     setPendingAgentSkill(null)
     setTaskInput('')
     
+    // 設置當前執行的技能（重要：讓 useEffect 能夠訪問 expectedSteps）
+    setSelectedSkill(skill)
+    
     try {
       setExecutingSkill(skill)
       setIsRunning(true)
+      setVisualProgress(0) // 重置視覺進度
       
       // 獲取當前工作區資訊
       const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
@@ -367,26 +456,19 @@ export function NewSkillPanel({
         knowledgeBase: [] // TODO: 從 knowledgeStore 載入知識
       }
       
-      // 創建 Agent 執行器
-      const executor = new AIAgentExecutor(skill, context)
+      // 創建 Agent 執行器，傳入狀態更新回調
+      const executor = new AIAgentExecutor(skill, context, (newState) => {
+        console.log('[UI] AI Agent 狀態實時更新:', {
+          status: newState.status,
+          thoughtsCount: newState.thoughts.length
+        })
+        setAgentState({ ...newState })
+      })
       setAgentExecutor(executor)
       
-      // 啟動執行並監聽狀態更新
-      const updateInterval = setInterval(() => {
-        const currentState = executor.getState()
-        console.log('[UI] 更新 Agent 狀態:', {
-          status: currentState.status,
-          hasPendingAction: !!currentState.pendingAction,
-          actionType: currentState.pendingAction?.type
-        })
-        setAgentState({ ...currentState })
-      }, 500)
-      
       try {
-        // 執行 Agent
+        // 執行 Agent（不再需要輪詢，回調會自動更新UI）
         const result = await executor.execute()
-        
-        clearInterval(updateInterval)
         const finalState = executor.getState()
         setAgentState(finalState)
         
@@ -407,7 +489,6 @@ export function NewSkillPanel({
         }
       } catch (error) {
         console.error('AI Agent 執行錯誤:', error)
-        clearInterval(updateInterval)
         setAgentExecutor(null)
         setIsRunning(false)
         alert(`執行錯誤: ${error instanceof Error ? error.message : '未知錯誤'}`)
@@ -800,18 +881,17 @@ export function NewSkillPanel({
                             // 如果有預定義步驟，顯示預定義步驟（類似 CHAT 的固定步驟）
                             if (expectedSteps && Array.isArray(expectedSteps)) {
                               const totalSteps = expectedSteps.length
-                              const maxIter = executingSkill.config?.maxIterations || 10
                               const currentIter = agentState.currentIteration
                               
-                              // 根據迭代進度計算已完成的步驟數
-                              const stepsPerIteration = totalSteps / maxIter
-                              const completedSteps = Math.floor((currentIter - 1) * stepsPerIteration)
-                              const currentStepIndex = Math.floor(currentIter * stepsPerIteration) - 1
+                              // 使用視覺進度而非真實進度，實現漸進顯示效果
+                              const allCompleted = agentState.status === 'completed' && visualProgress >= totalSteps
+                              const progressStep = visualProgress
                               
                               return expectedSteps.map((step, index) => {
-                                const isCompleted = index < completedSteps
-                                const isCurrent = index === currentStepIndex && agentState.status === 'thinking'
-                                const isPending = index > currentStepIndex
+                                // 前面的步驟已完成，當前步驟進行中，後面的等待中
+                                const isCompleted = allCompleted ? true : index < progressStep
+                                const isCurrent = !allCompleted && index === progressStep && (agentState.status === 'thinking' || visualProgress < totalSteps)
+                                const isPending = !allCompleted && index > progressStep
                                 
                                 let icon = '⏺️'
                                 let statusText = '等待中'
@@ -821,7 +901,7 @@ export function NewSkillPanel({
                                   icon = '🔄'
                                   statusText = '進行中'
                                   color = '#58a6ff'
-                                } else if (isCompleted || (agentState.status === 'completed' && index <= currentStepIndex)) {
+                                } else if (isCompleted) {
                                   icon = '✓'
                                   statusText = '完成'
                                   color = '#3fb950'
@@ -866,7 +946,7 @@ export function NewSkillPanel({
                                       </div>
                                     </div>
                                     
-                                    {/* 內層：當前步驟的 AI 思考過程（嵌套顯示） */}
+                                    {/* 內層：當前步驟的 AI 思考過程（嵌套顯示） - 只顯示分析類型，不顯示最終結果 */}
                                     {isCurrent && agentState.thoughts.length > 0 && (
                                       <div style={{
                                         marginLeft: '34px',
@@ -874,37 +954,68 @@ export function NewSkillPanel({
                                         borderLeft: '2px solid #30363d',
                                         marginTop: '4px'
                                       }}>
-                                        {agentState.thoughts.slice(-3).map((thought, tIndex) => {
-                                          // thought 可能是字符串或對象 {type, content, timestamp}
-                                          const thoughtText = typeof thought === 'string' ? thought : thought.content
-                                          const displayText = thoughtText.length > 100 ? thoughtText.substring(0, 100) + '...' : thoughtText
+                                        {(() => {
+                                          // 過濾出分析類型的thoughts
+                                          const analysisThoughts = agentState.thoughts.filter(thought => {
+                                            const thoughtType = typeof thought === 'string' ? 'analysis' : thought.type
+                                            return thoughtType === 'analysis' || thoughtType === 'action'
+                                          })
                                           
-                                          return (
-                                            <div 
-                                              key={`thought-${currentIter}-${tIndex}`}
-                                              style={{
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: '8px',
-                                                padding: '4px 0',
-                                                fontSize: '11px',
-                                                color: '#8b949e',
-                                                opacity: 0.8
-                                              }}
-                                            >
-                                              <div style={{ 
-                                                fontSize: '10px',
-                                                marginTop: '2px',
-                                                color: '#58a6ff'
-                                              }}>
-                                                ↳
+                                          // 檢查是否包含標準4步驟（AI處理流程）
+                                          const hasStandardSteps = analysisThoughts.some(t => {
+                                            const content = typeof t === 'string' ? t : t.content
+                                            return content.includes('🎯 分析技能需求') || 
+                                                   content.includes('🔍 AI 智能選擇文檔') ||
+                                                   content.includes('📚 載入知識庫內容') ||
+                                                   content.includes('✨ 生成完整回應')
+                                          })
+                                          
+                                          // 如果包含標準4步驟，只顯示這4個
+                                          let displayThoughts = []
+                                          if (hasStandardSteps) {
+                                            displayThoughts = analysisThoughts.filter(t => {
+                                              const content = typeof t === 'string' ? t : t.content
+                                              return content.includes('🎯 分析技能需求') || 
+                                                     content.includes('🔍 AI 智能選擇文檔') ||
+                                                     content.includes('📚 載入知識庫內容') ||
+                                                     content.includes('✨ 生成完整回應')
+                                            })
+                                          } else {
+                                            // 否則顯示最後3個
+                                            displayThoughts = analysisThoughts.slice(-3)
+                                          }
+                                          
+                                          return displayThoughts.map((thought, tIndex) => {
+                                            const thoughtText = typeof thought === 'string' ? thought : thought.content
+                                            const displayText = thoughtText.length > 120 ? thoughtText.substring(0, 120) + '...' : thoughtText
+                                            
+                                            return (
+                                              <div 
+                                                key={`thought-${currentIter}-${tIndex}`}
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'flex-start',
+                                                  gap: '8px',
+                                                  padding: '4px 0',
+                                                  fontSize: '11px',
+                                                  color: '#8b949e',
+                                                  opacity: 0.8
+                                                }}
+                                              >
+                                                <div style={{ 
+                                                  fontSize: '10px',
+                                                  marginTop: '2px',
+                                                  color: '#58a6ff'
+                                                }}>
+                                                  ↳
+                                                </div>
+                                                <div style={{ flex: 1, lineHeight: '1.4' }}>
+                                                  {displayText}
+                                                </div>
                                               </div>
-                                              <div style={{ flex: 1, lineHeight: '1.4' }}>
-                                                {displayText}
-                                              </div>
-                                            </div>
-                                          )
-                                        })}
+                                            )
+                                          })
+                                        })()}
                                       </div>
                                     )}
                                   </div>
@@ -1022,6 +1133,27 @@ export function NewSkillPanel({
 
                     {/* 控制按鈕 */}
                     <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                      {/* 詳細記錄按鈕 - AI Agent 執行完成後顯示 */}
+                      {(agentState?.status === 'completed' || agentState?.status === 'error') && 
+                       agentState?.thoughts && 
+                       agentState.thoughts.length > 0 && (
+                        <button
+                          onClick={() => setShowDetailedLog(!showDetailedLog)}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '13px',
+                            backgroundColor: showDetailedLog ? '#58a6ff' : 'var(--bg-secondary)',
+                            color: showDetailedLog ? '#fff' : 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          📋 {showDetailedLog ? '隱藏記錄' : '詳細記錄'}
+                        </button>
+                      )}
+                      
                       <button
                         onClick={handleReset}
                         style={{
@@ -1039,6 +1171,151 @@ export function NewSkillPanel({
                       </button>
                     </div>
                   </div>
+
+                  {/* AI Agent 詳細記錄面板 */}
+                  {showDetailedLog && agentState && (
+                    <div style={{
+                      padding: '16px',
+                      backgroundColor: 'var(--bg-primary)',
+                      borderTop: '1px solid var(--border-color)',
+                      maxHeight: '400px',
+                      overflowY: 'auto'
+                    }}>
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginBottom: '12px'
+                      }}>
+                        🕒 執行歷程
+                      </div>
+                      
+                      {/* 基本信息 */}
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: 'var(--bg-secondary)',
+                        borderRadius: '6px',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                          <strong>技能名稱：</strong>{(selectedSkill as any)?.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                          <strong>執行狀態：</strong>
+                          {agentState.status === 'completed' && <span style={{ color: '#3fb950' }}>✓ 已完成</span>}
+                          {agentState.status === 'error' && <span style={{ color: '#f85149' }}>✗ 錯誤</span>}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          <strong>思考次數：</strong>{agentState.thoughts.length}
+                        </div>
+                      </div>
+                      
+                      {/* AI思考歷程 */}
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginBottom: '8px'
+                      }}>
+                        💭 AI 思考與計算過程
+                      </div>
+                      
+                      {agentState.thoughts.map((thought, index) => {
+                        const thoughtText = typeof thought === 'string' ? thought : thought.content
+                        const timestamp = typeof thought === 'string' ? Date.now() : thought.timestamp
+                        const type = typeof thought === 'string' ? 'analysis' : thought.type
+                        
+                        // 判斷是否為標準化子步驟（簡短單行提示）
+                        const isStandardStep = (
+                          thoughtText.includes('🎯 分析技能需求') || 
+                          thoughtText.includes('🔍 AI 智能選擇文檔') ||
+                          thoughtText.includes('📚 載入知識庫內容') ||
+                          thoughtText.includes('✨ 生成完整回應') ||
+                          thoughtText.includes('✓ 已讀取')
+                        ) && thoughtText.split('\n').length <= 2 // 只過濾單行或兩行的標準步驟
+                        
+                        // 如果是標準化子步驟，跳過顯示
+                        if (isStandardStep) return null
+                        
+                        return (
+                          <div
+                            key={index}
+                            style={{
+                              marginBottom: '12px',
+                              padding: '12px',
+                              backgroundColor: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              fontSize: '12px'
+                            }}
+                          >
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              marginBottom: '8px',
+                              color: 'var(--text-secondary)'
+                            }}>
+                              <span style={{ fontSize: '16px' }}>
+                                {type === 'analysis' && '🧠'}
+                                {type === 'action' && '⚡'}
+                                {type === 'result' && '✅'}
+                              </span>
+                              <span style={{ fontWeight: 600, fontSize: '13px' }}>
+                                {type === 'analysis' && 'AI 分析與計算'}
+                                {type === 'action' && '執行動作'}
+                                {type === 'result' && '最終結果'}
+                              </span>
+                              <span style={{ marginLeft: 'auto', fontSize: '11px' }}>
+                                {new Date(timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div style={{
+                              color: 'var(--text-primary)',
+                              lineHeight: '1.6',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              fontFamily: 'Consolas, Monaco, monospace',
+                              fontSize: '11px',
+                              maxHeight: '500px',
+                              overflowY: 'auto',
+                              padding: '8px',
+                              backgroundColor: 'var(--bg-primary)',
+                              borderRadius: '4px'
+                            }}>
+                              {thoughtText}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      
+                      {/* 最終結果 */}
+                      {agentState.result && (
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            marginBottom: '8px'
+                          }}>
+                            🎯 最終結果
+                          </div>
+                          <div style={{
+                            padding: '12px',
+                            backgroundColor: '#d4edda',
+                            border: '1px solid #8bc34a',
+                            borderRadius: '4px',
+                            color: '#155724',
+                            fontSize: '13px',
+                            lineHeight: '1.5',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {agentState.result.summary}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Agent 思考過程 */}
                   <div 
@@ -1312,6 +1589,28 @@ export function NewSkillPanel({
                       ▶ {isPaused ? '繼續' : '開始'}
                     </button>
                   )}
+                  
+                  {/* 詳細記錄按鈕 - 執行完成後顯示 */}
+                  {(agentState?.status === 'completed' || agentState?.status === 'error') && 
+                   agentState?.thoughts && 
+                   agentState.thoughts.length > 0 && (
+                    <button
+                      onClick={() => setShowDetailedLog(!showDetailedLog)}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        backgroundColor: showDetailedLog ? '#58a6ff' : 'var(--bg-secondary)',
+                        color: showDetailedLog ? '#fff' : 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      📋 {showDetailedLog ? '隱藏記錄' : '詳細記錄'}
+                    </button>
+                  )}
+                  
                   <button
                     onClick={handleReset}
                     style={{
@@ -1328,6 +1627,127 @@ export function NewSkillPanel({
                   </button>
                 </div>
               </div>
+
+              {/* 詳細記錄區域 */}
+              {showDetailedLog && agentState && (
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: 'var(--bg-primary)',
+                  borderTop: '1px solid var(--border-color)',
+                  maxHeight: '400px',
+                  overflowY: 'auto'
+                }}>
+                  <div style={{
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    marginBottom: '12px'
+                  }}>
+                    🕒 執行歷程
+                  </div>
+                  
+                  {/* 基本信息 */}
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    borderRadius: '6px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      <strong>技能名稱：</strong>{executingSkill?.name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      <strong>執行狀態：</strong>
+                      {agentState.status === 'completed' && <span style={{ color: '#3fb950' }}>✓ 已完成</span>}
+                      {agentState.status === 'error' && <span style={{ color: '#f85149' }}>✗ 錯誤</span>}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      <strong>迭代次數：</strong>{agentState.currentIteration} / {executingSkill?.config?.maxIterations || 10}
+                    </div>
+                  </div>
+                  
+                  {/* AI思考歷程 */}
+                  <div style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    marginBottom: '8px'
+                  }}>
+                    💭 AI 思考歷程
+                  </div>
+                  
+                  {agentState.thoughts.map((thought, index) => {
+                    const thoughtText = typeof thought === 'string' ? thought : thought.content
+                    const timestamp = typeof thought === 'string' ? Date.now() : thought.timestamp
+                    const type = typeof thought === 'string' ? 'analysis' : thought.type
+                    
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          marginBottom: '8px',
+                          padding: '10px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          marginBottom: '6px',
+                          color: 'var(--text-secondary)'
+                        }}>
+                          <span>
+                            {type === 'analysis' && '🧠'}
+                            {type === 'action' && '⚡'}
+                            {type === 'result' && '✓'}
+                          </span>
+                          <span style={{ fontWeight: 600 }}>迭代 {index + 1}</span>
+                          <span style={{ marginLeft: 'auto', fontSize: '11px' }}>
+                            {new Date(timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div style={{
+                          color: 'var(--text-primary)',
+                          lineHeight: '1.5',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word'
+                        }}>
+                          {thoughtText}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  
+                  {/* 最終結果 */}
+                  {agentState.result && (
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginBottom: '8px'
+                      }}>
+                        🎯 最終結果
+                      </div>
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#238636',
+                        color: '#fff',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        lineHeight: '1.5',
+                        whiteSpace: 'pre-wrap'
+                      }}>
+                        {agentState.result.summary}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 步驟列表 - 緊湊顯示 */}
               <div style={{ 

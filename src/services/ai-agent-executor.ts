@@ -51,10 +51,12 @@ export class AIAgentExecutor {
   private context: AgentContext
   private state: AgentExecutionState
   private abortController: AbortController
+  private onStateChange?: (state: AgentExecutionState) => void
   
-  constructor(skill: AIAgentSkill, context: AgentContext) {
+  constructor(skill: AIAgentSkill, context: AgentContext, onStateChange?: (state: AgentExecutionState) => void) {
     this.skill = skill
     this.context = context
+    this.onStateChange = onStateChange
     this.abortController = new AbortController()
     this.state = {
       skillId: skill.id,
@@ -62,6 +64,16 @@ export class AIAgentExecutor {
       currentIteration: 0,
       thoughts: [],
       conversationHistory: []
+    }
+  }
+  
+  /**
+   * 通知状态变更（用于UI实时更新）
+   */
+  private notifyStateChange() {
+    console.log('[AI Agent] 狀態變更通知, thoughts數量:', this.state.thoughts.length)
+    if (this.onStateChange) {
+      this.onStateChange({ ...this.state })
     }
   }
 
@@ -84,6 +96,14 @@ export class AIAgentExecutor {
         { role: 'user', content: userMessage, timestamp: Date.now() }
       ]
       
+      // 檢查是否有預定義步驟（用於模擬本地+AI混合流程）
+      const expectedSteps = (this.skill as any).config?.expectedSteps
+      if (expectedSteps && Array.isArray(expectedSteps)) {
+        console.log('[AI Agent] 檢測到預定義步驟，使用混合執行模式')
+        return await this.executeWithSteps(expectedSteps)
+      }
+      
+      // 原有的純AI循環邏輯
       // 開始推理循環
       let iteration = 0
       const maxIterations = this.skill.config?.maxIterations || 10
@@ -267,6 +287,200 @@ export class AIAgentExecutor {
   }
 
   /**
+   * 使用預定義步驟執行（混合本地+AI模式）
+   */
+  private async executeWithSteps(expectedSteps: any[]): Promise<AgentExecutionResult> {
+    console.log('[AI Agent] 開始混合執行模式，共', expectedSteps.length, '個步驟')
+    
+    let collectedData: any = {}
+    
+    for (let i = 0; i < expectedSteps.length; i++) {
+      const step = expectedSteps[i]
+      const isLocalStep = step.label.includes('[本地') || step.label.includes('[本機')
+      
+      console.log(`[AI Agent] 執行步驟 ${i + 1}/${expectedSteps.length}: ${step.label}`, { isLocalStep })
+      
+      if (isLocalStep) {
+        // 本地步驟：模擬數據讀取
+        await new Promise(resolve => setTimeout(resolve, 500)) // 延遲500ms模擬讀取
+        
+        const mockData = (this.skill as any).mockData
+        let thoughtContent = ''
+        
+        // 根據步驟ID生成對應的模擬內容
+        if (step.id === 'customer' && mockData?.account) {
+          thoughtContent = `✓ 已讀取客戶資料：${mockData.account.CUST_NAME || mockData.account.COMPANY_NAME || '客戶'}`
+          collectedData.account = mockData.account
+        } else if (step.id === 'plan' && mockData?.account) {
+          thoughtContent = `✓ 已讀取資費方案資訊`
+          collectedData.plan = mockData.account
+        } else if (step.id === 'charges' && mockData?.charges) {
+          const total = Object.values(mockData.charges).reduce((sum: number, val: any) => sum + (typeof val === 'number' ? val : 0), 0)
+          thoughtContent = `✓ 已讀取收費項目，共 ${Object.keys(mockData.charges).length} 項，總計 $${total}`
+          collectedData.charges = mockData.charges
+        } else if (step.id === 'organize') {
+          thoughtContent = `✓ 資料整理完成，準備進行計算`
+          collectedData.discount = mockData?.discount
+          collectedData.tax = mockData?.tax
+        } else {
+          thoughtContent = `✓ ${step.label.split('[')[0].trim()} 完成`
+        }
+        
+        // 添加本地步驟的 thought
+        this.state.thoughts.push({
+          type: 'analysis',
+          content: thoughtContent,
+          timestamp: Date.now()
+        })
+        
+        console.log('[AI Agent] 本地步驟完成:', thoughtContent)
+        
+      } else {
+        // AI步驟：真正調用AI，並顯示標準化的4個子步驟
+        console.log('[AI Agent] AI步驟，準備調用Copilot API')
+        
+        // 根據步驟類型顯示不同的子步驟
+        const isCalculateStep = step.label.includes('計算')
+        const isGenerateStep = step.label.includes('生成')
+        
+        // 子步驟1：分析需求
+        this.state.thoughts.push({
+          type: 'analysis',
+          content: isCalculateStep ? '🎯 分析計算需求 [本地算法]' : '🎯 分析生成需求 [本地算法]',
+          timestamp: Date.now()
+        })
+        this.notifyStateChange()
+        await new Promise(resolve => setTimeout(resolve, 800))
+        
+        // 子步驟2：查詢知識庫
+        this.state.thoughts.push({
+          type: 'analysis',
+          content: isCalculateStep ? '🔍 查詢計費規則知識庫 [AI 查詢中...]' : '🔍 查詢 UBL 格式知識庫 [AI 查詢中...]',
+          timestamp: Date.now()
+        })
+        this.notifyStateChange()
+        await new Promise(resolve => setTimeout(resolve, 800))
+        
+        // 子步驟3：載入知識
+        this.state.thoughts.push({
+          type: 'analysis',
+          content: isCalculateStep ? '📚 載入計費公式與稅率規則 [本地讀取]' : '📚 載入 UBL 2.1 模板與規範 [本地讀取]',
+          timestamp: Date.now()
+        })
+        this.notifyStateChange()
+        await new Promise(resolve => setTimeout(resolve, 800))
+        
+        // 構建AI請求，包含已收集的數據
+        const aiPrompt = isCalculateStep 
+          ? `你現在在步驟 ${i + 1}/${expectedSteps.length}: ${step.label}
+
+已收集的數據：
+\`\`\`json
+${JSON.stringify(collectedData, null, 2)}
+\`\`\`
+
+請根據以上數據進行詳細計算，必須包含：
+1. 使用的計費公式
+2. 每一步的計算過程（含數字和運算符號）
+3. 稅率計算方式
+4. 最終總金額
+
+輸出格式要求：
+THOUGHT: 
+✓ 步驟1 - 基本服務費計算
+  公式：BUSINESS_PLAN + VOICE_CHARGE + DATA_CHARGE + DEDICATED_LINE
+  計算：1299 + 380 + 850 + 600 = 3129 元
+
+✓ 步驟2 - 企業折扣計算
+  公式：VIP_DISCOUNT + LONG_TERM_CONTRACT
+  計算：500 + 200 = 700 元
+
+✓ 步驟3 - 折後金額
+  公式：基本服務費 - 企業折扣
+  計算：3129 - 700 = 2429 元
+
+✓ 步驟4 - 稅額計算
+  公式：折後金額 × TAX_RATE
+  計算：2429 × 0.05 = 121.45 元
+
+✓ 步驟5 - 應付總額
+  公式：折後金額 + 稅額
+  計算：2429 + 121.45 = 2550.45 元
+
+RESULT: 帳單總金額為 NT$ 2,550.45 元（含稅）`
+          : `你現在在步驟 ${i + 1}/${expectedSteps.length}: ${step.label}
+
+已收集和計算的數據：
+\`\`\`json
+${JSON.stringify(collectedData, null, 2)}
+\`\`\`
+
+請生成標準的 UBL 2.1 Invoice XML 格式帳單。
+
+輸出格式：
+THOUGHT: [說明使用的 UBL 標準、XML 結構等]
+RESULT: [生成的 XML 內容摘要]`
+        
+        this.state.conversationHistory.push({
+          role: 'user',
+          content: aiPrompt,
+          timestamp: Date.now()
+        })
+        
+        // 子步驟4：AI 處理中
+        this.state.thoughts.push({
+          type: 'analysis',
+          content: isCalculateStep ? '✨ AI 執行計算並驗證結果 [AI 處理中...]' : '✨ AI 生成 UBL XML 格式 [AI 處理中...]',
+          timestamp: Date.now()
+        })
+        this.notifyStateChange()
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+        // 調用AI
+        const thought = await this.think()
+        
+        console.log('[AI Agent] ========= AI返回內容 =========')
+        console.log('[AI Agent] thought.type:', thought.type)
+        console.log('[AI Agent] thought.content 長度:', thought.content?.length || 0)
+        console.log('[AI Agent] thought.content 預覽:', thought.content?.substring(0, 200))
+        console.log('[AI Agent] ===============================')
+        
+        this.state.thoughts.push(thought)
+        
+        console.log('[AI Agent] AI步驟完成，thought type:', thought.type)
+        
+        // 如果是最後一個AI步驟且返回result，結束執行
+        if (thought.type === 'result' && i === expectedSteps.length - 1) {
+          this.state.status = 'completed'
+          this.state.result = {
+            summary: thought.content,
+            findings: [],
+            recommendations: []
+          }
+          
+          return {
+            success: true,
+            message: thought.content,
+            actions: [],
+            thoughts: this.state.thoughts
+          }
+        }
+      }
+    }
+    
+    // 所有步驟完成
+    this.state.status = 'completed'
+    const lastThought = this.state.thoughts[this.state.thoughts.length - 1]
+    
+    return {
+      success: true,
+      message: lastThought?.content || '執行完成',
+      actions: [],
+      thoughts: this.state.thoughts
+    }
+  }
+
+  /**
    * 中止執行
    */
   abort(): void {
@@ -347,16 +561,26 @@ export class AIAgentExecutor {
     systemPrompt += `5. 根據結果決定下一步或完成任務\n\n`
     
     systemPrompt += `\n## 回應格式要求（重要！）\n`
-    systemPrompt += `你必須嚴格遵循以下格式之一回應：\n\n`
+    systemPrompt += `你必須嚴格遵循以下格式回應：\n\n`
     systemPrompt += `**格式 1 - 需要執行動作時：**\n`
     systemPrompt += `THOUGHT: [簡短說明你的分析]\n`
     systemPrompt += `ACTION: {"type": "動作類型", "params": {參數}, "description": "說明"}\n\n`
-    systemPrompt += `**格式 2 - 任務完成時：**\n`
+    systemPrompt += `**格式 2 - 分析和計算任務時（同時包含 THOUGHT 和 RESULT）：**\n`
+    systemPrompt += `THOUGHT:\n`
+    systemPrompt += `✓ 步驟1 - 計算項目名稱\n`
+    systemPrompt += `  公式：A + B + C\n`
+    systemPrompt += `  計算：100 + 200 + 300 = 600 元\n`
+    systemPrompt += `✓ 步驟2 - 下一個計算項目\n`
+    systemPrompt += `  公式：...\n`
+    systemPrompt += `  計算：...\n`
+    systemPrompt += `RESULT: [簡短總結最終結果]\n\n`
+    systemPrompt += `**格式 3 - 任務完成時：**\n`
     systemPrompt += `RESULT: [總結發現和建議]\n\n`
     systemPrompt += `⚠️ 重要提醒：\n`
-    systemPrompt += `- 不要只有 THOUGHT 而沒有 ACTION 或 RESULT\n`
-    systemPrompt += `- 每次回應必須包含 ACTION（執行某個操作）或 RESULT（任務完成）\n`
-    systemPrompt += `- 如果不需要更多資訊，直接給出 RESULT\n`
+    systemPrompt += `- 如果是計算任務，THOUGHT 中必須詳細列出每一步的公式和計算過程\n`
+    systemPrompt += `- THOUGHT 和 RESULT 可以同時存在（推薦用於計算任務）\n`
+    systemPrompt += `- THOUGHT 包含詳細過程，RESULT 包含簡短結論\n`
+    systemPrompt += `- 如果不需要更多資訊，直接給出完整的 THOUGHT + RESULT\n`
     systemPrompt += `- 最多執行 ${this.skill.config?.maxIterations || 10} 個動作後必須給出 RESULT\n`
     
     return systemPrompt
@@ -507,32 +731,29 @@ export class AIAgentExecutor {
       
       console.log('[AI Agent] AI 回應內容:', content)
       
-      console.log('[AI Agent] AI 回應內容:', content)
-      
-      // 判斷回應類型
+      // 判斷回應類型並保留完整內容
       let thoughtType: 'analysis' | 'action' | 'result' = 'analysis'
       let extractedContent = content
       
-      if (content.includes('THOUGHT:')) {
-        thoughtType = 'analysis'
-        const thought = content.split('THOUGHT:')[1].split('ACTION:')[0].split('RESULT:')[0].trim()
-        extractedContent = thought
-        console.log('[AI Agent] 檢測到 THOUGHT:', thought)
-      } 
-      
-      if (content.includes('ACTION:')) {
-        thoughtType = 'action'
-        const action = content.split('ACTION:')[1].split('RESULT:')[0].trim()
-        extractedContent = action
-        console.log('[AI Agent] 檢測到 ACTION:', action)
-      } 
-      
+      // 檢查是否包含 RESULT（最終結果）
       if (content.includes('RESULT:')) {
         thoughtType = 'result'
-        const result = content.split('RESULT:')[1].trim()
-        extractedContent = result
-        console.log('[AI Agent] 檢測到 RESULT:', result)
+        // 保留完整內容（包含 THOUGHT 和 RESULT）
+        extractedContent = content
+        console.log('[AI Agent] 檢測到最終結果（RESULT）')
+      } else if (content.includes('THOUGHT:')) {
+        thoughtType = 'analysis'
+        // 保留完整 THOUGHT 內容（多行計算過程）
+        extractedContent = content
+        console.log('[AI Agent] 檢測到思考過程（THOUGHT）')
+      } else if (content.includes('ACTION:')) {
+        thoughtType = 'action'
+        const action = content.split('ACTION:')[1].trim()
+        extractedContent = action
+        console.log('[AI Agent] 檢測到動作（ACTION）')
       }
+      
+      console.log('[AI Agent] 提取的內容長度:', extractedContent.length)
       
       if (!content.includes('THOUGHT:') && !content.includes('ACTION:') && !content.includes('RESULT:')) {
         console.warn('[AI Agent] ⚠️ AI 回應沒有使用正確的格式（缺少 THOUGHT:/ACTION:/RESULT:），將視為分析')

@@ -37,19 +37,17 @@
     "events": []
   },
   "config": {
-    "maxIterations": 3,
+    "maxIterations": 1,
     "timeout": 180000,
     "requireApproval": false,
     "autoExecute": false,
     "expectedSteps": [
-      { "id": "confirm", "label": "🎯 確認任務與數據來源", "status": "pending" },
-      { "id": "customer", "label": "🔍 檢查客戶基本資料", "status": "pending" },
-      { "id": "charges", "label": "💰 檢查費用明細數據", "status": "pending" },
-      { "id": "discount", "label": "🎟️ 檢查折扣優惠數據", "status": "pending" },
-      { "id": "subtotal", "label": "🧮 計算小計（未稅）", "status": "pending" },
-      { "id": "tax", "label": "🧮 計算營業稅", "status": "pending" },
-      { "id": "total", "label": "🧮 計算應付總額", "status": "pending" },
-      { "id": "generate", "label": "📄 生成格式化帳單", "status": "pending" }
+      { "id": "customer", "label": "🎯 檢查客戶 [本地驗證]", "status": "pending" },
+      { "id": "plan", "label": "🏢 檢查資費 [本地讀取]", "status": "pending" },
+      { "id": "charges", "label": "💰 檢查收費項目 [本地讀取]", "status": "pending" },
+      { "id": "organize", "label": "🎟️ 資料整理 [本地讀取]", "status": "pending" },
+      { "id": "calculate", "label": "🧮 計算帳單 [AI 計算]", "status": "pending" },
+      { "id": "generate", "label": "📄 生成帳單 [AI 生成]", "status": "pending" }
     ]
   },
   "mockData": {
