@@ -160,8 +160,23 @@ export class AIAgentExecutor {
         // 如果 AI 決定完成
         if (thought.type === 'result') {
           this.state.status = 'completed'
+          
+          // 只提取 RESULT 部分作為簡短摘要，完整內容保留在 thoughts 中
+          let shortSummary = thought.content
+          if (thought.content.includes('RESULT:')) {
+            const resultPart = thought.content.split('RESULT:').pop()?.trim() || ''
+            // 取 RESULT 的第一行或前100個字符作為摘要
+            const firstLine = resultPart.split('\n')[0].replace(/```.*$/, '').trim()
+            shortSummary = firstLine.length > 100 ? firstLine.substring(0, 100) + '...' : firstLine
+          } else if (thought.content.length > 150) {
+            // 如果沒有 RESULT: 標記，取最後一行或截取
+            const lines = thought.content.trim().split('\n')
+            const lastLine = lines[lines.length - 1].trim()
+            shortSummary = lastLine.length > 100 ? lastLine.substring(0, 100) + '...' : lastLine
+          }
+          
           this.state.result = {
-            summary: thought.content,
+            summary: shortSummary,
             findings: [],
             recommendations: []
           }
@@ -452,8 +467,23 @@ RESULT: [生成的 XML 內容摘要]`
         // 如果是最後一個AI步驟且返回result，結束執行
         if (thought.type === 'result' && i === expectedSteps.length - 1) {
           this.state.status = 'completed'
+          
+          // 只提取 RESULT 部分作為簡短摘要，完整內容保留在 thoughts 中
+          let shortSummary = thought.content
+          if (thought.content.includes('RESULT:')) {
+            const resultPart = thought.content.split('RESULT:').pop()?.trim() || ''
+            // 取 RESULT 的第一行或前100個字符作為摘要
+            const firstLine = resultPart.split('\n')[0].replace(/```.*$/, '').trim()
+            shortSummary = firstLine.length > 100 ? firstLine.substring(0, 100) + '...' : firstLine
+          } else if (thought.content.length > 150) {
+            // 如果沒有 RESULT: 標記，取最後一行或截取
+            const lines = thought.content.trim().split('\n')
+            const lastLine = lines[lines.length - 1].trim()
+            shortSummary = lastLine.length > 100 ? lastLine.substring(0, 100) + '...' : lastLine
+          }
+          
           this.state.result = {
-            summary: thought.content,
+            summary: shortSummary,
             findings: [],
             recommendations: []
           }
