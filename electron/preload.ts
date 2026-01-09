@@ -105,7 +105,13 @@ const electronAPI = {
     list: (path: string) => ipcRenderer.invoke('ftp:list', path),
     read: (path: string) => ipcRenderer.invoke('ftp:read', path),
     download: (remotePath: string, localPath: string) => ipcRenderer.invoke('ftp:download', remotePath, localPath),
+    downloadToTemp: (remotePath: string, fileName: string) => ipcRenderer.invoke('ftp:download-to-temp', remotePath, fileName) as Promise<{ success: boolean; localPath?: string; error?: string }>,
     isConnected: () => ipcRenderer.invoke('ftp:is-connected')
+  },
+  pdf: {
+    generateInvoice: (invoiceData: any) => ipcRenderer.invoke('pdf:generate-invoice', invoiceData) as Promise<{ success: boolean; buffer?: string; error?: string }>,
+    saveInvoice: (invoiceData: any, suggestedName?: string) => ipcRenderer.invoke('pdf:save-invoice', invoiceData, suggestedName) as Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>,
+    openFile: (filePath: string) => ipcRenderer.invoke('pdf:open-file', filePath) as Promise<{ success: boolean; error?: string }>
   },
   system: {
     getInfo: () => ipcRenderer.invoke('system:get-info') as Promise<{ username: string; hostname: string }>

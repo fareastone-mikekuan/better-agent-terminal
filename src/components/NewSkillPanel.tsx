@@ -1150,7 +1150,47 @@ export function NewSkillPanel({
                     )}
 
                     {/* 控制按鈕 */}
-                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {/* 匯出 PDF 按鈕 - AI Agent 執行完成且有結果時顯示 */}
+                      {agentState?.status === 'completed' && agentState?.result?.summary && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const result = await window.electronAPI.pdf.saveInvoice(
+                                agentState.result?.summary || '',
+                                `帳單-${Date.now()}.pdf`
+                              )
+                              if (result.success && result.filePath) {
+                                alert(`PDF 已儲存至:\n${result.filePath}`)
+                                // 詢問是否開啟
+                                if (confirm('是否要開啟 PDF 檔案？')) {
+                                  await window.electronAPI.pdf.openFile(result.filePath)
+                                }
+                              } else if (result.canceled) {
+                                // 用戶取消，不做任何事
+                              } else {
+                                alert(`PDF 生成失敗: ${result.error}`)
+                              }
+                            } catch (error) {
+                              console.error('[PDF] Export error:', error)
+                              alert(`匯出失敗: ${error}`)
+                            }
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '13px',
+                            backgroundColor: '#1976d2',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          📄 匯出 PDF
+                        </button>
+                      )}
+                      
                       {/* 詳細記錄按鈕 - AI Agent 執行完成後顯示 */}
                       {(agentState?.status === 'completed' || agentState?.status === 'error') && 
                        agentState?.thoughts && 

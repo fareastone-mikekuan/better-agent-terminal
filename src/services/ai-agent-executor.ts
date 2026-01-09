@@ -571,13 +571,42 @@ ${JSON.stringify(collectedData, null, 2)}
 ${knowledgeContent ? `## 📚 相關知識庫內容（必須參考）：
 ${knowledgeContent}
 
-**重要**：此處的「UBL」是指知識庫中描述的 UBL 帳單系統，不是通用的 Universal Business Language。請根據上述知識庫中的 UBL 系統架構生成帳單。
+` : ''}請根據已計算的數據生成結構化的 JSON 帳單資料，用於產生 PDF 帳單。
 
-` : ''}請根據知識庫中的 UBL 帳單系統規範生成帳單格式。
+**重要**：必須輸出 JSON 格式的帳單資料，不是純文字帳單。
 
 輸出格式：
-THOUGHT: [說明使用了哪些知識庫中的 UBL 規則、Package 結構等]
-RESULT: [基於 UBL 帳單系統生成的帳單內容]`
+THOUGHT: [說明帳單內容來源和計算結果]
+
+RESULT:
+\`\`\`json
+{
+  "invoiceNumber": "BB${new Date().toISOString().slice(0,10).replace(/-/g,'')}001",
+  "issueDate": "${new Date().toISOString().slice(0,10)}",
+  "dueDate": "${new Date(Date.now() + 30*24*60*60*1000).toISOString().slice(0,10)}",
+  "customer": {
+    "name": "客戶公司名稱",
+    "taxId": "統一編號",
+    "contact": "聯絡人",
+    "phone": "電話"
+  },
+  "items": [
+    { "name": "項目名稱", "quantity": 1, "unitPrice": 金額, "amount": 金額 }
+  ],
+  "discounts": [
+    { "name": "折扣名稱", "amount": 折扣金額 }
+  ],
+  "subtotal": 小計,
+  "totalDiscount": 折扣合計,
+  "afterDiscount": 折後金額,
+  "taxRate": 0.05,
+  "tax": 稅額,
+  "total": 應付總額,
+  "paymentMethod": "月結付款"
+}
+\`\`\`
+
+請根據 collectedData 中的實際資料填入上述 JSON 結構。`
         
         this.state.conversationHistory.push({
           role: 'user',

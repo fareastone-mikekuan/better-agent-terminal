@@ -933,6 +933,99 @@ ipcMain.handle('ftp:is-connected', async () => {
   return ftpManager?.isConnected() || false
 })
 
+ipcMain.handle('ftp:download-to-temp', async (_event, remotePath: string, fileName: string) => {
+  try {
+    if (!ftpManager) {
+      throw new Error('未連接到 FTP/SFTP 伺服器')
+    }
+    const os = await import('os')
+    const path = await import('path')
+    const tempDir = os.tmpdir()
+    const timestamp = Date.now()
+    const tempPath = path.join(tempDir, `bat_${timestamp}_${fileName}`)
+    await ftpManager.downloadFile(remotePath, tempPath)
+    return { success: true, localPath: tempPath }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
+// PDF Generator handlers
+ipcMain.handle('pdf:generate-invoice', async (_event, invoiceData) => {
+  try {
+    const { generateInvoicePDF, parseInvoiceFromText } = await import('./pdf-generator')
+    
+    // 如果是文字格式，先解析成結構化資料
+    let data = invoiceData
+    if (typeof invoiceData === 'string') {
+      const parsed = parseInvoiceFromText(invoiceData)
+      if (!parsed) {
+        throw new Error('無法解析帳單資料')
+      }
+      data = parsed
+    }
+    
+    const pdfBuffer = await generateInvoicePDF(data)
+    return { success: true, buffer: pdfBuffer.toString('base64') }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('[PDF] Generation error:', errorMessage)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('pdf:save-invoice', async (_event, invoiceData, suggestedName?: string) => {
+  try {
+    const { generateInvoicePDF, parseInvoiceFromText } = await import('./pdf-generator')
+    const fs = await import('fs')
+    
+    // 如果是文字格式，先解析成結構化資料
+    let data = invoiceData
+    if (typeof invoiceData === 'string') {
+      const parsed = parseInvoiceFromText(invoiceData)
+      if (!parsed) {
+        throw new Error('無法解析帳單資料')
+      }
+      data = parsed
+    }
+    
+    // 顯示儲存對話框
+    const defaultName = suggestedName || `帳單-${data.invoiceNumber || Date.now()}.pdf`
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: '儲存帳單 PDF',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'PDF 檔案', extensions: ['pdf'] }
+      ]
+    })
+    
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+    
+    const pdfBuffer = await generateInvoicePDF(data)
+    fs.writeFileSync(result.filePath, pdfBuffer)
+    
+    console.log('[PDF] Saved to:', result.filePath)
+    return { success: true, filePath: result.filePath }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('[PDF] Save error:', errorMessage)
+    return { success: false, error: errorMessage }
+  }
+})
+
+ipcMain.handle('pdf:open-file', async (_event, filePath: string) => {
+  try {
+    await shell.openPath(filePath)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
+  }
+})
+
 // Skill action handlers
 ipcMain.handle('skill:execute-api-call', async (_event, params: { method: string; url: string; headers?: Record<string, string>; body?: string }) => {
   try {

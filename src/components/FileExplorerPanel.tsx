@@ -475,6 +475,34 @@ export function FileExplorerPanel({
   }
 
   const handleViewFile = async (file: FileItem) => {
+    const fileExtension = file.name.toLowerCase().split('.').pop() || ''
+    
+    // PDF 文件使用外部查看器打開
+    if (fileExtension === 'pdf') {
+      try {
+        setError('正在下載 PDF 文件...')
+        const downloadResult = await window.electronAPI.ftp.downloadToTemp(file.path, file.name)
+        
+        if (!downloadResult.success || !downloadResult.localPath) {
+          throw new Error(downloadResult.error || '下載 PDF 失敗')
+        }
+        
+        setError('正在打開 PDF...')
+        const openResult = await window.electronAPI.pdf.openFile(downloadResult.localPath)
+        
+        if (!openResult.success) {
+          throw new Error(openResult.error || '打開 PDF 失敗')
+        }
+        
+        setError('✅ PDF 已在外部程式開啟')
+        setTimeout(() => setError(null), 2000)
+      } catch (err) {
+        setError(`查看 PDF 失敗: ${(err as Error).message}`)
+      }
+      return
+    }
+    
+    // 其他文件類型使用內部查看器
     try {
       setError('正在讀取文件...')
       setViewingFile(file.name)
@@ -602,6 +630,51 @@ export function FileExplorerPanel({
     const hours = date.getHours().toString().padStart(2, '0')
     const minutes = date.getMinutes().toString().padStart(2, '0')
     return `${month}/${day} ${hours}:${minutes}`
+  }
+
+  // 根據檔案類型返回對應的圖示
+  const getFileIcon = (fileName: string, isDirectory: boolean): string => {
+    if (isDirectory) return '📁'
+    
+    const ext = fileName.toLowerCase().split('.').pop() || ''
+    switch (ext) {
+      case 'pdf':
+        return '📕'  // PDF 文件用紅色書本圖示
+      case 'doc':
+      case 'docx':
+        return '📘'  // Word 文件
+      case 'xls':
+      case 'xlsx':
+        return '📗'  // Excel 文件
+      case 'txt':
+      case 'md':
+        return '📝'  // 文字文件
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'svg':
+        return '🖼️'  // 圖片文件
+      case 'zip':
+      case 'rar':
+      case 'tar':
+      case 'gz':
+        return '📦'  // 壓縮文件
+      case 'js':
+      case 'ts':
+      case 'jsx':
+      case 'tsx':
+      case 'py':
+      case 'java':
+        return '📜'  // 程式碼文件
+      case 'json':
+      case 'xml':
+      case 'yaml':
+      case 'yml':
+        return '⚙️'  // 配置文件
+      default:
+        return '📄'  // 預設文件
+    }
   }
 
   if (!isVisible) return null
@@ -1370,7 +1443,7 @@ export function FileExplorerPanel({
                       minWidth: 0
                     }}
                   >
-                    <span>{file.isDirectory ? '📁' : '📄'}</span>
+                    <span>{getFileIcon(file.name, file.isDirectory)}</span>
                     <span style={{ color: '#dfdbc3', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
                     {file.isDirectory && <span style={{ color: '#888', fontSize: '10px' }}>(雙擊開啟)</span>}
                   </div>
