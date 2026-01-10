@@ -118,7 +118,9 @@ const electronAPI = {
     getPlatform: () => ipcRenderer.invoke('system:get-platform') as Promise<string>
   },
   git: {
-    execute: (cwd: string, args: string[]) => ipcRenderer.invoke('git:execute', cwd, args) as Promise<{ success: boolean; output: string; error: string }>
+    execute: (cwd: string, args: string[]) => ipcRenderer.invoke('git:execute', cwd, args) as Promise<{ success: boolean; output: string; error: string }>,
+    fetchRemoteHistory: (remoteUrl: string, branch?: string) => ipcRenderer.invoke('git:fetchRemoteHistory', remoteUrl, branch) as Promise<{ success: boolean; output: string; error?: string }>,
+    fetchRemoteCommitDetails: (remoteUrl: string, commitHash: string, branch?: string) => ipcRenderer.invoke('git:fetchRemoteCommitDetails', remoteUrl, commitHash, branch) as Promise<{ success: boolean; output: string; error?: string }>
   }
 }
 

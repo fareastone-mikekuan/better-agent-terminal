@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { PtyManager } from './pty-manager'
 import { CopilotManager } from './copilot-manager'
 import { FtpManager } from './ftp-manager'
@@ -662,6 +663,47 @@ ipcMain.handle('system:get-platform', () => {
   return process.platform
 })
 
+// Cache git path
+let cachedGitPath: string | null = null
+
+async function findGitPath(): Promise<string> {
+  if (cachedGitPath) return cachedGitPath
+  
+  const { execSync } = await import('child_process')
+  
+  if (process.platform === 'win32') {
+    // Windows: use bundled git from packages/Git/
+    const bundledGit = path.join(projectRoot, 'packages', 'Git', 'cmd', 'git.exe')
+    if (fs.existsSync(bundledGit)) {
+      console.log('[Git] Using bundled Git:', bundledGit)
+      cachedGitPath = bundledGit
+      return bundledGit
+    }
+    throw new Error('Git portable not found. Please run: npm install')
+  } else {
+    // Linux/Mac: use system git via which command
+    try {
+      const gitPath = execSync('which git', { encoding: 'utf8' }).trim()
+      if (gitPath && fs.existsSync(gitPath)) {
+        console.log('[Git] Using system Git:', gitPath)
+        cachedGitPath = gitPath
+        return gitPath
+      }
+    } catch (err) {
+      // which failed, try common paths
+      const commonPaths = ['/usr/bin/git', '/usr/local/bin/git', '/opt/homebrew/bin/git']
+      for (const gitPath of commonPaths) {
+        if (fs.existsSync(gitPath)) {
+          console.log('[Git] Found Git at:', gitPath)
+          cachedGitPath = gitPath
+          return gitPath
+        }
+      }
+    }
+    throw new Error('Git not found. Please install: sudo apt install git')
+  }
+}
+
 // Git command execution handler
 ipcMain.handle('git:execute', async (_event, cwd: string, args: string[]) => {
   const { execFile } = await import('child_process')
@@ -669,17 +711,7 @@ ipcMain.handle('git:execute', async (_event, cwd: string, args: string[]) => {
   const execFileAsync = promisify(execFile)
   
   try {
-    // Determine git path based on platform
-    let gitPath = 'git'
-    if (process.platform === 'win32') {
-      const bundledGit = path.join(projectRoot, 'packages', 'Git', 'cmd', 'git.exe')
-      if (fs.existsSync(bundledGit)) {
-        gitPath = bundledGit
-      }
-    } else {
-      // Linux/Mac: use system git
-      gitPath = '/usr/bin/git'
-    }
+    const gitPath = await findGitPath()
     
     console.log('[Git] Executing:', gitPath, args, 'in', cwd)
     const { stdout, stderr } = await execFileAsync(gitPath, args, { 
@@ -695,6 +727,128 @@ ipcMain.handle('git:execute', async (_event, cwd: string, args: string[]) => {
       success: false, 
       output: '', 
       error: error.message || String(error)
+    }
+  }
+})
+
+// Git remote history fetcher (shallow clone to temp directory)
+ipcMain.handle('git:fetchRemoteHistory', async (_event, remoteUrl: string, branch: string = 'main') => {
+  const os = await import('os')
+  const { execFile } = await import('child_process')
+  const { promisify } = await import('util')
+  const execFileAsync = promisify(execFile)
+  
+  const tempDir = path.join(os.tmpdir(), `git-temp-${Date.now()}`)
+  
+  try {
+    const gitPath = await findGitPath()
+    
+    // Create temp directory
+    await fs.promises.mkdir(tempDir, { recursive: true })
+    
+    console.log('[Git] Shallow cloning', remoteUrl, 'to', tempDir)
+    
+    // Shallow clone with depth 20
+    await execFileAsync(gitPath, [
+      'clone',
+      '--depth', '20',
+      '--single-branch',
+      '--branch', branch,
+      remoteUrl,
+      tempDir
+    ], { 
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024, // 10MB for clone
+      timeout: 60000 // 60s timeout
+    })
+    
+    // Get commit log
+    const { stdout } = await execFileAsync(gitPath, [
+      'log',
+      '--oneline',
+      '--format=%H|%an|%ad|%s',
+      '--date=short',
+      '-20'
+    ], {
+      cwd: tempDir,
+      encoding: 'utf8'
+    })
+    
+    return { success: true, output: stdout }
+  } catch (error: any) {
+    console.error('[Git] Remote history fetch failed:', error)
+    return { 
+      success: false, 
+      output: '', 
+      error: error.message || String(error)
+    }
+  } finally {
+    // Clean up temp directory
+    try {
+      await fs.promises.rm(tempDir, { recursive: true, force: true })
+    } catch (cleanupErr) {
+      console.error('[Git] Failed to cleanup temp dir:', cleanupErr)
+    }
+  }
+})
+
+// Git remote commit details fetcher (shallow clone to temp directory and get commit details)
+ipcMain.handle('git:fetchRemoteCommitDetails', async (_event, remoteUrl: string, commitHash: string, branch: string = 'main') => {
+  const os = await import('os')
+  const { execFile } = await import('child_process')
+  const { promisify } = await import('util')
+  const execFileAsync = promisify(execFile)
+  
+  const tempDir = path.join(os.tmpdir(), `git-commit-${Date.now()}`)
+  
+  try {
+    const gitPath = await findGitPath()
+    
+    // Create temp directory
+    await fs.promises.mkdir(tempDir, { recursive: true })
+    
+    console.log('[Git] Fetching commit details for', commitHash, 'from', remoteUrl)
+    
+    // Shallow clone with enough depth to include the commit
+    await execFileAsync(gitPath, [
+      'clone',
+      '--depth', '50',
+      '--single-branch',
+      '--branch', branch,
+      remoteUrl,
+      tempDir
+    ], { 
+      encoding: 'utf8',
+      maxBuffer: 20 * 1024 * 1024, // 20MB for clone
+      timeout: 90000 // 90s timeout
+    })
+    
+    // Get commit details with diff
+    const { stdout } = await execFileAsync(gitPath, [
+      'show',
+      '--stat',
+      '--pretty=fuller',
+      commitHash
+    ], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      maxBuffer: 5 * 1024 * 1024 // 5MB for diff output
+    })
+    
+    return { success: true, output: stdout }
+  } catch (error: any) {
+    console.error('[Git] Commit details fetch failed:', error)
+    return { 
+      success: false, 
+      output: '', 
+      error: error.message || String(error)
+    }
+  } finally {
+    // Clean up temp directory
+    try {
+      await fs.promises.rm(tempDir, { recursive: true, force: true })
+    } catch (cleanupErr) {
+      console.error('[Git] Failed to cleanup temp dir:', cleanupErr)
     }
   }
 })

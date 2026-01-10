@@ -39,42 +39,71 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   const [error, setError] = useState<string | null>(null)
   const [repoPath, setRepoPath] = useState<string>('')
   const [isGitRepo, setIsGitRepo] = useState(false)
+  const [savedRepos, setSavedRepos] = useState<Array<{path: string; name: string}>>([])
+  const [newRepoInput, setNewRepoInput] = useState('')
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
+  const [commitDetails, setCommitDetails] = useState<string>('')
 
-  // Get workspace path
+  // Load saved repos from localStorage
   useEffect(() => {
-    const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
-    if (workspace) {
-      setRepoPath(workspace.folderPath)
+    const saved = localStorage.getItem('git-repos')
+    if (saved) {
+      try {
+        const repos = JSON.parse(saved)
+        setSavedRepos(repos)
+        // Auto-select first repo if none selected
+        if (repos.length > 0 && !repoPath) {
+          setRepoPath(repos[0].path)
+        }
+      } catch (e) {
+        console.error('Failed to load saved repos:', e)
+      }
+    }
+  }, [])
+
+  // Check git repo when path changes
+  useEffect(() => {
+    if (repoPath && repoPath.trim()) {
       checkGitRepo()
     }
-  }, [workspaceId])
+  }, [repoPath])
 
   const checkGitRepo = async () => {
     setLoading(true)
     try {
-      // Try to run a simple git command to check if it's a git repo
-      const output = await runGitCommand('git rev-parse --git-dir')
+      // 如果是 URL，用 ls-remote 检查；如果是本地路径，用 rev-parse
+      const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
       
-      // Check if output contains error messages
-      if (output.includes('not a git repository') || 
-          output.includes('fatal:') || 
-          output.toLowerCase().includes('error')) {
-        setIsGitRepo(false)
-        setLoading(false)
-        return
+      if (isUrl) {
+        // 对于远程 URL，使用 ls-remote 检查
+        await runGitCommand(`git ls-remote ${repoPath} HEAD`, true)
+        setIsGitRepo(true)
+        await loadGitData()
+      } else {
+        // 本地仓库检查
+        const output = await runGitCommand('git rev-parse --git-dir', false)
+        
+        if (output.includes('not a git repository') || 
+            output.includes('fatal:') || 
+            output.toLowerCase().includes('error')) {
+          setIsGitRepo(false)
+          setLoading(false)
+          return
+        }
+        
+        setIsGitRepo(true)
+        await loadGitData()
       }
-      
-      setIsGitRepo(true)
-      await loadGitData()
     } catch (err) {
       console.error('Git check failed:', err)
       setIsGitRepo(false)
+      setError('❌ 無法連接到此儲存庫')
     } finally {
       setLoading(false)
     }
   }
 
-  const runGitCommand = async (command: string): Promise<string> => {
+  const runGitCommand = async (command: string, isRemote = false): Promise<string> => {
     // Parse command into args
     const parts = command.split(/\s+/)
     if (parts[0] !== 'git') {
@@ -84,8 +113,10 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     const args = parts.slice(1) // Remove 'git' prefix
     
     try {
-      console.log('[Git] Executing git', args, 'in', repoPath)
-      const result = await window.electronAPI.git.execute(repoPath, args)
+      // 如果是远程命令（URL），使用临时目录；否则使用 repoPath
+      const cwd = isRemote ? '/tmp' : repoPath
+      console.log('[Git] Executing git', args, 'in', cwd)
+      const result = await window.electronAPI.git.execute(cwd, args)
       
       if (!result.success) {
         console.error('[Git] Command failed:', result.error)
@@ -101,26 +132,224 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   }
 
   const loadGitData = async () => {
+    if (!repoPath) {
+      setError('請選擇 Git 儲存庫目錄或輸入 GitHub URL')
+      return
+    }
     if (!isGitRepo) return
     
     setLoading(true)
     setError(null)
     
     try {
-      await Promise.all([
-        loadGitStatus(),
-        loadGitLog(),
-        loadRemotes()
-      ])
+      const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
+      
+      if (isUrl) {
+        // 对于 URL，使用 ls-remote 获取信息
+        await loadRemoteData()
+      } else {
+        // 本地仓库的正常流程
+        await Promise.all([
+          loadGitStatus(),
+          loadGitLog(),
+          loadRemotes()
+        ])
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '無法載入 Git 資料'
       setError(errorMsg)
-      // If git commands fail, it's probably not a git repo
       if (errorMsg.includes('not a git repository')) {
         setIsGitRepo(false)
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadRemoteData = async () => {
+    try {
+      // 使用 ls-remote 获取所有 refs
+      const output = await runGitCommand(`git ls-remote --heads --tags ${repoPath}`, true)
+      
+      // 解析输出
+      const lines = output.split('\n').filter(l => l.trim())
+      
+      // 提取分支及其 commit hash
+      const branches = lines
+        .filter(l => l.includes('refs/heads/'))
+        .map(l => {
+          const parts = l.split(/\s+/)
+          const hash = parts[0]
+          const match = l.match(/refs\/heads\/(.+)$/)
+          const name = match ? match[1] : ''
+          return { name, hash }
+        })
+        .filter(b => b.name)
+      
+      // 提取标签
+      const tags = lines
+        .filter(l => l.includes('refs/tags/'))
+        .map(l => {
+          const match = l.match(/refs\/tags\/(.+)$/)
+          return match ? match[1] : ''
+        })
+        .filter(Boolean)
+      
+      // 设置当前分支（默认为 main 或 master）
+      const defaultBranch = branches.find(b => b.name === 'main') || 
+                           branches.find(b => b.name === 'master') || 
+                           branches[0]
+      
+      // 设置状态为远程仓库信息
+      setGitStatus({
+        branch: defaultBranch?.name || 'N/A',
+        ahead: 0,
+        behind: 0,
+        modified: 0,
+        staged: 0,
+        untracked: 0
+      })
+      
+      // 获取默认分支的提交历史（使用浅克隆）
+      if (defaultBranch) {
+        try {
+          console.log('[Git] Fetching remote history for', repoPath, 'branch', defaultBranch.name)
+          const result = await window.electronAPI.git.fetchRemoteHistory(repoPath, defaultBranch.name)
+          
+          if (result.success && result.output) {
+            const logLines = result.output.split('\n').filter(l => l.trim())
+            const logEntries: GitLog[] = logLines.map(line => {
+              const [hash, author, date, ...messageParts] = line.split('|')
+              return {
+                hash: hash?.substring(0, 7) || '',
+                author: author || 'Unknown',
+                date: date || '',
+                message: messageParts.join('|') || ''
+              }
+            })
+            
+            setGitLogs(logEntries.length > 0 ? logEntries : [
+              { hash: 'remote-info', author: 'Remote', date: '', message: `無法取得提交歷史` }
+            ])
+          } else {
+            // 如果获取历史失败，显示分支信息
+            setGitLogs([
+              { hash: 'remote-branches', author: 'Remote', date: '', message: `分支: ${branches.map(b => b.name).join(', ')}` },
+              { hash: 'remote-tags', author: 'Remote', date: '', message: `標籤: ${tags.slice(0, 10).join(', ')}` },
+              { hash: 'remote-error', author: 'System', date: '', message: `提示：無法取得提交歷史 - ${result.error || '請檢查網路連線'}` }
+            ])
+          }
+        } catch (logErr) {
+          console.error('Failed to fetch commit history:', logErr)
+          // 如果获取历史失败，显示分支信息
+          setGitLogs([
+            { hash: 'remote-branches', author: 'Remote', date: '', message: `分支: ${branches.map(b => b.name).join(', ')}` },
+            { hash: 'remote-tags', author: 'Remote', date: '', message: `標籤: ${tags.slice(0, 10).join(', ')}` }
+          ])
+        }
+      } else {
+        // 没有分支，只显示标签
+        setGitLogs([
+          { hash: 'remote-tags', author: 'Remote', date: '', message: `標籤: ${tags.join(', ')}` }
+        ])
+      }
+      
+      // 设置远程信息
+      setRemotes([{ name: 'origin', url: repoPath, type: 'fetch' }])
+    } catch (err) {
+      console.error('Failed to load remote data:', err)
+      throw err
+    }
+  }
+
+  const handleSelectRepo = async () => {
+    try {
+      const result = await window.electronAPI.dialog.selectFolder()
+      if (result) {
+        addRepo(result)
+      }
+    } catch (err) {
+      console.error('Failed to select folder:', err)
+    }
+  }
+
+  const handleViewCommit = async (hash: string) => {
+    if (!hash || hash.startsWith('remote-')) {
+      // 远程仓库或空 hash 不处理
+      return
+    }
+    
+    // 检查是否为远程 URL
+    const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
+    
+    try {
+      setSelectedCommit(hash)
+      setLoading(true)
+      setError(null)
+      
+      if (isUrl) {
+        // 远程仓库：使用临时克隆获取提交详情
+        const currentBranch = gitStatus?.branch || 'main'
+        console.log('[Git] Fetching remote commit details:', hash, 'from', repoPath)
+        
+        const result = await window.electronAPI.git.fetchRemoteCommitDetails(repoPath, hash, currentBranch)
+        
+        if (result.success && result.output) {
+          setCommitDetails(result.output)
+        } else {
+          setCommitDetails(`無法獲取提交詳情\n\n錯誤：${result.error || '未知錯誤'}`)
+          setError('❌ 無法獲取提交詳情')
+        }
+      } else {
+        // 本地仓库：直接运行 git show
+        const output = await runGitCommand(`git show --stat --pretty=fuller ${hash}`, false)
+        setCommitDetails(output)
+      }
+    } catch (err) {
+      console.error('Failed to load commit details:', err)
+      setError('無法載入提交詳情')
+      setCommitDetails(`錯誤：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddRepoFromInput = () => {
+    const input = newRepoInput.trim()
+    if (!input) return
+    
+    addRepo(input)
+    setNewRepoInput('')
+  }
+
+  const addRepo = (path: string) => {
+    setRepoPath(path)
+    
+    // Save to localStorage
+    const repoName = path.split('/').pop() || path.split('\\').pop() || path
+    const existing = savedRepos.find(r => r.path === path)
+    if (!existing) {
+      const updated = [...savedRepos, { path, name: repoName }]
+      setSavedRepos(updated)
+      localStorage.setItem('git-repos', JSON.stringify(updated))
+    }
+  }
+
+  const handleSelectSavedRepo = (path: string) => {
+    setRepoPath(path)
+  }
+
+  const handleRemoveSavedRepo = (path: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const updated = savedRepos.filter(r => r.path !== path)
+    setSavedRepos(updated)
+    localStorage.setItem('git-repos', JSON.stringify(updated))
+    
+    // If removing current repo, select another one
+    if (path === repoPath && updated.length > 0) {
+      setRepoPath(updated[0].path)
+    } else if (updated.length === 0) {
+      setRepoPath('')
     }
   }
 
@@ -356,106 +585,278 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     <div style={{
       height: '100%',
       display: 'flex',
-      flexDirection: 'column',
       backgroundColor: '#1e1e1e',
       color: '#e0e0e0'
     }}>
-      {/* Header */}
+      {/* Left Sidebar - Repository List */}
       <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #333',
+        width: '280px',
+        borderRight: '1px solid #333',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         backgroundColor: '#252526'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '16px' }}>🔀</span>
-          <span style={{ fontWeight: 500 }}>Git 版本控制</span>
+        {/* Sidebar Header */}
+        <div style={{
+          padding: '12px',
+          borderBottom: '1px solid #333',
+          fontWeight: 500,
+          fontSize: '13px'
+        }}>
+          🔀 Git 儲存庫
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={loadGitData}
-            disabled={loading}
+
+        {/* Add Repository Input */}
+        <div style={{
+          padding: '8px',
+          borderBottom: '1px solid #333',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
+        }}>
+          <input
+            type="text"
+            value={newRepoInput}
+            onChange={(e) => setNewRepoInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddRepoFromInput()}
+            placeholder="GitHub URL 或本地路徑：https://github.com/user/repo.git"
             style={{
-              padding: '4px 12px',
+              padding: '6px 8px',
               fontSize: '12px',
-              backgroundColor: '#3a3a3a',
+              backgroundColor: '#3c3c3c',
               color: '#e0e0e0',
               border: '1px solid #555',
               borderRadius: '3px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.5 : 1
+              outline: 'none'
             }}
-          >
-            {loading ? '更新中...' : '🔄 重新整理'}
-          </button>
-          {isFloating && (
+          />
+          <div style={{ display: 'flex', gap: '4px' }}>
             <button
-              onClick={onClose}
+              onClick={handleAddRepoFromInput}
+              disabled={!newRepoInput.trim()}
               style={{
+                flex: 1,
                 padding: '4px 8px',
-                fontSize: '14px',
-                backgroundColor: 'transparent',
-                color: '#e0e0e0',
+                fontSize: '11px',
+                backgroundColor: '#0e639c',
+                color: '#fff',
                 border: 'none',
+                borderRadius: '3px',
+                cursor: newRepoInput.trim() ? 'pointer' : 'not-allowed',
+                opacity: newRepoInput.trim() ? 1 : 0.5
+              }}
+            >
+              ➕ 加入
+            </button>
+            <button
+              onClick={handleSelectRepo}
+              style={{
+                flex: 1,
+                padding: '4px 8px',
+                fontSize: '11px',
+                backgroundColor: '#3a3a3a',
+                color: '#e0e0e0',
+                border: '1px solid #555',
+                borderRadius: '3px',
                 cursor: 'pointer'
               }}
             >
-              ×
+              📁 瀏覽
             </button>
+          </div>
+        </div>
+
+        {/* Repository List */}
+        <div style={{
+          flex: 1,
+          overflow: 'auto'
+        }}>
+          {savedRepos.length === 0 ? (
+            <div style={{
+              padding: '16px',
+              textAlign: 'center',
+              fontSize: '12px',
+              color: '#888'
+            }}>
+              尚未加入任何儲存庫<br/>
+              請貼上路徑或點擊瀏覽
+            </div>
+          ) : (
+            savedRepos.map(repo => (
+              <div
+                key={repo.path}
+                onClick={() => handleSelectSavedRepo(repo.path)}
+                style={{
+                  padding: '8px 12px',
+                  borderBottom: '1px solid #333',
+                  cursor: 'pointer',
+                  backgroundColor: repo.path === repoPath ? '#094771' : 'transparent',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  if (repo.path !== repoPath) {
+                    e.currentTarget.style.backgroundColor = '#2a2d2e'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (repo.path !== repoPath) {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: 500
+                  }}>
+                    {repo.name}
+                  </span>
+                  <button
+                    onClick={(e) => handleRemoveSavedRepo(repo.path, e)}
+                    style={{
+                      padding: '0 4px',
+                      fontSize: '14px',
+                      backgroundColor: 'transparent',
+                      color: '#888',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={{
+                  fontSize: '10px',
+                  color: '#888',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+                title={repo.path}
+                >
+                  {repo.path}
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Right Panel - Git Details */}
       <div style={{
+        flex: 1,
         display: 'flex',
-        gap: '4px',
-        padding: '8px 12px',
-        borderBottom: '1px solid #333',
-        backgroundColor: '#2a2a2a'
+        flexDirection: 'column'
       }}>
-        {['status', 'log', 'remote'].map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab as typeof activeTab)}
-            style={{
-              padding: '6px 16px',
-              fontSize: '12px',
-              backgroundColor: activeTab === tab ? '#3a3a3a' : 'transparent',
-              color: activeTab === tab ? '#7bbda4' : '#999',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontWeight: activeTab === tab ? 500 : 400
-            }}
-          >
-            {tab === 'status' && '📊 狀態'}
-            {tab === 'log' && '📜 歷史記錄'}
-            {tab === 'remote' && '🌐 遠端倉庫'}
-          </button>
-        ))}
-      </div>
-
-      {/* Error message */}
-      {error && (
+        {/* Header */}
         <div style={{
-          padding: '12px',
-          backgroundColor: '#ff4444',
-          color: '#fff',
-          fontSize: '12px',
+          padding: '12px 16px',
+          borderBottom: '1px solid #333',
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          backgroundColor: '#1e1e1e'
         }}>
-          <span>{error}</span>
-          <button
-            onClick={() => setError(null)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
+          <div style={{ 
+            fontSize: '12px',
+            color: '#888',
+            fontFamily: 'monospace',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            marginRight: '12px'
+          }}>
+            {repoPath || '未選擇儲存庫'}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={loadGitData}
+              disabled={loading || !repoPath}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                backgroundColor: '#3a3a3a',
+                color: '#e0e0e0',
+                border: '1px solid #555',
+                borderRadius: '3px',
+                cursor: (loading || !repoPath) ? 'not-allowed' : 'pointer',
+                opacity: (loading || !repoPath) ? 0.5 : 1
+              }}
+            >
+              {loading ? '更新中...' : '🔄 重新整理'}
+            </button>
+            {isFloating && (
+              <button
+                onClick={onClose}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '14px',
+                  backgroundColor: 'transparent',
+                  color: '#e0e0e0',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          gap: '4px',
+          padding: '8px 12px',
+          borderBottom: '1px solid #333',
+          backgroundColor: '#2a2a2a'
+        }}>
+          {['status', 'log', 'remote'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as typeof activeTab)}
+              style={{
+                padding: '6px 16px',
+                fontSize: '12px',
+                backgroundColor: activeTab === tab ? '#3a3a3a' : 'transparent',
+                color: activeTab === tab ? '#7bbda4' : '#999',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontWeight: activeTab === tab ? 500 : 400
+              }}
+            >
+              {tab === 'status' && '📊 狀態'}
+              {tab === 'log' && '📜 歷史記錄'}
+              {tab === 'remote' && '🌐 遠端倉庫'}
+            </button>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div style={{
+            padding: '12px',
+            backgroundColor: '#ff4444',
+            color: '#fff',
+            fontSize: '12px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span>{error}</span>
+            <button
+              onClick={() => setError(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
               cursor: 'pointer',
               fontSize: '16px'
             }}
@@ -463,11 +864,11 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
             ×
           </button>
         </div>
-      )}
+        )}
 
-      {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-        {activeTab === 'status' && gitStatus && (
+        {/* Content */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
+          {activeTab === 'status' && gitStatus && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Branch info */}
             <div style={{
@@ -583,40 +984,84 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
 
         {activeTab === 'log' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {gitLogs.map(log => (
-              <div
-                key={log.hash}
-                onClick={() => handleCheckoutCommit(log.hash)}
-                style={{
-                  padding: '10px 12px',
+            {selectedCommit ? (
+              // 显示提交详情
+              <div>
+                <button
+                  onClick={() => { setSelectedCommit(null); setCommitDetails('') }}
+                  style={{
+                    marginBottom: '12px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    backgroundColor: '#3a3a3a',
+                    color: '#e0e0e0',
+                    border: '1px solid #555',
+                    borderRadius: '3px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ← 返回提交列表
+                </button>
+                <div style={{
                   backgroundColor: '#2a2a2a',
+                  padding: '12px',
                   borderRadius: '4px',
                   border: '1px solid #3a3a3a',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#3a3a3a'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2a2a2a'}
-              >
-                <div style={{ 
-                  display: 'flex', 
-                  gap: '12px', 
-                  marginBottom: '6px',
-                  fontSize: '12px'
+                  fontFamily: 'monospace',
+                  fontSize: '12px',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 'calc(100vh - 300px)',
+                  overflow: 'auto'
                 }}>
-                  <span style={{ 
-                    fontFamily: 'monospace', 
-                    color: '#fc0',
-                    fontWeight: 500
-                  }}>
-                    {log.hash}
-                  </span>
-                  <span style={{ color: '#888' }}>{log.date}</span>
+                  {commitDetails || '載入中...'}
                 </div>
-                <div style={{ fontSize: '13px', marginBottom: '4px' }}>{log.message}</div>
-                <div style={{ fontSize: '11px', color: '#666' }}>by {log.author}</div>
               </div>
-            ))}
+            ) : (
+              // 显示提交列表
+              <div>
+                {gitLogs.map((log, idx) => {
+                  const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
+                  const isClickable = log.hash && !log.hash.startsWith('remote-')
+                  
+                  return (
+                    <div
+                      key={log.hash || `log-${idx}`}
+                      onClick={() => isClickable && handleViewCommit(log.hash)}
+                      style={{
+                        padding: '10px 12px',
+                        backgroundColor: '#2a2a2a',
+                        borderRadius: '4px',
+                        border: '1px solid #3a3a3a',
+                        cursor: isClickable ? 'pointer' : 'default',
+                        opacity: isClickable ? 1 : 0.8,
+                        transition: 'background-color 0.2s'
+                      }}
+                      onMouseEnter={e => isClickable && (e.currentTarget.style.backgroundColor = '#3a3a3a')}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = '#2a2a2a'}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '12px', 
+                        marginBottom: '6px',
+                        fontSize: '12px'
+                      }}>
+                        <span style={{ 
+                          fontFamily: 'monospace', 
+                          color: '#fc0',
+                          fontWeight: 500
+                        }}>
+                          {log.hash}
+                        </span>
+                        <span style={{ color: '#888' }}>{log.date}</span>
+                      </div>
+                      <div style={{ fontSize: '13px', marginBottom: '4px' }}>{log.message}</div>
+                      <div style={{ fontSize: '11px', color: '#666' }}>by {log.author}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -676,6 +1121,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   )
