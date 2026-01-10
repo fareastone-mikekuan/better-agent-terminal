@@ -43,6 +43,8 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   const [newRepoInput, setNewRepoInput] = useState('')
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
   const [commitDetails, setCommitDetails] = useState<string>('')
+  const [availableBranches, setAvailableBranches] = useState<Array<{name: string; hash: string}>>([])
+  const [selectedBranch, setSelectedBranch] = useState<string>('')
 
   // Load saved repos from localStorage
   useEffect(() => {
@@ -195,10 +197,19 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         })
         .filter(Boolean)
       
-      // 设置当前分支（默认为 main 或 master）
-      const defaultBranch = branches.find(b => b.name === 'main') || 
-                           branches.find(b => b.name === 'master') || 
-                           branches[0]
+      // 保存所有分支
+      setAvailableBranches(branches)
+      
+      // 设置当前分支（默认为 main 或 master，或使用用户选择的）
+      const defaultBranch = selectedBranch 
+        ? branches.find(b => b.name === selectedBranch)
+        : (branches.find(b => b.name === 'main') || 
+           branches.find(b => b.name === 'master') || 
+           branches[0])
+      
+      if (defaultBranch && !selectedBranch) {
+        setSelectedBranch(defaultBranch.name)
+      }
       
       // 设置状态为远程仓库信息
       setGitStatus({
@@ -271,6 +282,14 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     } catch (err) {
       console.error('Failed to select folder:', err)
     }
+  }
+
+  const handleSwitchBranch = async (branchName: string) => {
+    setSelectedBranch(branchName)
+    setSelectedCommit(null)
+    setCommitDetails('')
+    // 重新加载 git 数据
+    await loadGitData()
   }
 
   const handleViewCommit = async (hash: string) => {
@@ -791,6 +810,30 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
             >
               {loading ? '更新中...' : '🔄 重新整理'}
             </button>
+            {/* 分支选择器 */}
+            {availableBranches.length > 1 && (
+              <select
+                value={selectedBranch}
+                onChange={(e) => handleSwitchBranch(e.target.value)}
+                disabled={loading}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  backgroundColor: '#3a3a3a',
+                  color: '#e0e0e0',
+                  border: '1px solid #555',
+                  borderRadius: '3px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.5 : 1
+                }}
+              >
+                {availableBranches.map(branch => (
+                  <option key={branch.name} value={branch.name}>
+                    🌿 {branch.name}
+                  </option>
+                ))}
+              </select>
+            )}
             {isFloating && (
               <button
                 onClick={onClose}
