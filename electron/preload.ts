@@ -114,7 +114,11 @@ const electronAPI = {
     openFile: (filePath: string) => ipcRenderer.invoke('pdf:open-file', filePath) as Promise<{ success: boolean; error?: string }>
   },
   system: {
-    getInfo: () => ipcRenderer.invoke('system:get-info') as Promise<{ username: string; hostname: string }>
+    getInfo: () => ipcRenderer.invoke('system:get-info') as Promise<{ username: string; hostname: string }>,
+    getPlatform: () => ipcRenderer.invoke('system:get-platform') as Promise<string>
+  },
+  git: {
+    execute: (cwd: string, args: string[]) => ipcRenderer.invoke('git:execute', cwd, args) as Promise<{ success: boolean; output: string; error: string }>
   }
 }
 

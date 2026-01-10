@@ -360,6 +360,37 @@ class WorkspaceStore {
     return terminal
   }
 
+  addGit(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    // Count existing Git panels in this workspace to get next number
+    const existingGits = this.state.terminals.filter(
+      t => t.workspaceId === workspaceId && t.type === 'git'
+    )
+    const gitNumber = existingGits.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'git',
+      title: `🔀 Git #${gitNumber}`,
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
   removeTerminal(id: string): void {
     const terminals = this.state.terminals.filter(t => t.id !== id)
 

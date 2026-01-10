@@ -113,7 +113,7 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'oracle' | 'webview' | 'file' | 'api';  // terminal、oracle、webview、file explorer 或 api tester
+  type: 'terminal' | 'oracle' | 'webview' | 'file' | 'api' | 'git';  // terminal、oracle、webview、file explorer、api tester 或 git
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;

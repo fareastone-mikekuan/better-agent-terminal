@@ -657,6 +657,48 @@ ipcMain.handle('system:get-info', async () => {
   }
 })
 
+// System platform handler
+ipcMain.handle('system:get-platform', () => {
+  return process.platform
+})
+
+// Git command execution handler
+ipcMain.handle('git:execute', async (_event, cwd: string, args: string[]) => {
+  const { execFile } = await import('child_process')
+  const { promisify } = await import('util')
+  const execFileAsync = promisify(execFile)
+  
+  try {
+    // Determine git path based on platform
+    let gitPath = 'git'
+    if (process.platform === 'win32') {
+      const bundledGit = path.join(projectRoot, 'packages', 'Git', 'cmd', 'git.exe')
+      if (fs.existsSync(bundledGit)) {
+        gitPath = bundledGit
+      }
+    } else {
+      // Linux/Mac: use system git
+      gitPath = '/usr/bin/git'
+    }
+    
+    console.log('[Git] Executing:', gitPath, args, 'in', cwd)
+    const { stdout, stderr } = await execFileAsync(gitPath, args, { 
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 // 1MB
+    })
+    
+    return { success: true, output: stdout, error: stderr }
+  } catch (error: any) {
+    console.error('[Git] Command failed:', error)
+    return { 
+      success: false, 
+      output: '', 
+      error: error.message || String(error)
+    }
+  }
+})
+
 // Update checker handlers
 ipcMain.handle('update:check', async () => {
   try {

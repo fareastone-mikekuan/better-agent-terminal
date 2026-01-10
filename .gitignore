@@ -8,6 +8,9 @@ release/
 # PowerShell binaries (download separately)
 packages/PowerShell/
 
+# Git portable binaries (download separately)
+packages/Git/
+
 # Local environment (not committed)
 .envrc
 .env.local

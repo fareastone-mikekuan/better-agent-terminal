@@ -8,7 +8,7 @@ import { MainPanel } from './MainPanel'
 import { ResizeHandle } from './ResizeHandle'
 import { AgentPresetId, getAgentPreset } from '../types/agent-presets'
 
-type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api'
+type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api' | 'git'
 
 // ThumbnailBar panel settings
 const THUMBNAIL_SETTINGS_KEY = 'better-terminal-thumbnail-settings'
@@ -331,6 +331,11 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     workspaceStore.setFocusedTerminal(terminal.id)
   }, [workspace.id])
 
+  const handleAddGit = useCallback(() => {
+    const terminal = workspaceStore.addGit(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
   const handleCloseTerminal = useCallback((id: string) => {
     const terminal = terminals.find(t => t.id === id)
     // Show confirm for agent terminals
@@ -442,6 +447,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         onAddWebView={handleAddWebView}
         onAddFile={handleAddFile}
         onAddApiTester={handleAddApiTester}
+        onAddGit={handleAddGit}
         showAddButton={true}
         height={thumbnailSettings.height}
         collapsed={thumbnailSettings.collapsed}

@@ -3,7 +3,7 @@ import type { TerminalInstance } from '../types'
 import { TerminalThumbnail } from './TerminalThumbnail'
 import { getAgentPreset } from '../types/agent-presets'
 
-type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api'
+type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api' | 'git'
 
 interface ThumbnailBarProps {
   terminals: TerminalInstance[]
@@ -14,6 +14,7 @@ interface ThumbnailBarProps {
   onAddWebView?: () => void
   onAddFile?: () => void
   onAddApiTester?: () => void
+  onAddGit?: () => void
   showAddButton: boolean
   height?: number
   collapsed?: boolean
@@ -31,6 +32,7 @@ export function ThumbnailBar({
   onAddWebView,
   onAddFile,
   onAddApiTester,
+  onAddGit,
   showAddButton,
   height,
   collapsed = false,
@@ -122,6 +124,8 @@ export function ThumbnailBar({
         return '檔案'
       case 'api':
         return 'API'
+      case 'git':
+        return 'Git'
     }
   }
   const label = getTabLabel()
@@ -158,6 +162,9 @@ export function ThumbnailBar({
         break
       case 'api':
         onAddApiTester?.()
+        break
+      case 'git':
+        onAddGit?.()
         break
     }
   }
@@ -196,6 +203,12 @@ export function ThumbnailBar({
             onClick={() => setActiveTab('api')}
           >
             🔌 API
+          </button>
+          <button
+            className={`thumbnail-tab ${activeTab === 'git' ? 'active' : ''}`}
+            onClick={() => setActiveTab('git')}
+          >
+            🔀 Git
           </button>
         </div>
         <div className="thumbnail-bar-actions">

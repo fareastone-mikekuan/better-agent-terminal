@@ -5,6 +5,7 @@ import { OraclePanel } from './OraclePanel'
 import { WebViewPanel } from './WebViewPanel'
 import { FileExplorerPanel } from './FileExplorerPanel'
 import { ApiTesterPanel } from './ApiTesterPanel'
+import { GitPanel } from './GitPanel'
 import { ActivityIndicator } from './ActivityIndicator'
 import { getAgentPreset } from '../types/agent-presets'
 import { workspaceStore } from '../stores/workspace-store'
@@ -122,6 +123,13 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
           />
         ) : terminal.type === 'api' ? (
           <ApiTesterPanel
+            isVisible={true}
+            onClose={() => {}}
+            isFloating={false}
+            workspaceId={terminal.workspaceId}
+          />
+        ) : terminal.type === 'git' ? (
+          <GitPanel
             isVisible={true}
             onClose={() => {}}
             isFloating={false}
