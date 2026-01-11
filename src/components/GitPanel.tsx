@@ -51,13 +51,16 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     const detectWorkspaceGit = async () => {
       try {
         // Get current workspace
-        const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
+        const state = workspaceStore.getState()
+        const workspace = state.workspaces.find(w => w.id === workspaceId)
         if (!workspace) return
 
-        // Get active terminal's cwd
-        const terminal = workspace.terminals.find(t => t.id === workspace.activeTerminal)
-        if (terminal) {
-          const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+        // Get active terminal's cwd from the workspace
+        const terminals = state.terminals.filter(t => t.workspaceId === workspaceId)
+        const activeTerminal = terminals.find(t => t.type === 'terminal')
+        
+        if (activeTerminal) {
+          const cwd = await window.electronAPI.pty.getCwd(activeTerminal.id)
           if (cwd && cwd.trim()) {
             console.log('[Git] Auto-detecting Git repo in:', cwd)
             // Don't override if user already selected a repo
