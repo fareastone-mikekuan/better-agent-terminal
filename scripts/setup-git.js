@@ -53,6 +53,13 @@ if (!fs.existsSync(GIT_DIR)) {
   fs.mkdirSync(GIT_DIR, { recursive: true });
 }
 
+// Check if download file already exists
+if (fs.existsSync(DOWNLOAD_FILE)) {
+  console.log('📂 Found existing download, extracting...');
+  extractGit();
+  return;
+}
+
 // Download Git portable
 console.log('⬇️  Downloading Git portable (~55 MB)...');
 console.log(`   URL: ${DOWNLOAD_URL}`);
@@ -110,20 +117,47 @@ https.get(DOWNLOAD_URL, (response) => {
 function extractGit() {
   console.log('📂 Extracting Git portable (self-extracting archive)...');
   
+  // Check if file is locked/in use
+  try {
+    const fd = fs.openSync(DOWNLOAD_FILE, 'r+');
+    fs.closeSync(fd);
+  } catch (error) {
+    if (error.code === 'EBUSY' || error.code === 'EPERM') {
+      console.error('❌ Download file is locked by another process');
+      console.log('💡 Solutions:');
+      console.log('   1. Close any running installers or virus scanners');
+      console.log('   2. Delete the file and run npm install again:');
+      console.log(`      del "${DOWNLOAD_FILE}"`);
+      console.log('   3. Or manually extract:');
+      console.log(`      - Run: ${DOWNLOAD_FILE}`);
+      console.log(`      - Extract to: ${GIT_DIR}`);
+      process.exit(1);
+    }
+  }
+  
   try {
     // Git portable is a self-extracting 7z archive
     // Use -y flag for yes to all, -o for output directory
-    execSync(`"${DOWNLOAD_FILE}" -y -o"${GIT_DIR}"`, { 
+    // Add quotes around path to handle spaces
+    const command = `"${DOWNLOAD_FILE}" -y -o"${GIT_DIR}"`;
+    console.log(`   Running: ${command}`);
+    execSync(command, { 
       encoding: 'utf8',
-      stdio: 'inherit'
+      stdio: 'inherit',
+      timeout: 120000 // 2 minutes timeout
     });
     console.log('✅ Extraction completed!');
     verifyAndCleanup();
   } catch (error) {
     console.error('❌ Failed to extract Git:', error.message);
-    console.log('💡 Alternative: Manual extraction');
-    console.log(`   1. Run: ${DOWNLOAD_FILE}`);
-    console.log(`   2. Extract to: ${GIT_DIR}`);
+    console.log('💡 Alternative solutions:');
+    console.log('   1. Manual extraction:');
+    console.log(`      - Run: ${DOWNLOAD_FILE}`);
+    console.log(`      - Extract to: ${GIT_DIR}`);
+    console.log('   2. Delete and retry:');
+    console.log(`      del "${DOWNLOAD_FILE}"`);
+    console.log('      npm install');
+    console.log('   3. Use system Git instead (install from git-scm.com)');
     process.exit(1);
   }
 }
