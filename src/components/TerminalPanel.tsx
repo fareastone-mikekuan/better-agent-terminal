@@ -31,8 +31,10 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const [aiAnalyzing, setAiAnalyzing] = useState(false)  // AI 分析中
   const [aiAnalysisResult, setAiAnalysisResult] = useState<{ text: string, result: string } | null>(null)  // AI 分析结果
   const [aiAnalysisMinimized, setAiAnalysisMinimized] = useState(false)  // AI 分析结果是否缩小显示
+  const [showQuickAIPrompt, setShowQuickAIPrompt] = useState(false)  // 顯示快速 AI 提示
   const aiAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null)
   const insightTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastKeypressRef = useRef<{ key: string, time: number } | null>(null)
   const commandStartTimeRef = useRef<number | null>(null)
   const currentCommandRef = useRef<string | null>(null)
   const commandBufferRef = useRef<string>('')  // 追踪用户输入的命令
@@ -40,6 +42,22 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
 
   // 处理用户输入，追踪命令
   const handleUserInput = (data: string) => {
+    // Ctrl+K - 快速 AI 分析（顯示提示）
+    if (data === '\x0b') {  // Ctrl+K
+      setShowQuickAIPrompt(true)
+      setTimeout(() => setShowQuickAIPrompt(false), 3000)
+      
+      // 獲取最近的輸出進行 AI 分析
+      const terminal = workspaceStore.getTerminal(terminalId)
+      if (terminal?.scrollbackBuffer && terminal.scrollbackBuffer.length > 0) {
+        const recentOutput = terminal.scrollbackBuffer.slice(-50).join('\n')
+        if (recentOutput.trim()) {
+          performAIAnalysis(recentOutput)
+        }
+      }
+      return
+    }
+    
     // Enter 键 - 用户按下回车执行命令
     if (data === '\r' || data === '\n') {
       const command = commandBufferRef.current.trim()
@@ -312,38 +330,71 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const getSuggestion = (data: string): string => {
     const lowerData = data.toLowerCase()
     
+    // 命令未找到
     if (lowerData.includes('command not found')) {
-      return '命令不存在，請確認是否已安裝或檢查拼寫'
-    }
-    if (lowerData.includes('permission denied')) {
-      return '權限不足，嘗試使用 sudo 或檢查檔案權限'
-    }
-    if (lowerData.includes('enoent') || lowerData.includes('no such file')) {
-      return '檔案或目錄不存在，請確認路徑是否正確'
-    }
-    if (lowerData.includes('eacces')) {
-      return '存取被拒絕，檢查檔案權限或使用 sudo'
-    }
-    if (lowerData.includes('npm err') || lowerData.includes('npm error')) {
-      return '嘗試刪除 node_modules 並重新執行 npm install'
-    }
-    if (lowerData.includes('git')) {
-      return '檢查 Git 倉庫狀態和遠端連接'
-    }
-    if (lowerData.includes('connection refused') || lowerData.includes('timeout')) {
-      return '網路連接問題，檢查服務是否運行或網路設定'
-    }
-    if (lowerData.includes('port') && lowerData.includes('in use')) {
-      return '端口已被占用，嘗試更換端口或關閉占用該端口的程式'
-    }
-    if (lowerData.includes('module not found') || lowerData.includes('cannot find module')) {
-      return '模組未安裝，執行 npm install 安裝相依套件'
-    }
-    if (lowerData.includes('syntax error')) {
-      return '語法錯誤，請檢查程式碼語法'
+      const cmdMatch = data.match(/([\w-]+):\s*command not found|'([\w-]+)'.*not found/i)
+      const cmd = cmdMatch?.[1] || cmdMatch?.[2]
+      return cmd ? `💡 命令 '${cmd}' 未找到。嘗試: which ${cmd} 或安裝相關套件` : '💡 命令未找到，檢查拼寫或安裝狀態'
     }
     
-    return '請檢查錯誤訊息並嘗試相應的修復方案'
+    // 權限錯誤
+    if (lowerData.includes('permission denied')) {
+      return '💡 權限不足。Windows: 以管理員身份運行，Linux/Mac: 使用 sudo'
+    }
+    
+    // 文件不存在
+    if (lowerData.includes('no such file or directory')) {
+      return '💡 文件/目錄不存在。使用 ls 查看當前目錄內容'
+    }
+    
+    // Node.js 相關錯誤
+    if (lowerData.includes('enoent') || lowerData.includes('enotdir')) {
+      return '💡 路徑錯誤。檢查文件是否存在: ls -la'
+    }
+    
+    if (lowerData.includes('eacces')) {
+      return '💡 存取被拒。檢查文件權限: ls -l [檔案]'
+    }
+    
+    // 端口被占用
+    if (lowerData.includes('eaddrinuse') || lowerData.includes('address already in use')) {
+      const portMatch = data.match(/:([0-9]{2,5})/)
+      const port = portMatch?.[1]
+      return port ? `💡 端口 ${port} 被佔用。查找佔用: lsof -i :${port} 或更換端口` : '💡 端口被占用，更換端口或終止佔用程序'
+    }
+    
+    // 模組未找到
+    if (lowerData.includes('module not found') || lowerData.includes('cannot find module')) {
+      const moduleMatch = data.match(/cannot find module ['"]([^'"]+)['"]/i) || data.match(/module not found.*['"]([^'"]+)['"]/i)
+      const moduleName = moduleMatch?.[1]
+      return moduleName ? `💡 缺少模組 '${moduleName}'。執行: npm install ${moduleName}` : '💡 缺少模組。執行: npm install 或 yarn install'
+    }
+    
+    // 語法錯誤
+    if (lowerData.includes('syntaxerror') || lowerData.includes('unexpected token')) {
+      return '💡 語法錯誤。檢查程式碼語法，注意括號、引號配對'
+    }
+    
+    // 連線錯誤
+    if (lowerData.includes('connection refused') || lowerData.includes('econnrefused')) {
+      return '💡 連線被拒。確認服務已啟動且端口正確'
+    }
+    
+    if (lowerData.includes('timeout') || lowerData.includes('etimedout')) {
+      return '💡 連線逾時。檢查網路連接或增加 timeout 設定'
+    }
+    
+    // NPM 錯誤
+    if (lowerData.includes('npm err!') || lowerData.includes('npm error')) {
+      return '💡 NPM 執行失敗。嘗試: rm -rf node_modules && npm install'
+    }
+    
+    // Git 錯誤
+    if (lowerData.includes('git') && (lowerData.includes('error') || lowerData.includes('failed'))) {
+      return '💡 Git 操作失敗。檢查倉庫狀態: git status'
+    }
+    
+    return '💡 按 Ctrl+K 使用 AI 快速分析，或右鍵選取文字獲取詳細建議'
   }
 
   // Handle paste with text size checking
@@ -991,21 +1042,24 @@ ${fileContent.substring(0, 1500)}
             top: '8px',
             right: '8px',
             zIndex: 200,
-            backgroundColor: aiInsight.type === 'error' ? 'rgba(127, 29, 29, 0.95)' : 
-                            aiInsight.type === 'warning' ? 'rgba(120, 53, 15, 0.95)' : 
-                            aiInsight.type === 'success' ? 'rgba(20, 83, 45, 0.95)' :
-                            aiInsight.type === 'running' ? 'rgba(30, 64, 95, 0.95)' :
-                            'rgba(30, 58, 95, 0.95)',
-            border: `1px solid ${aiInsight.type === 'error' ? '#dc2626' : 
+            backgroundColor: aiInsight.type === 'error' ? 'rgba(127, 29, 29, 0.96)' : 
+                            aiInsight.type === 'warning' ? 'rgba(120, 53, 15, 0.96)' : 
+                            aiInsight.type === 'success' ? 'rgba(20, 83, 45, 0.96)' :
+                            aiInsight.type === 'running' ? 'rgba(30, 64, 95, 0.96)' :
+                            'rgba(30, 58, 95, 0.96)',
+            border: `2px solid ${aiInsight.type === 'error' ? '#ef4444' : 
                                  aiInsight.type === 'warning' ? '#f59e0b' : 
                                  aiInsight.type === 'success' ? '#22c55e' :
                                  aiInsight.type === 'running' ? '#3b82f6' : '#3b82f6'}`,
-            borderRadius: '8px',
-            padding: '12px 16px',
-            maxWidth: '400px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-            backdropFilter: 'blur(10px)',
-            animation: 'slideIn 0.3s ease-out'
+            borderRadius: '12px',
+            padding: '14px 18px',
+            maxWidth: '420px',
+            boxShadow: aiInsight.type === 'error' 
+              ? '0 8px 32px rgba(239, 68, 68, 0.3), 0 4px 16px rgba(0, 0, 0, 0.6)' 
+              : '0 8px 24px rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(12px)',
+            animation: 'slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            transition: 'all 0.3s ease'
           }}
         >
           {/* 关闭按钮 */}
@@ -1139,6 +1193,51 @@ ${fileContent.substring(0, 1500)}
             animation: 'spin 1s linear infinite'
           }} />
           <span style={{ color: '#93c5fd', fontSize: '12px' }}>AI 分析中...</span>
+        </div>
+      )}
+      
+      {/* 快速 AI 分析提示 (Ctrl+K) */}
+      {showQuickAIPrompt && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.98), rgba(30, 64, 95, 0.98))',
+          border: '2px solid #3b82f6',
+          borderRadius: '16px',
+          padding: '24px 40px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
+          boxShadow: '0 12px 48px rgba(0, 0, 0, 0.8), 0 0 80px rgba(59, 130, 246, 0.3)',
+          backdropFilter: 'blur(20px)',
+          animation: 'popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+          zIndex: 150
+        }}>
+          <div style={{ 
+            fontSize: '48px',
+            animation: 'bounce 0.6s ease-in-out'
+          }}>🤖</div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: 'bold',
+            color: '#93c5fd',
+            textAlign: 'center',
+            letterSpacing: '0.5px'
+          }}>
+            AI 快速分析已啟動
+          </div>
+          <div style={{
+            fontSize: '13px',
+            color: '#cbd5e1',
+            textAlign: 'center',
+            lineHeight: '1.6'
+          }}>
+            正在分析最近的終端輸出...<br/>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>再次按 Ctrl+K 可重新分析</span>
+          </div>
         </div>
       )}
       
