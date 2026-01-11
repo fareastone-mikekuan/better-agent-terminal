@@ -700,7 +700,10 @@ async function findGitPath(): Promise<string> {
         }
       }
     }
-    throw new Error('Git not found. Please install: sudo apt install git')
+    // Provide platform-specific error message
+    const isMac = process.platform === 'darwin'
+    const installCmd = isMac ? 'brew install git' : 'sudo apt install git'
+    throw new Error(`Git not found. Please install: ${installCmd}`)
   }
 }
 

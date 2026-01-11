@@ -46,6 +46,34 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string; hash: string}>>([])
   const [selectedBranch, setSelectedBranch] = useState<string>('')
 
+  // Auto-detect workspace Git repository on mount
+  useEffect(() => {
+    const detectWorkspaceGit = async () => {
+      try {
+        // Get current workspace
+        const workspace = workspaceStore.getState().workspaces.find(w => w.id === workspaceId)
+        if (!workspace) return
+
+        // Get active terminal's cwd
+        const terminal = workspace.terminals.find(t => t.id === workspace.activeTerminal)
+        if (terminal) {
+          const cwd = await window.electronAPI.pty.getCwd(terminal.id)
+          if (cwd && cwd.trim()) {
+            console.log('[Git] Auto-detecting Git repo in:', cwd)
+            // Don't override if user already selected a repo
+            if (!repoPath) {
+              setRepoPath(cwd)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Git] Failed to auto-detect workspace:', err)
+      }
+    }
+
+    detectWorkspaceGit()
+  }, [workspaceId])
+
   // Load saved repos from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('git-repos')
@@ -53,7 +81,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
       try {
         const repos = JSON.parse(saved)
         setSavedRepos(repos)
-        // Auto-select first repo if none selected
+        // Auto-select first repo if none selected and no workspace detected
         if (repos.length > 0 && !repoPath) {
           setRepoPath(repos[0].path)
         }
@@ -567,6 +595,31 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
 
   if (!isVisible && isFloating) return null
 
+  // 如果没有选择仓库，显示欢迎界面
+  if (!repoPath) {
+    return (
+      <div style={{ 
+        padding: '20px', 
+        color: '#888',
+        textAlign: 'center',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px'
+      }}>
+        <div style={{ fontSize: '48px' }}>📁</div>
+        <div style={{ fontSize: '16px', color: '#e0e0e0' }}>尚未選擇 Git 儲存庫</div>
+        <div style={{ fontSize: '12px', color: '#666', maxWidth: '400px', lineHeight: '1.6' }}>
+          請在左側輸入 GitHub URL 或本地路徑，<br/>
+          或點擊「📁 瀏覽」選擇本地 Git 目錄
+        </div>
+      </div>
+    )
+  }
+
+  // 如果选择了路径但不是 Git 仓库
   if (!isGitRepo) {
     const isGitNotFound = error?.includes('Git 命令未找到') || error?.includes('execvp')
     
@@ -583,7 +636,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         gap: '10px'
       }}>
         <div style={{ fontSize: '48px' }}>{isGitNotFound ? '⚠️' : '📁'}</div>
-        <div>{isGitNotFound ? 'Git 未安裝' : '此工作區不是 Git 儲存庫'}</div>
+        <div>{isGitNotFound ? 'Git 未安裝' : '此目錄不是 Git 儲存庫'}</div>
         {isGitNotFound ? (
           <div style={{ fontSize: '12px', color: '#666', maxWidth: '300px', lineHeight: '1.6' }}>
             請先安裝 Git：<br/>
