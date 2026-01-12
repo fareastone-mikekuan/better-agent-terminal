@@ -672,6 +672,17 @@ async function findGitPath(): Promise<string> {
   const { execSync } = await import('child_process')
   
   if (process.platform === 'win32') {
+    // Calculate project root for bundled git
+    let projectRoot: string
+    if (app.isPackaged) {
+      projectRoot = app.getAppPath()
+      if (projectRoot.includes('.asar')) {
+        projectRoot = path.dirname(projectRoot)
+      }
+    } else {
+      projectRoot = process.cwd()
+    }
+    
     // Windows: use bundled git from packages/Git/
     const bundledGit = path.join(projectRoot, 'packages', 'Git', 'cmd', 'git.exe')
     if (fs.existsSync(bundledGit)) {

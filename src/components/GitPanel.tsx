@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { workspaceStore } from '../stores/workspace-store'
 
 interface GitPanelProps {
@@ -48,6 +48,14 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
 
   // Auto-detect workspace Git repository on mount
   useEffect(() => {
+    console.log('[Git] useEffect triggered, workspaceId:', workspaceId, 'current repoPath:', repoPath)
+    
+    // 只有在沒有 repoPath 時才檢查，避免重複執行
+    if (repoPath) {
+      console.log('[Git] Repository path already set, skipping auto-detection')
+      return
+    }
+    
     const detectWorkspaceGit = async () => {
       try {
         // Get current workspace
@@ -62,10 +70,18 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         if (activeTerminal) {
           const cwd = await window.electronAPI.pty.getCwd(activeTerminal.id)
           if (cwd && cwd.trim()) {
-            console.log('[Git] Auto-detecting Git repo in:', cwd)
-            // Don't override if user already selected a repo
-            if (!repoPath) {
-              setRepoPath(cwd)
+            console.log('[Git] Checking if workspace is Git repo:', cwd)
+            // 先靜默檢查是否為 Git 儲存庫
+            try {
+              const result = await window.electronAPI.git.execute(cwd, ['rev-parse', '--git-dir'])
+              if (result.success && !result.output.includes('not a git repository')) {
+                console.log('[Git] Workspace is a Git repository, auto-setting path')
+                setRepoPath(cwd)
+              } else {
+                console.log('[Git] Workspace is not a Git repository, leaving empty')
+              }
+            } catch (err) {
+              console.log('[Git] Workspace is not a Git repository, leaving empty')
             }
           }
         }
@@ -75,7 +91,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     }
 
     detectWorkspaceGit()
-  }, [workspaceId])
+  }, [workspaceId, repoPath])
 
   // Load saved repos from localStorage
   useEffect(() => {
@@ -102,6 +118,11 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   }, [repoPath])
 
   const checkGitRepo = async () => {
+    if (!repoPath || !repoPath.trim()) {
+      setIsGitRepo(false)
+      return
+    }
+    
     setLoading(true)
     try {
       // 如果是 URL，用 ls-remote 检查；如果是本地路径，用 rev-parse
