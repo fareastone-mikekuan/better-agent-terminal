@@ -1,6 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { workspaceStore } from '../stores/workspace-store'
 
+type WorkspaceGitProbeCacheEntry = {
+  cwd: string
+  isRepo: boolean
+  checkedAt: number
+}
+
+// Cache workspace git-probe results across component remounts (e.g. React StrictMode)
+const workspaceGitProbeCache = new Map<string, WorkspaceGitProbeCacheEntry>()
+const workspaceGitProbeInFlight = new Map<string, Promise<WorkspaceGitProbeCacheEntry>>()
+const WORKSPACE_GIT_PROBE_TTL_MS = 5 * 60 * 1000
+
 interface GitPanelProps {
   isVisible: boolean
   onClose: () => void
@@ -46,42 +57,106 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string; hash: string}>>([])
   const [selectedBranch, setSelectedBranch] = useState<string>('')
 
+  const [workspaceCwd, setWorkspaceCwd] = useState<string>('')
+  const [workspaceProbeStatus, setWorkspaceProbeStatus] = useState<'unknown' | 'repo' | 'not-repo'>('unknown')
+
+  const repoPathRef = useRef(repoPath)
+  useEffect(() => {
+    repoPathRef.current = repoPath
+  }, [repoPath])
+
   // Auto-detect workspace Git repository on mount
   useEffect(() => {
-    console.log('[Git] useEffect triggered, workspaceId:', workspaceId, 'current repoPath:', repoPath)
-    
-    // 只有在沒有 repoPath 時才檢查，避免重複執行
-    if (repoPath) {
-      console.log('[Git] Repository path already set, skipping auto-detection')
-      return
-    }
-    
+    // Only skip when floating and hidden; in docked mode `isVisible` may be false while still mounted.
+    if (!isVisible && isFloating) return
+
+    // If user already selected something (local path or URL), never override.
+    if (repoPathRef.current && repoPathRef.current.trim()) return
+
+    let cancelled = false
+
+    setWorkspaceCwd('')
+    setWorkspaceProbeStatus('unknown')
+
+    const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
     const detectWorkspaceGit = async () => {
       try {
-        // Get current workspace
-        const state = workspaceStore.getState()
-        const workspace = state.workspaces.find(w => w.id === workspaceId)
-        if (!workspace) return
+        // Wait briefly for terminal restoration to populate a real terminal + cwd.
+        for (let attempt = 0; attempt < 15; attempt++) {
+          if (cancelled) return
 
-        // Get active terminal's cwd from the workspace
-        const terminals = state.terminals.filter(t => t.workspaceId === workspaceId)
-        const activeTerminal = terminals.find(t => t.type === 'terminal')
-        
-        if (activeTerminal) {
-          const cwd = await window.electronAPI.pty.getCwd(activeTerminal.id)
-          if (cwd && cwd.trim()) {
-            console.log('[Git] Checking if workspace is Git repo:', cwd)
-            // 先靜默檢查是否為 Git 儲存庫
+          const state = workspaceStore.getState()
+          const workspace = state.workspaces.find(w => w.id === workspaceId)
+          if (!workspace) return
+
+          const terminals = state.terminals.filter(t => t.workspaceId === workspaceId)
+          const activeTerminal = terminals.find(t => t.type === 'terminal')
+          if (!activeTerminal) {
+            await delay(150)
+            continue
+          }
+
+          const cwdRaw = await window.electronAPI.pty.getCwd(activeTerminal.id)
+          const cwd = (cwdRaw ?? '').trim()
+          if (!cwd) {
+            await delay(150)
+            continue
+          }
+
+          setWorkspaceCwd(cwd)
+
+          // If repoPath got set while we were waiting, stop.
+          if (repoPathRef.current && repoPathRef.current.trim()) return
+
+          const cached = workspaceGitProbeCache.get(workspaceId)
+          if (cached && cached.cwd === cwd && Date.now() - cached.checkedAt < WORKSPACE_GIT_PROBE_TTL_MS) {
+            setWorkspaceProbeStatus(cached.isRepo ? 'repo' : 'not-repo')
+            if (cached.isRepo && (!repoPathRef.current || !repoPathRef.current.trim())) {
+              setRepoPath(cwd)
+            }
+            return
+          }
+
+          const inFlightKey = `${workspaceId}::${cwd}`
+          const existingInFlight = workspaceGitProbeInFlight.get(inFlightKey)
+          if (existingInFlight) {
+            const entry = await existingInFlight
+            if (cancelled) return
+            setWorkspaceProbeStatus(entry.isRepo ? 'repo' : 'not-repo')
+            if (entry.isRepo && (!repoPathRef.current || !repoPathRef.current.trim())) {
+              setRepoPath(entry.cwd)
+            }
+            return
+          }
+
+          const probePromise = (async (): Promise<WorkspaceGitProbeCacheEntry> => {
+            let isRepo = false
             try {
               const result = await window.electronAPI.git.execute(cwd, ['rev-parse', '--git-dir'])
-              if (result.success && !result.output.includes('not a git repository')) {
-                console.log('[Git] Workspace is a Git repository, auto-setting path')
-                setRepoPath(cwd)
-              } else {
-                console.log('[Git] Workspace is not a Git repository, leaving empty')
-              }
-            } catch (err) {
-              console.log('[Git] Workspace is not a Git repository, leaving empty')
+              isRepo = !!result.success && !result.output.includes('not a git repository')
+            } catch {
+              isRepo = false
+            }
+
+            const entry: WorkspaceGitProbeCacheEntry = { cwd, isRepo, checkedAt: Date.now() }
+            workspaceGitProbeCache.set(workspaceId, entry)
+            return entry
+          })()
+
+          workspaceGitProbeInFlight.set(inFlightKey, probePromise)
+          try {
+            const entry = await probePromise
+            if (cancelled) return
+            setWorkspaceProbeStatus(entry.isRepo ? 'repo' : 'not-repo')
+            if (entry.isRepo && (!repoPathRef.current || !repoPathRef.current.trim())) {
+              setRepoPath(entry.cwd)
+            }
+            return
+          } finally {
+            const current = workspaceGitProbeInFlight.get(inFlightKey)
+            if (current === probePromise) {
+              workspaceGitProbeInFlight.delete(inFlightKey)
             }
           }
         }
@@ -91,7 +166,10 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     }
 
     detectWorkspaceGit()
-  }, [workspaceId, repoPath])
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId, isVisible, isFloating])
 
   // Load saved repos from localStorage
   useEffect(() => {
@@ -132,7 +210,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         // 对于远程 URL，使用 ls-remote 检查
         await runGitCommand(`git ls-remote ${repoPath} HEAD`, true)
         setIsGitRepo(true)
-        await loadGitData()
+        await loadGitData(true)
       } else {
         // 本地仓库检查
         const output = await runGitCommand('git rev-parse --git-dir', false)
@@ -146,7 +224,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         }
         
         setIsGitRepo(true)
-        await loadGitData()
+        await loadGitData(true)
       }
     } catch (err) {
       console.error('Git check failed:', err)
@@ -168,7 +246,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     
     try {
       // 如果是远程命令（URL），使用临时目录；否则使用 repoPath
-      const cwd = isRemote ? '/tmp' : repoPath
+      const cwd = isRemote ? (workspaceCwd || '') : repoPath
       console.log('[Git] Executing git', args, 'in', cwd)
       const result = await window.electronAPI.git.execute(cwd, args)
       
@@ -185,12 +263,12 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     }
   }
 
-  const loadGitData = async () => {
+  const loadGitData = async (force: boolean = false) => {
     if (!repoPath) {
       setError('請選擇 Git 儲存庫目錄或輸入 GitHub URL')
       return
     }
-    if (!isGitRepo) return
+    if (!isGitRepo && !force) return
     
     setLoading(true)
     setError(null)
@@ -619,40 +697,48 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
 
   if (!isVisible && isFloating) return null
 
-  // 如果没有选择仓库，显示欢迎界面
-  if (!repoPath) {
-    return (
-      <div style={{ 
-        padding: '20px', 
-        color: '#888',
-        textAlign: 'center',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '10px'
-      }}>
-        <div style={{ fontSize: '48px' }}>📁</div>
-        <div style={{ fontSize: '16px', color: '#e0e0e0' }}>尚未選擇 Git 儲存庫</div>
+  const showWorkspaceNotRepo = workspaceProbeStatus === 'not-repo' && !!workspaceCwd
+
+  const emptyState = (
+    <div style={{
+      flex: 1,
+      padding: '20px',
+      color: '#888',
+      textAlign: 'center',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '10px'
+    }}>
+      <div style={{ fontSize: '48px' }}>📁</div>
+      <div style={{ fontSize: '16px', color: '#e0e0e0' }}>
+        {showWorkspaceNotRepo ? '此工作區不是 Git 儲存庫' : '尚未選擇 Git 儲存庫'}
+      </div>
+      {showWorkspaceNotRepo ? (
+        <div style={{ fontSize: '12px', color: '#666', maxWidth: '420px', lineHeight: '1.6' }}>
+          路徑: {workspaceCwd}
+          <br />
+          你仍可在左側輸入 GitHub URL 或本地路徑，或點擊「📁 瀏覽」選擇本地 Git 目錄。
+        </div>
+      ) : (
         <div style={{ fontSize: '12px', color: '#666', maxWidth: '400px', lineHeight: '1.6' }}>
-          請在左側輸入 GitHub URL 或本地路徑，<br/>
+          請在左側輸入 GitHub URL 或本地路徑，<br />
           或點擊「📁 瀏覽」選擇本地 Git 目錄
         </div>
-      </div>
-    )
-  }
+      )}
+    </div>
+  )
 
-  // 如果选择了路径但不是 Git 仓库
-  if (!isGitRepo) {
+  const notRepoState = (() => {
     const isGitNotFound = error?.includes('Git 命令未找到') || error?.includes('execvp')
-    
+
     return (
-      <div style={{ 
-        padding: '20px', 
+      <div style={{
+        flex: 1,
+        padding: '20px',
         color: '#888',
         textAlign: 'center',
-        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -663,9 +749,9 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         <div>{isGitNotFound ? 'Git 未安裝' : '此目錄不是 Git 儲存庫'}</div>
         {isGitNotFound ? (
           <div style={{ fontSize: '12px', color: '#666', maxWidth: '300px', lineHeight: '1.6' }}>
-            請先安裝 Git：<br/>
-            Ubuntu/Debian: sudo apt install git<br/>
-            macOS: brew install git<br/>
+            請先安裝 Git：<br />
+            Ubuntu/Debian: sudo apt install git<br />
+            macOS: brew install git<br />
             Windows: 從 git-scm.com 下載
           </div>
         ) : (
@@ -675,7 +761,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         )}
       </div>
     )
-  }
+  })()
 
   return (
     <div style={{
@@ -929,38 +1015,44 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
           </div>
         </div>
 
-        {/* Tabs */}
-        <div style={{
-          display: 'flex',
-          gap: '4px',
-          padding: '8px 12px',
-          borderBottom: '1px solid #333',
-          backgroundColor: '#2a2a2a'
-        }}>
-          {['status', 'log', 'remote'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab as typeof activeTab)}
-              style={{
-                padding: '6px 16px',
-                fontSize: '12px',
-                backgroundColor: activeTab === tab ? '#3a3a3a' : 'transparent',
-                color: activeTab === tab ? '#7bbda4' : '#999',
-                border: 'none',
-                borderRadius: '3px',
-                cursor: 'pointer',
-                fontWeight: activeTab === tab ? 500 : 400
-              }}
-            >
-              {tab === 'status' && '📊 狀態'}
-              {tab === 'log' && '📜 歷史記錄'}
-              {tab === 'remote' && '🌐 遠端倉庫'}
-            </button>
-          ))}
-        </div>
+        {!repoPath ? (
+          emptyState
+        ) : !isGitRepo ? (
+          notRepoState
+        ) : (
+          <>
+            {/* Tabs */}
+            <div style={{
+              display: 'flex',
+              gap: '4px',
+              padding: '8px 12px',
+              borderBottom: '1px solid #333',
+              backgroundColor: '#2a2a2a'
+            }}>
+              {['status', 'log', 'remote'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab as typeof activeTab)}
+                  style={{
+                    padding: '6px 16px',
+                    fontSize: '12px',
+                    backgroundColor: activeTab === tab ? '#3a3a3a' : 'transparent',
+                    color: activeTab === tab ? '#7bbda4' : '#999',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontWeight: activeTab === tab ? 500 : 400
+                  }}
+                >
+                  {tab === 'status' && '📊 狀態'}
+                  {tab === 'log' && '📜 歷史記錄'}
+                  {tab === 'remote' && '🌐 遠端倉庫'}
+                </button>
+              ))}
+            </div>
 
-        {/* Error message */}
-        {error && (
+            {/* Error message */}
+            {error && (
           <div style={{
             padding: '12px',
             backgroundColor: '#ff4444',
@@ -983,11 +1075,11 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
           >
             ×
           </button>
-        </div>
-        )}
+            </div>
+            )}
 
-        {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
+            {/* Content */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
           {activeTab === 'status' && gitStatus && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Branch info */}
@@ -1241,7 +1333,9 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
             )}
           </div>
         )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

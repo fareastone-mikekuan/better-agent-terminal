@@ -722,14 +722,17 @@ async function findGitPath(): Promise<string> {
 ipcMain.handle('git:execute', async (_event, cwd: string, args: string[]) => {
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
+  const os = await import('os')
   const execFileAsync = promisify(execFile)
   
   try {
     const gitPath = await findGitPath()
+
+    const safeCwd = (typeof cwd === 'string' && cwd.trim() && fs.existsSync(cwd)) ? cwd : os.tmpdir()
     
-    console.log('[Git] Executing:', gitPath, args, 'in', cwd)
+    console.log('[Git] Executing:', gitPath, args, 'in', safeCwd)
     const { stdout, stderr } = await execFileAsync(gitPath, args, { 
-      cwd,
+      cwd: safeCwd,
       encoding: 'utf8',
       maxBuffer: 1024 * 1024 // 1MB
     })
