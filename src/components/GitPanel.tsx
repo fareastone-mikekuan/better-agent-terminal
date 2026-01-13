@@ -41,6 +41,30 @@ interface RemoteInfo {
   type: 'fetch' | 'push'
 }
 
+interface DiffHunk {
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  lines: DiffLine[]
+}
+
+interface DiffLine {
+  type: 'add' | 'delete' | 'context'
+  content: string
+  oldLineNum?: number
+  newLineNum?: number
+}
+
+interface FileDiff {
+  filename: string
+  oldFilename?: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed'
+  hunks: DiffHunk[]
+  additions: number
+  deletions: number
+}
+
 export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPanelProps) {
   const [activeTab, setActiveTab] = useState<'status' | 'log' | 'remote'>('status')
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
@@ -54,6 +78,9 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   const [newRepoInput, setNewRepoInput] = useState('')
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
   const [commitDetails, setCommitDetails] = useState<string>('')
+  const [commitDiffs, setCommitDiffs] = useState<FileDiff[]>([])
+  const [commitMetadata, setCommitMetadata] = useState<string>('')
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [availableBranches, setAvailableBranches] = useState<Array<{name: string; hash: string}>>([])
   const [selectedBranch, setSelectedBranch] = useState<string>('')
 
@@ -170,6 +197,146 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
       cancelled = true
     }
   }, [workspaceId, isVisible, isFloating])
+
+  // Parse git diff output into structured data
+  const parseDiff = (diffOutput: string): { metadata: string; diffs: FileDiff[] } => {
+    const lines = diffOutput.split('\n')
+    const diffs: FileDiff[] = []
+    let metadata = ''
+    let currentFile: FileDiff | null = null
+    let currentHunk: DiffHunk | null = null
+    let oldLineNum = 0
+    let newLineNum = 0
+    let inDiff = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+
+      // Extract metadata (commit info) - before first diff
+      if (!inDiff) {
+        if (line.startsWith('commit ') || 
+            line.startsWith('Author') || 
+            line.startsWith('AuthorDate') ||
+            line.startsWith('Commit') ||
+            line.startsWith('CommitDate') ||
+            line.startsWith('Date') || 
+            line.startsWith('    ') ||
+            line.trim() === '') {
+          metadata += line + '\n'
+          continue
+        }
+      }
+
+      // Skip stat lines (like "file.ts | 7 +-")
+      if (line.match(/^\s*[\w\/.]+\s*\|\s*\d+/)) {
+        continue
+      }
+
+      // File diff header
+      if (line.startsWith('diff --git')) {
+        inDiff = true
+        if (currentFile && currentHunk) {
+          currentFile.hunks.push(currentHunk)
+          currentHunk = null
+        }
+        if (currentFile) {
+          diffs.push(currentFile)
+        }
+
+        const match = line.match(/diff --git a\/(.*?) b\/(.*)/)
+        const filename = match ? match[2] : ''
+        currentFile = {
+          filename,
+          status: 'modified',
+          hunks: [],
+          additions: 0,
+          deletions: 0
+        }
+        continue
+      }
+
+      // Skip index and mode lines
+      if (line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+        continue
+      }
+
+      // File status
+      if (line.startsWith('new file mode')) {
+        if (currentFile) currentFile.status = 'added'
+        continue
+      }
+      if (line.startsWith('deleted file mode')) {
+        if (currentFile) currentFile.status = 'deleted'
+        continue
+      }
+      if (line.startsWith('rename from')) {
+        if (currentFile) {
+          currentFile.status = 'renamed'
+          currentFile.oldFilename = line.substring(12).trim()
+        }
+        continue
+      }
+
+      // Hunk header
+      if (line.startsWith('@@')) {
+        if (currentFile && currentHunk) {
+          currentFile.hunks.push(currentHunk)
+        }
+        const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/)
+        if (match && currentFile) {
+          oldLineNum = parseInt(match[1])
+          const oldLines = match[2] ? parseInt(match[2]) : 1
+          newLineNum = parseInt(match[3])
+          const newLines = match[4] ? parseInt(match[4]) : 1
+          currentHunk = {
+            oldStart: oldLineNum,
+            oldLines,
+            newStart: newLineNum,
+            newLines,
+            lines: []
+          }
+        }
+        continue
+      }
+
+      // Diff lines - must be inside a hunk
+      if (currentHunk && inDiff) {
+        if (line.startsWith('+')) {
+          currentHunk.lines.push({
+            type: 'add',
+            content: line.substring(1),
+            newLineNum: newLineNum++
+          })
+          if (currentFile) currentFile.additions++
+        } else if (line.startsWith('-')) {
+          currentHunk.lines.push({
+            type: 'delete',
+            content: line.substring(1),
+            oldLineNum: oldLineNum++
+          })
+          if (currentFile) currentFile.deletions++
+        } else if (line.startsWith(' ')) {
+          currentHunk.lines.push({
+            type: 'context',
+            content: line.substring(1),
+            oldLineNum: oldLineNum++,
+            newLineNum: newLineNum++
+          })
+        }
+      }
+    }
+
+    // Push last hunk and file
+    if (currentFile && currentHunk) {
+      currentFile.hunks.push(currentHunk)
+    }
+    if (currentFile) {
+      diffs.push(currentFile)
+    }
+
+    return { metadata, diffs }
+  }
+
 
   // Load saved repos from localStorage
   useEffect(() => {
@@ -435,24 +602,49 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
       setSelectedCommit(hash)
       setLoading(true)
       setError(null)
+      setCommitDiffs([])
+      setCommitMetadata('')
+      setSelectedFile(null)
+      
+      let diffOutput = ''
       
       if (isUrl) {
         // 远程仓库：使用临时克隆获取提交详情
-        const currentBranch = gitStatus?.branch || 'main'
-        console.log('[Git] Fetching remote commit details:', hash, 'from', repoPath)
+        // 优先使用用户选择的分支，其次是 gitStatus 中的分支，最后默认为 main
+        const currentBranch = selectedBranch || gitStatus?.branch || 'main'
+        console.log('[Git] Fetching remote commit details:', hash, 'from', repoPath, 'branch:', currentBranch)
         
         const result = await window.electronAPI.git.fetchRemoteCommitDetails(repoPath, hash, currentBranch)
         
         if (result.success && result.output) {
-          setCommitDetails(result.output)
+          diffOutput = result.output
         } else {
           setCommitDetails(`無法獲取提交詳情\n\n錯誤：${result.error || '未知錯誤'}`)
           setError('❌ 無法獲取提交詳情')
+          return
         }
       } else {
-        // 本地仓库：直接运行 git show
-        const output = await runGitCommand(`git show --stat --pretty=fuller ${hash}`, false)
-        setCommitDetails(output)
+        // 本地仓库：直接运行 git show 获取完整 diff
+        diffOutput = await runGitCommand(`git show --pretty=fuller --patch ${hash}`, false)
+      }
+      
+      console.log('[Git] Raw diff output length:', diffOutput.length)
+      
+      // Parse diff output
+      const { metadata, diffs } = parseDiff(diffOutput)
+      console.log('[Git] Parsed metadata length:', metadata.length)
+      console.log('[Git] Parsed diffs count:', diffs.length)
+      if (diffs.length > 0) {
+        console.log('[Git] First file:', diffs[0].filename, 'hunks:', diffs[0].hunks.length)
+      }
+      
+      setCommitMetadata(metadata)
+      setCommitDiffs(diffs)
+      setCommitDetails(diffOutput) // Keep raw output as fallback
+      
+      // Auto-select first file
+      if (diffs.length > 0) {
+        setSelectedFile(diffs[0].filename)
       }
     } catch (err) {
       console.error('Failed to load commit details:', err)
@@ -1197,10 +1389,15 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         {activeTab === 'log' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {selectedCommit ? (
-              // 显示提交详情
-              <div>
+              // 显示提交详情 - Diff Viewer
+              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)' }}>
                 <button
-                  onClick={() => { setSelectedCommit(null); setCommitDetails('') }}
+                  onClick={() => { 
+                    setSelectedCommit(null)
+                    setCommitDetails('')
+                    setCommitDiffs([])
+                    setSelectedFile(null)
+                  }}
                   style={{
                     marginBottom: '12px',
                     padding: '6px 12px',
@@ -1214,20 +1411,236 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
                 >
                   ← 返回提交列表
                 </button>
-                <div style={{
-                  backgroundColor: '#2a2a2a',
-                  padding: '12px',
-                  borderRadius: '4px',
-                  border: '1px solid #3a3a3a',
-                  fontFamily: 'monospace',
-                  fontSize: '12px',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  maxHeight: 'calc(100vh - 300px)',
-                  overflow: 'auto'
-                }}>
-                  {commitDetails || '載入中...'}
-                </div>
+
+                {/* Commit Metadata */}
+                {commitMetadata && (
+                  <div style={{
+                    backgroundColor: '#2a2a2a',
+                    padding: '12px',
+                    borderRadius: '4px',
+                    border: '1px solid #3a3a3a',
+                    marginBottom: '12px',
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {commitMetadata}
+                  </div>
+                )}
+
+                {/* File List and Diff View */}
+                {commitDiffs.length > 0 ? (
+                  <div style={{ display: 'flex', gap: '12px', flex: 1, minHeight: 0 }}>
+                    {/* File List */}
+                    <div style={{
+                      width: '250px',
+                      backgroundColor: '#2a2a2a',
+                      borderRadius: '4px',
+                      border: '1px solid #3a3a3a',
+                      overflow: 'auto',
+                      padding: '8px'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px', fontWeight: 600 }}>
+                        變更的檔案 ({commitDiffs.length})
+                      </div>
+                      {commitDiffs.map((file, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setSelectedFile(file.filename)}
+                          style={{
+                            padding: '8px',
+                            marginBottom: '4px',
+                            backgroundColor: selectedFile === file.filename ? '#3a3a3a' : 'transparent',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            transition: 'background-color 0.15s'
+                          }}
+                          onMouseEnter={e => {
+                            if (selectedFile !== file.filename) {
+                              e.currentTarget.style.backgroundColor = '#333'
+                            }
+                          }}
+                          onMouseLeave={e => {
+                            if (selectedFile !== file.filename) {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }
+                          }}
+                        >
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px',
+                            marginBottom: '4px'
+                          }}>
+                            <span style={{ 
+                              fontSize: '10px',
+                              padding: '2px 4px',
+                              borderRadius: '2px',
+                              fontWeight: 600,
+                              backgroundColor: 
+                                file.status === 'added' ? '#4CAF5033' :
+                                file.status === 'deleted' ? '#f4433633' :
+                                file.status === 'renamed' ? '#ff980033' :
+                                '#2196F333',
+                              color:
+                                file.status === 'added' ? '#4CAF50' :
+                                file.status === 'deleted' ? '#f44336' :
+                                file.status === 'renamed' ? '#ff9800' :
+                                '#2196F3'
+                            }}>
+                              {file.status === 'added' ? 'A' :
+                               file.status === 'deleted' ? 'D' :
+                               file.status === 'renamed' ? 'R' : 'M'}
+                            </span>
+                            <span style={{ 
+                              flex: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {file.filename.split('/').pop()}
+                            </span>
+                          </div>
+                          <div style={{ 
+                            fontSize: '10px', 
+                            color: '#666',
+                            display: 'flex',
+                            gap: '8px'
+                          }}>
+                            <span style={{ color: '#4CAF50' }}>+{file.additions}</span>
+                            <span style={{ color: '#f44336' }}>-{file.deletions}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Diff Display */}
+                    <div style={{
+                      flex: 1,
+                      backgroundColor: '#1e1e1e',
+                      borderRadius: '4px',
+                      border: '1px solid #3a3a3a',
+                      overflow: 'auto',
+                      fontFamily: 'monospace',
+                      fontSize: '12px'
+                    }}>
+                      {selectedFile && commitDiffs.find(f => f.filename === selectedFile) ? (
+                        <div>
+                          {/* File Header */}
+                          <div style={{
+                            position: 'sticky',
+                            top: 0,
+                            backgroundColor: '#2a2a2a',
+                            padding: '10px 12px',
+                            borderBottom: '1px solid #3a3a3a',
+                            fontWeight: 600,
+                            zIndex: 1
+                          }}>
+                            {selectedFile}
+                          </div>
+
+                          {/* Hunks */}
+                          {commitDiffs.find(f => f.filename === selectedFile)!.hunks.map((hunk, hunkIdx) => (
+                            <div key={hunkIdx} style={{ marginBottom: '20px' }}>
+                              {/* Hunk Header */}
+                              <div style={{
+                                backgroundColor: '#2a2a2a',
+                                padding: '6px 12px',
+                                color: '#888',
+                                fontSize: '11px',
+                                borderTop: '1px solid #3a3a3a',
+                                borderBottom: '1px solid #3a3a3a'
+                              }}>
+                                @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+                              </div>
+
+                              {/* Diff Lines */}
+                              {hunk.lines.map((line, lineIdx) => (
+                                <div
+                                  key={lineIdx}
+                                  style={{
+                                    display: 'flex',
+                                    backgroundColor:
+                                      line.type === 'add' ? '#4CAF5015' :
+                                      line.type === 'delete' ? '#f4433615' :
+                                      'transparent',
+                                    borderLeft:
+                                      line.type === 'add' ? '3px solid #4CAF50' :
+                                      line.type === 'delete' ? '3px solid #f44336' :
+                                      '3px solid transparent'
+                                  }}
+                                >
+                                  {/* Line Numbers */}
+                                  <div style={{
+                                    display: 'flex',
+                                    minWidth: '90px',
+                                    backgroundColor: '#252526',
+                                    color: '#858585',
+                                    fontSize: '11px',
+                                    padding: '2px 8px',
+                                    userSelect: 'none',
+                                    borderRight: '1px solid #3a3a3a'
+                                  }}>
+                                    <span style={{ width: '40px', textAlign: 'right' }}>
+                                      {line.type !== 'add' ? line.oldLineNum : ''}
+                                    </span>
+                                    <span style={{ width: '40px', textAlign: 'right', marginLeft: '10px' }}>
+                                      {line.type !== 'delete' ? line.newLineNum : ''}
+                                    </span>
+                                  </div>
+
+                                  {/* Line Content */}
+                                  <div style={{
+                                    flex: 1,
+                                    padding: '2px 12px',
+                                    whiteSpace: 'pre',
+                                    overflow: 'auto',
+                                    color:
+                                      line.type === 'add' ? '#4CAF50' :
+                                      line.type === 'delete' ? '#f44336' :
+                                      '#d4d4d4'
+                                  }}>
+                                    <span style={{ 
+                                      marginRight: '8px',
+                                      fontWeight: 'bold',
+                                      color:
+                                        line.type === 'add' ? '#4CAF50' :
+                                        line.type === 'delete' ? '#f44336' :
+                                        'transparent'
+                                    }}>
+                                      {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ' '}
+                                    </span>
+                                    {line.content}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ padding: '20px', color: '#888', textAlign: 'center' }}>
+                          選擇一個檔案以查看變更
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    backgroundColor: '#2a2a2a',
+                    padding: '12px',
+                    borderRadius: '4px',
+                    border: '1px solid #3a3a3a',
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: 'calc(100vh - 300px)',
+                    overflow: 'auto'
+                  }}>
+                    {commitDetails || '載入中...'}
+                  </div>
+                )}
               </div>
             ) : (
               // 显示提交列表

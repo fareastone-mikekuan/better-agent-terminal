@@ -840,16 +840,16 @@ ipcMain.handle('git:fetchRemoteCommitDetails', async (_event, remoteUrl: string,
       timeout: 90000 // 90s timeout
     })
     
-    // Get commit details with diff
+    // Get commit details with full diff
     const { stdout } = await execFileAsync(gitPath, [
       'show',
-      '--stat',
       '--pretty=fuller',
+      '--patch',
       commitHash
     ], {
       cwd: tempDir,
       encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024 // 5MB for diff output
+      maxBuffer: 10 * 1024 * 1024 // 10MB for diff output
     })
     
     return { success: true, output: stdout }
