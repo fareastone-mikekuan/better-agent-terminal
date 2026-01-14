@@ -177,25 +177,70 @@ class KnowledgeStore {
 
       const existing = this.entries.find(e => e.hash === hash)
       if (existing) {
-        // preserve original file metadata
+        const incomingOriginalContent = typeof (importedEntry as any).originalContent === 'string'
+          ? (importedEntry as any).originalContent
+          : undefined
+        const incomingOriginalSize = typeof (importedEntry as any).originalSize === 'number'
+          ? (importedEntry as any).originalSize
+          : undefined
+        const incomingUseOriginal = typeof (importedEntry as any).useOriginalContent === 'boolean'
+          ? (importedEntry as any).useOriginalContent
+          : undefined
+
+        const incomingSuggestedSkills = Array.isArray((importedEntry as any).suggestedSkills)
+          ? (importedEntry as any).suggestedSkills.filter((s: any) => typeof s === 'string')
+          : undefined
+
+        const incomingTags = typeof (importedEntry as any).tags === 'string' ? (importedEntry as any).tags : undefined
+        const incomingIndex = (importedEntry as any).index && typeof (importedEntry as any).index === 'object'
+          ? (importedEntry as any).index
+          : undefined
+
+        // Preserve existing original metadata when incoming doesn't have it.
         this.updateEntry(existing.id, {
           name: importedEntry.name,
           content: content,
           category: importedEntry.category,
+          enabled: typeof (importedEntry as any).enabled === 'boolean' ? (importedEntry as any).enabled : existing.enabled,
           isLearned: importedEntry.isLearned,
           learnedAt: importedEntry.learnedAt,
           learnedSize: importedEntry.learnedSize,
-          learnedModel: importedEntry.learnedModel
+          learnedModel: importedEntry.learnedModel,
+          originalContent: incomingOriginalContent ?? existing.originalContent,
+          originalSize: incomingOriginalSize ?? existing.originalSize,
+          useOriginalContent: incomingUseOriginal ?? existing.useOriginalContent,
+          suggestedSkills: incomingSuggestedSkills ?? existing.suggestedSkills,
+          tags: incomingTags ?? existing.tags,
+          index: incomingIndex ?? existing.index
         })
         updated++
       } else {
+        const originalContent = typeof (importedEntry as any).originalContent === 'string' ? (importedEntry as any).originalContent : undefined
+        const originalSize = typeof (importedEntry as any).originalSize === 'number' ? (importedEntry as any).originalSize : undefined
+        const useOriginalContent = typeof (importedEntry as any).useOriginalContent === 'boolean' ? (importedEntry as any).useOriginalContent : undefined
+        const suggestedSkills = Array.isArray((importedEntry as any).suggestedSkills)
+          ? (importedEntry as any).suggestedSkills.filter((s: any) => typeof s === 'string')
+          : undefined
+        const tags = typeof (importedEntry as any).tags === 'string' ? (importedEntry as any).tags : undefined
+        const index = (importedEntry as any).index && typeof (importedEntry as any).index === 'object'
+          ? (importedEntry as any).index
+          : undefined
+
+        const computedOriginalSize = originalSize ?? (typeof importedEntry.size === 'number' ? importedEntry.size : undefined)
+        const computedSize = typeof computedOriginalSize === 'number'
+          ? computedOriginalSize
+          : (originalContent ? new Blob([originalContent]).size : new Blob([content]).size)
+
         const newEntry: KnowledgeEntry = {
           id: `kb-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           name: importedEntry.name,
           content: content,
           category: importedEntry.category,
           enabled: typeof (importedEntry as any).enabled === 'boolean' ? (importedEntry as any).enabled : true,
-          size: typeof importedEntry.size === 'number' ? importedEntry.size : new Blob([content]).size,
+          useOriginalContent,
+          originalContent,
+          originalSize: computedOriginalSize,
+          size: computedSize,
           uploadedAt: typeof importedEntry.uploadedAt === 'number' ? importedEntry.uploadedAt : Date.now(),
           lastModified: typeof importedEntry.lastModified === 'number' ? importedEntry.lastModified : Date.now(),
           isLearned: typeof importedEntry.isLearned === 'boolean' ? importedEntry.isLearned : true,
@@ -204,7 +249,10 @@ class KnowledgeStore {
             ? importedEntry.learnedSize
             : (importedEntry.isLearned ? new Blob([content]).size : undefined),
           learnedModel: typeof importedEntry.learnedModel === 'string' ? importedEntry.learnedModel : undefined,
-          hash
+          hash,
+          suggestedSkills,
+          tags,
+          index
         }
 
         this.entries.push(newEntry)

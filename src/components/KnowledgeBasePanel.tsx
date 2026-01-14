@@ -285,6 +285,13 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
     const content = raw.content
     const originalContent = typeof raw.originalContent === 'string' ? raw.originalContent : undefined
     const originalSize = typeof raw.originalSize === 'number' ? raw.originalSize : undefined
+    const useOriginalContent = typeof raw.useOriginalContent === 'boolean' ? raw.useOriginalContent : undefined
+
+    const suggestedSkills = Array.isArray(raw.suggestedSkills)
+      ? raw.suggestedSkills.filter((s: any) => typeof s === 'string')
+      : undefined
+    const tags = typeof raw.tags === 'string' ? raw.tags : undefined
+    const index = raw.index && typeof raw.index === 'object' ? raw.index : undefined
 
     return {
       id: typeof raw.id === 'string' ? raw.id : `kb-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -292,6 +299,7 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       content,
       category,
       enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+      useOriginalContent,
       originalContent,
       originalSize,
       size: typeof raw.size === 'number' ? raw.size : new Blob([content]).size,
@@ -301,7 +309,10 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
       learnedAt: typeof raw.learnedAt === 'number' ? raw.learnedAt : (typeof raw.isLearned === 'boolean' && !raw.isLearned ? undefined : Date.now()),
       learnedSize: typeof raw.learnedSize === 'number' ? raw.learnedSize : (typeof raw.isLearned === 'boolean' && !raw.isLearned ? undefined : new Blob([content]).size),
       learnedModel: typeof raw.learnedModel === 'string' ? raw.learnedModel : undefined,
-      hash: typeof raw.hash === 'string' ? raw.hash : ''
+      hash: typeof raw.hash === 'string' ? raw.hash : '',
+      suggestedSkills,
+      tags,
+      index
     }
   }
 
