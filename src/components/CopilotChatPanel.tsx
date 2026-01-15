@@ -924,13 +924,25 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     setIsLoading(true)
     setError(null)
     
-    // 初始化處理步驟
-    const steps: ProcessingStep[] = [
-      { id: 'skills', label: '🎯 分析技能需求 [本地算法]', status: 'pending' },
-      { id: 'index', label: '🔍 AI 智能選擇文檔 [AI 第 1 次]', status: 'pending' },
-      { id: 'knowledge', label: '📚 載入知識庫內容 [本地讀取]', status: 'pending' },
-      { id: 'generate', label: '✨ 生成完整回應 [AI 第 2 次]', status: 'pending' }
-    ]
+    // 獲取 config 放在 try 外面，這樣 catch 也能訪問
+    const copilotConfig = settingsStore.getCopilotConfig()
+    const selectionMode = copilotConfig?.knowledgeSelectionMode || 'ai'
+
+    // 初始化處理步驟（依模式動態顯示）
+    const steps: ProcessingStep[] = selectionMode === 'ai-deep'
+      ? [
+          { id: 'skills', label: '🎯 分析技能需求 [本地算法]', status: 'pending' },
+          { id: 'expand', label: '🧠 問題拆解與查詢擴寫 [AI 第 1 次]', status: 'pending' },
+          { id: 'index', label: '🔍 AI 重排挑選文檔 [AI 第 2 次]', status: 'pending' },
+          { id: 'knowledge', label: '📚 載入知識庫內容 [本地讀取]', status: 'pending' },
+          { id: 'generate', label: '✨ 生成完整回應 [AI 第 3 次]', status: 'pending' }
+        ]
+      : [
+          { id: 'skills', label: '🎯 分析技能需求 [本地算法]', status: 'pending' },
+          { id: 'index', label: selectionMode === 'ai' ? '🔍 AI 智能選擇文檔 [AI 第 1 次]' : '🔍 關鍵詞匹配知識庫 [本地算法]', status: 'pending' },
+          { id: 'knowledge', label: '📚 載入知識庫內容 [本地讀取]', status: 'pending' },
+          { id: 'generate', label: selectionMode === 'ai' ? '✨ 生成完整回應 [AI 第 2 次]' : '✨ 生成完整回應 [AI 第 1 次]', status: 'pending' }
+        ]
     setProcessingSteps(steps)
     setShowSteps(true)
     
@@ -954,9 +966,6 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         console.error('[CopilotChat] Failed to update step:', stepId, err)
       }
     }
-
-    // 獲取 config 放在 try 外面，這樣 catch 也能訪問
-    const copilotConfig = settingsStore.getCopilotConfig()
 
     try {
       if (!copilotConfig?.apiKey || !copilotConfig?.model) {
@@ -994,88 +1003,315 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       const userQuestion = userMessage.content
       const allSkills = settingsStore.getCopilotSkills()
       const allKnowledge = knowledgeStore.getActiveKnowledge()
-      
-      // 檢查知識庫選擇模式
-      const selectionMode = copilotConfig.knowledgeSelectionMode || 'ai'
+
       let selectedSkills: any[] = []
       let selectedKnowledge: any[] = []
       let analysis: any = null
+
+      const safeJsonParse = <T,>(text: string): T | null => {
+        try {
+          return JSON.parse(text) as T
+        } catch {
+          return null
+        }
+      }
+
+      const escapeForPrompt = (value: unknown) => {
+        const str = typeof value === 'string' ? value : JSON.stringify(value ?? '')
+        return String(str).replace(/[\u0000-\u001F]/g, ' ').trim()
+      }
+
+      const trimText = (text: string, maxLen: number) => {
+        const t = (text || '').trim()
+        if (t.length <= maxLen) return t
+        return t.slice(0, maxLen) + '…'
+      }
+
+      const trimArray = (arr: unknown, maxItems: number) => {
+        if (!Array.isArray(arr)) return [] as string[]
+        return arr
+          .filter(x => typeof x === 'string')
+          .map(x => x.trim())
+          .filter(Boolean)
+          .slice(0, maxItems)
+      }
+
+      const extractKeywords = (question: string) => {
+        // 提取問題中的關鍵詞（去除常見詞）
+        const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
+        return question
+          .split(/[\s,，、。！？;；]+/)
+          .map(w => w.trim())
+          .filter(word => word.length >= 2 && !stopWords.includes(word))
+      }
+
+      const buildKnowledgeDescriptor = (k: any, idx: number) => {
+        const index = k.index
+        const isIndexed = !!index
+        const summary = isIndexed ? trimText(String(index.summary || ''), 220) : ''
+        const keywords = isIndexed ? trimArray(index.keywords, 12) : []
+        const topics = isIndexed ? trimArray(index.topics, 8) : []
+        const businessProcesses = isIndexed ? trimArray(index.businessProcesses, 8) : []
+        const technicalAreas = isIndexed ? trimArray(index.technicalAreas, 8) : []
+        return {
+          displayNo: idx + 1,
+          name: String(k.name || ''),
+          category: String(k.category || ''),
+          tags: typeof k.tags === 'string' ? k.tags : '',
+          isIndexed,
+          summary,
+          keywords,
+          topics,
+          businessProcesses,
+          technicalAreas
+        }
+      }
+
+      const scoreKnowledgeEntry = (k: any, terms: string[]) => {
+        const name = String(k.name || '').toLowerCase()
+        const tags = (typeof k.tags === 'string' ? k.tags : '').toLowerCase()
+        const index = k.index
+        const indexedBonus = index ? 6 : 0
+        const indexKeywords = (index?.keywords || []).map((x: string) => String(x).toLowerCase())
+        const indexTopics = (index?.topics || []).map((x: string) => String(x).toLowerCase())
+        const indexSummary = String(index?.summary || '').toLowerCase()
+        const indexBiz = (index?.businessProcesses || []).map((x: string) => String(x).toLowerCase())
+        const indexTech = (index?.technicalAreas || []).map((x: string) => String(x).toLowerCase())
+        const haystack = [name, tags, indexSummary, ...indexKeywords, ...indexTopics, ...indexBiz, ...indexTech].join(' | ')
+
+        let score = indexedBonus
+        for (const rawTerm of terms) {
+          const term = rawTerm.trim().toLowerCase()
+          if (term.length < 2) continue
+          if (name.includes(term)) score += 14
+          if (tags && tags.includes(term)) score += 10
+          if (indexKeywords.includes(term)) score += 12
+          if (indexTopics.includes(term)) score += 8
+          if (indexBiz.some((x: string) => x.includes(term))) score += 8
+          if (indexTech.some((x: string) => x.includes(term))) score += 8
+          if (haystack.includes(term)) score += 2
+        }
+        return score
+      }
       
       // 檢查是否被取消
       if (abortControllerRef.current?.signal.aborted) {
         throw new Error('用戶已取消操作')
       }
       
-      if (selectionMode === 'ai' && allKnowledge.length > 0) {
-        updateStep('index', { status: 'running', detail: `掃描 ${allKnowledge.length} 個知識索引...` })
-        // AI 驅動的知識庫選擇（兩階段方法）- 高精準度模式
-        console.log('[CopilotChat] Using AI-driven knowledge selection (HIGH PRECISION), available knowledge:', allKnowledge.length)
-        
-        // 第一階段：讓 AI 分析哪些知識庫相關
-        // 智能預覽：優先顯示包含問題關鍵詞的片段
-        const extractKeywords = (question: string) => {
-          // 提取問題中的關鍵詞（去除常見詞）
-          const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
-          return question.split(/[\s,，、。！？;；]+/)
-            .filter(word => word.length >= 2 && !stopWords.includes(word))
-        }
-        
-        const keywords = extractKeywords(userQuestion)
-        console.log('[CopilotChat] Extracted keywords for smart preview:', keywords)
-        
-        const knowledgeListPrompt = allKnowledge.map((k, idx) => {
-          const content = k.content
-          const contentLength = content.length
-          let preview = ''
-          let hasKeywordMatch = false
-          
-          if (contentLength <= 2000) {
-            // 短文件：完整預覽
-            preview = content.replace(/\n/g, ' ')
-          } else {
-            // 長文件：先嘗試關鍵詞匹配
-            const keywordMatches: Array<{keyword: string, pos: number}> = []
-            keywords.forEach(keyword => {
-              const lowerContent = content.toLowerCase()
-              const lowerKeyword = keyword.toLowerCase()
-              let pos = lowerContent.indexOf(lowerKeyword)
-              while (pos !== -1) {
-                keywordMatches.push({ keyword, pos })
-                pos = lowerContent.indexOf(lowerKeyword, pos + 1)
-              }
-            })
-            
-            if (keywordMatches.length > 0) {
-              // 找到關鍵詞：優先顯示關鍵詞周圍的內容
-              hasKeywordMatch = true
-              const snippets: string[] = []
-              const sortedMatches = keywordMatches.sort((a, b) => a.pos - b.pos)
-              
-              // 取前3個關鍵詞位置，每個取前後各400字
-              for (let i = 0; i < Math.min(3, sortedMatches.length); i++) {
-                const match = sortedMatches[i]
-                const start = Math.max(0, match.pos - 400)
-                const end = Math.min(contentLength, match.pos + 400)
-                const snippet = content.substring(start, end)
-                snippets.push(`...${snippet.replace(/\n/g, ' ')}...`)
-              }
-              
-              preview = snippets.join('\n[關鍵內容]\n')
-            } else {
-              // 沒找到關鍵詞：使用原策略（開頭 + 中間 + 結尾）
-              const head = content.substring(0, 800)
-              const middle = content.substring(Math.floor(contentLength / 2) - 300, Math.floor(contentLength / 2) + 300)
-              const tail = content.substring(contentLength - 600)
-              preview = `${head.replace(/\n/g, ' ')}\n...[中略]...\n${middle.replace(/\n/g, ' ')}\n...[中略]...\n${tail.replace(/\n/g, ' ')}`
-            }
+      if ((selectionMode === 'ai' || selectionMode === 'ai-deep') && allKnowledge.length > 0) {
+        console.log('[CopilotChat] Using AI-driven knowledge selection, mode:', selectionMode, 'available knowledge:', allKnowledge.length)
+
+        if (selectionMode === 'ai-deep') {
+          updateStep('expand', { status: 'running', detail: '拆解問題並擴寫檢索查詢...' })
+
+          type DeepQueryPlan = {
+            intent?: string
+            queries: string[]
+            keywords?: string[]
+            entities?: string[]
+            mustHave?: string[]
+            niceToHave?: string[]
+            exclude?: string[]
           }
-          
-          const matchInfo = hasKeywordMatch ? ` ✓包含關鍵詞` : ''
-          return `${idx + 1}. **${k.name}**${k.category ? ` [${k.category}]` : ''}${matchInfo}${k.tags ? `\n   標籤: ${k.tags}` : ''}\n   內容長度: ${(contentLength / 1024).toFixed(1)}KB\n   預覽:\n${preview}${contentLength > 2000 ? '\n   [已截取關鍵片段]' : ''}`
-        }).join('\n\n---\n\n')
-        
-        const indexedCount = allKnowledge.filter(k => k.index).length
-        const selectionSystemPrompt = `你是知識庫選擇助手（智能索引模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
+
+          const expandSystemPrompt = `你是「知識庫檢索查詢擴寫」助手。你的任務是：把用戶問題拆解成可用於文件檢索的多組查詢語句與關鍵詞（中英文都可以）。
+
+要求：
+- 只輸出 JSON（不要 markdown，不要解釋）。
+- JSON schema：
+{
+  "intent": "一句話描述用戶要做什麼",
+  "queries": ["3-8 條查詢語句"],
+  "keywords": ["8-20 個關鍵詞/同義詞/縮寫"],
+  "entities": ["相關系統名/表名/流程名/產品名（如有）"],
+  "mustHave": ["必須命中的概念"],
+  "niceToHave": ["加分概念"],
+  "exclude": ["應排除/避免的概念" ]
+}
+
+注意：
+- queries 要偏向『文件標題/索引』語氣，不要像聊天。
+- 若資訊不足，也要給出可能的候選關鍵詞。`
+
+          // 檢查是否被取消
+          if (abortControllerRef.current?.signal.aborted) {
+            throw new Error('用戶已取消操作')
+          }
+
+          let queryPlan: DeepQueryPlan | null = null
+          try {
+            const expandResult = await window.electronAPI.copilot.chat('knowledge-expand', {
+              messages: [
+                { role: 'system', content: expandSystemPrompt },
+                { role: 'user', content: `用戶問題：${userQuestion}` }
+              ],
+              model: copilotConfig.model || 'gpt-4o'
+            })
+
+            const raw = String(expandResult?.content || '').trim()
+            const parsed = safeJsonParse<DeepQueryPlan>(raw)
+            if (parsed && Array.isArray(parsed.queries) && parsed.queries.length > 0) {
+              queryPlan = parsed
+            }
+          } catch (err) {
+            console.warn('[CopilotChat] Deep expand failed, will fall back to local keywords:', err)
+          }
+
+          const localKeywords = extractKeywords(userQuestion)
+          const combinedTerms = Array.from(
+            new Set(
+              [
+                ...(queryPlan?.queries || []),
+                ...(queryPlan?.keywords || []),
+                ...(queryPlan?.entities || []),
+                ...(queryPlan?.mustHave || []),
+                ...(queryPlan?.niceToHave || []),
+                ...localKeywords
+              ]
+                .map(s => String(s).trim())
+                .filter(Boolean)
+                .slice(0, 60)
+            )
+          )
+
+          updateStep('expand', {
+            status: 'completed',
+            detail: `產生 ${queryPlan?.queries?.length || 0} 條查詢 / ${combinedTerms.length} 個檢索詞`
+          })
+
+          if (queryPlan?.queries?.length) {
+            const previewQueries = queryPlan.queries.slice(0, 6).map((q, i) => `${i + 1}. ${q}`).join('\n')
+            setMessages(prev => [...prev, { role: 'info', content: `🧠 **深度檢索：查詢擴寫**\n\n${previewQueries}` }])
+          }
+
+          updateStep('index', { status: 'running', detail: `本地初選候選文件（共 ${allKnowledge.length}）...` })
+
+          // 本地先用 index/tags/name 做候選縮小，降低後續 prompt 大小並提升穩定性
+          const scored = allKnowledge
+            .map((k: any, idx: number) => ({ k, idx, score: scoreKnowledgeEntry(k, combinedTerms) }))
+            .sort((a, b) => b.score - a.score)
+
+          const MAX_CANDIDATES = Math.min(30, Math.max(12, Math.floor(allKnowledge.length * 0.15)))
+          const candidates = scored
+            .filter(x => x.score > 0)
+            .slice(0, MAX_CANDIDATES)
+
+          const candidateDescriptors = candidates.map(x => buildKnowledgeDescriptor(x.k, x.idx))
+          const indexedCount = allKnowledge.filter((k: any) => k.index).length
+
+          const candidateListPrompt = candidateDescriptors
+            .map(d => {
+              const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
+              const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
+              const indexBlock = d.isIndexed
+                ? `\n   摘要: ${escapeForPrompt(d.summary)}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
+                : ''
+              return `${d.displayNo}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
+            })
+            .join('\n\n---\n\n')
+
+          const rerankSystemPrompt = `你是知識庫選擇助手（深度檢索/重排模式）。
+
+你會拿到：
+- 用戶問題
+- 一組擴寫查詢（用於判斷語義）
+- 一份「本地初選」的候選文件清單（包含索引摘要/keywords/topics 等）
+
+你的目標：從候選清單中選出最相關的文件（1-5 個），寧缺毋濫。
+
+輸出要求：只輸出 JSON（不要 markdown，不要解釋）：
+{
+  "selected": [ { "no": 3, "confidence": 0.0, "reason": "..." } ],
+  "overallConfidence": 0.0,
+  "needMore": false
+}
+
+注意：
+- no 是候選清單的編號（不是 fileId）。
+- confidence 與 overallConfidence 範圍 0.0~1.0。
+- 若完全不相關，selected 置空，overallConfidence 低，needMore 依情況設 true/false。`
+
+          // 檢查是否被取消
+          if (abortControllerRef.current?.signal.aborted) {
+            throw new Error('用戶已取消操作')
+          }
+
+          try {
+            const rerankResult = await window.electronAPI.copilot.chat('knowledge-rerank', {
+              messages: [
+                { role: 'system', content: rerankSystemPrompt },
+                {
+                  role: 'user',
+                  content: `用戶問題：${userQuestion}\n\n擴寫查詢：\n${(queryPlan?.queries || localKeywords).slice(0, 8).map(q => `- ${q}`).join('\n')}\n\n候選文件（共 ${candidateDescriptors.length} / 知識庫共 ${allKnowledge.length}，已索引 ${indexedCount}）：\n\n${candidateListPrompt}`
+                }
+              ],
+              model: copilotConfig.model || 'gpt-4o'
+            })
+
+            const raw = String(rerankResult?.content || '').trim()
+            type RerankOut = { selected?: Array<{ no: number }>; overallConfidence?: number }
+            const parsed = safeJsonParse<RerankOut>(raw)
+
+            const selectedNos: number[] = []
+            if (parsed?.selected?.length) {
+              for (const s of parsed.selected) {
+                const n = Number((s as any).no)
+                if (Number.isFinite(n)) selectedNos.push(n)
+              }
+            } else {
+              const matches = raw.match(/\d+/g)
+              if (matches) selectedNos.push(...matches.map(m => parseInt(m, 10)))
+            }
+
+            const selectedIndices = Array.from(new Set(selectedNos))
+              .map(n => n - 1)
+              .filter(idx => idx >= 0 && idx < allKnowledge.length)
+
+            selectedKnowledge = selectedIndices.map(idx => allKnowledge[idx])
+
+            updateStep('index', { status: 'completed', detail: `選出 ${selectedKnowledge.length} 個相關文檔` })
+
+            if (selectedKnowledge.length > 0) {
+              const knowledgeListMsg: CopilotMessage = {
+                role: 'info',
+                content: `🧠 **AI 深度檢索：重排選擇**\n\n📚 已選擇 ${selectedKnowledge.length} 個相關知識庫：\n${selectedKnowledge.map((k: any, i: number) => `${i + 1}. ${k.name}`).join('\n')}`
+              }
+              setMessages(prev => [...prev, knowledgeListMsg])
+            }
+          } catch (error) {
+            console.error('[CopilotChat] Deep rerank failed, falling back to keyword matching:', error)
+            updateStep('index', { status: 'error', detail: '深度檢索失敗，使用關鍵詞匹配' })
+            const result = smartSelect(userQuestion, allSkills, allKnowledge)
+            analysis = result.analysis
+            selectedSkills = result.selectedSkills
+            selectedKnowledge = result.selectedKnowledge
+            updateStep('index', { status: 'completed', detail: `關鍵詞匹配：${selectedKnowledge.length} 個` })
+          }
+
+          // Skills 仍使用關鍵詞匹配選擇（避免額外成本）
+          const skillResult = smartSelect(userQuestion, allSkills, [])
+          selectedSkills = skillResult.selectedSkills
+          analysis = skillResult.analysis
+        } else {
+          updateStep('index', { status: 'running', detail: `掃描 ${allKnowledge.length} 個知識索引...` })
+
+          // AI 單次選擇：盡量使用 index 資訊而非全文預覽（更精準且 prompt 更小）
+          const keywords = extractKeywords(userQuestion)
+          console.log('[CopilotChat] Extracted keywords for index-aware selection:', keywords)
+
+          const knowledgeListPrompt = allKnowledge.map((k: any, idx: number) => {
+            const d = buildKnowledgeDescriptor(k, idx)
+            const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
+            const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
+            const indexBlock = d.isIndexed
+              ? `\n   摘要: ${escapeForPrompt(d.summary)}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
+              : ''
+            return `${idx + 1}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
+          }).join('\n\n---\n\n')
+
+          const indexedCount = allKnowledge.filter((k: any) => k.index).length
+          const selectionSystemPrompt = `你是知識庫選擇助手（智能索引模式）。用戶會問一個問題，你需要從知識庫列表中選出最相關的條目。
 
 ## 🔍 兩階段查詢原理
 第一階段（現在）：根據**索引**快速匹配相關文件
@@ -1115,8 +1351,8 @@ ${knowledgeListPrompt}
 - 索引信息是 AI 分析生成的，準確度很高
 - 沒有索引的文件匹配準確度較低，謹慎選擇`
 
-        try {
-          const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
+          try {
+            const selectionResult = await window.electronAPI.copilot.chat('knowledge-selection', {
             messages: [
               { role: 'system', content: selectionSystemPrompt },
               { role: 'user', content: `用戶問題：「${userQuestion}」\n\n請選擇相關的知識庫編號：` }
@@ -1154,22 +1390,22 @@ ${knowledgeListPrompt}
             setMessages(prev => [...prev, knowledgeListMsg])
           }
           
-        } catch (error) {
-          console.error('[CopilotChat] AI selection failed, falling back to keyword matching:', error)
-          updateStep('index', { status: 'error', detail: 'AI 選擇失敗，使用關鍵詞匹配' })
-          // 失敗時回退到關鍵詞匹配
-          const result = smartSelect(userQuestion, allSkills, allKnowledge)
-          analysis = result.analysis
-          selectedSkills = result.selectedSkills
-          selectedKnowledge = result.selectedKnowledge
-          updateStep('index', { status: 'completed', detail: `關鍵詞匹配：${selectedKnowledge.length} 個` })
+          } catch (error) {
+            console.error('[CopilotChat] AI selection failed, falling back to keyword matching:', error)
+            updateStep('index', { status: 'error', detail: 'AI 選擇失敗，使用關鍵詞匹配' })
+            // 失敗時回退到關鍵詞匹配
+            const result = smartSelect(userQuestion, allSkills, allKnowledge)
+            analysis = result.analysis
+            selectedSkills = result.selectedSkills
+            selectedKnowledge = result.selectedKnowledge
+            updateStep('index', { status: 'completed', detail: `關鍵詞匹配：${selectedKnowledge.length} 個` })
+          }
+          
+          // Skills 仍使用關鍵詞匹配選擇
+          const skillResult = smartSelect(userQuestion, allSkills, [])
+          selectedSkills = skillResult.selectedSkills
+          analysis = skillResult.analysis
         }
-        
-        // Skills 仍使用關鍵詞匹配選擇
-        const skillResult = smartSelect(userQuestion, allSkills, [])
-        selectedSkills = skillResult.selectedSkills
-        analysis = skillResult.analysis
-        
       } else {
         // 關鍵詞匹配模式
         console.log('[CopilotChat] Using keyword-based selection')
@@ -1516,6 +1752,7 @@ ${skillsPrompt}${knowledgePrompt}
       }
       // 標記所有步驟為錯誤
       updateStep('skills', { status: 'error', detail: '處理失敗' })
+      updateStep('expand', { status: 'error', detail: '處理失敗' })
       updateStep('index', { status: 'error', detail: '處理失敗' })
       updateStep('knowledge', { status: 'error', detail: '處理失敗' })
       updateStep('generate', { status: 'error', detail: '處理失敗' })

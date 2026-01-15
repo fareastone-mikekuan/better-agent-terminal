@@ -640,7 +640,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     onChange={async e => {
                       const newConfig = { 
                         ...copilotConfig, 
-                        knowledgeSelectionMode: e.target.value as 'keyword' | 'ai'
+                        knowledgeSelectionMode: e.target.value as 'keyword' | 'ai' | 'ai-deep'
                       }
                       setCopilotConfig(newConfig)
                       await settingsStore.setCopilotConfig(newConfig)
@@ -655,11 +655,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       fontSize: '14px'
                     }}
                   >
-                    <option value="ai">🤖 AI 智能選擇（推薦，更準確但消耗更多 Token）</option>
+                    <option value="ai">🤖 AI 智能選擇（推薦：一次選檔 + 一次回答）</option>
+                    <option value="ai-deep">🧠 AI 深度檢索（最準：多輪擴寫/重排 + 一次回答，較慢/更多 Token）</option>
                     <option value="keyword">🔍 關鍵詞匹配（快速但可能不準確）</option>
                   </select>
                   <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
-                    💡 AI 模式：每次提問前先用 AI 分析並選擇相關知識庫，然後再回答問題（兩次 API 調用）
+                    💡 AI 模式：提問前先選知識庫再回答（通常 2 次 API）。深度檢索會再多一輪檢索/重排（通常 3 次 API）。
                   </small>
                 </div>
 
