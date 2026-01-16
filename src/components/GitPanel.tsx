@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { workspaceStore } from '../stores/workspace-store'
+import { ResizeHandle } from './ResizeHandle'
 
 type WorkspaceGitProbeCacheEntry = {
   cwd: string
@@ -86,6 +87,19 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
 
   const [workspaceCwd, setWorkspaceCwd] = useState<string>('')
   const [workspaceProbeStatus, setWorkspaceProbeStatus] = useState<'unknown' | 'repo' | 'not-repo'>('unknown')
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('git-sidebar-width')
+    const parsed = saved ? Number(saved) : NaN
+    return Number.isFinite(parsed) ? parsed : 280
+  })
+
+  const loadingRef = useRef(loading)
+  useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+
+  const headFingerprintRef = useRef<string>('')
 
   const repoPathRef = useRef(repoPath)
   useEffect(() => {
@@ -451,6 +465,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         await Promise.all([
           loadGitStatus(),
           loadGitLog(),
+          loadLocalBranches(),
           loadRemotes()
         ])
       }
@@ -465,7 +480,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     }
   }
 
-  const loadRemoteData = async () => {
+  const loadRemoteData = async (branchOverride?: string) => {
     try {
       // 使用 ls-remote 获取所有 refs
       const output = await runGitCommand(`git ls-remote --heads --tags ${repoPath}`, true)
@@ -498,8 +513,9 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
       setAvailableBranches(branches)
       
       // 设置当前分支（默认为 main 或 master，或使用用户选择的）
-      const defaultBranch = selectedBranch 
-        ? branches.find(b => b.name === selectedBranch)
+      const preferredBranch = (branchOverride || selectedBranch).trim()
+      const defaultBranch = preferredBranch
+        ? branches.find(b => b.name === preferredBranch)
         : (branches.find(b => b.name === 'main') || 
            branches.find(b => b.name === 'master') || 
            branches[0])
@@ -582,12 +598,99 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
   }
 
   const handleSwitchBranch = async (branchName: string) => {
-    setSelectedBranch(branchName)
     setSelectedCommit(null)
     setCommitDetails('')
-    // 重新加载 git 数据
-    await loadGitData()
+    setCommitDiffs([])
+    setSelectedFile(null)
+    setError(null)
+
+    const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
+    setSelectedBranch(branchName)
+
+    try {
+      if (isUrl) {
+        setLoading(true)
+        await loadRemoteData(branchName)
+        return
+      }
+
+      await runGitCommand(`git checkout ${branchName}`)
+      await loadGitData(true)
+    } catch (err) {
+      setError('無法切換分支')
+    } finally {
+      if (isUrl) {
+        setLoading(false)
+      }
+    }
   }
+
+  const loadLocalBranches = async () => {
+    try {
+      const output = await runGitCommand('git for-each-ref --format=%(refname:short)|%(objectname:short) refs/heads')
+      const branches = output
+        .replace(/\x1b\[[0-9;]*m/g, '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean)
+        .map(line => {
+          const [name, hash] = line.split('|')
+          return { name: (name || '').trim(), hash: (hash || '').trim() }
+        })
+        .filter(b => b.name)
+
+      setAvailableBranches(branches)
+    } catch (err) {
+      console.warn('[Git] Failed to load local branches:', err)
+    }
+  }
+
+  const clampSidebarWidth = (nextWidth: number) => {
+    const clamped = Math.max(220, Math.min(520, nextWidth))
+    localStorage.setItem('git-sidebar-width', String(clamped))
+    return clamped
+  }
+
+  // Auto-refresh when HEAD/branch changes (e.g. user switches branches in Terminal)
+  useEffect(() => {
+    const visible = !isFloating || isVisible
+    const isUrl = repoPath.startsWith('http://') || repoPath.startsWith('https://') || repoPath.startsWith('git@')
+    if (!visible || !repoPath || !isGitRepo || isUrl) return
+
+    let cancelled = false
+
+    const poll = async () => {
+      if (cancelled) return
+      if (loadingRef.current) return
+
+      try {
+        const output = await runGitCommand('git rev-parse --abbrev-ref HEAD HEAD')
+        const lines = output
+          .replace(/\x1b\[[0-9;]*m/g, '')
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean)
+
+        const branch = lines[0] || ''
+        const head = lines[1] || ''
+        const fingerprint = `${branch}|${head}`
+
+        if (fingerprint && fingerprint !== headFingerprintRef.current) {
+          headFingerprintRef.current = fingerprint
+          await loadGitData()
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    }
+
+    poll()
+    const id = window.setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [repoPath, isGitRepo, isVisible, isFloating])
 
   const handleViewCommit = async (hash: string) => {
     if (!hash || hash.startsWith('remote-')) {
@@ -718,6 +821,11 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
       console.log('[Git] Cleaned branch lines:', cleanLines)
       const branch = cleanLines[0] || 'unknown'
       console.log('[Git] Final branch:', branch)
+
+      // Keep selector in sync with actual repo branch.
+      if (branch && branch !== 'unknown' && branch !== selectedBranch) {
+        setSelectedBranch(branch)
+      }
 
       // Get ahead/behind (this might fail if no upstream)
       let ahead = 0
@@ -959,12 +1067,17 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
     <div style={{
       height: '100%',
       display: 'flex',
+      minWidth: 0,
+      overflow: 'hidden',
       backgroundColor: '#1e1e1e',
       color: '#e0e0e0'
     }}>
       {/* Left Sidebar - Repository List */}
       <div style={{
-        width: '280px',
+        width: `${sidebarWidth}px`,
+        minWidth: '220px',
+        maxWidth: '520px',
+        flexShrink: 0,
         borderRight: '1px solid #333',
         display: 'flex',
         flexDirection: 'column',
@@ -1121,11 +1234,23 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         </div>
       </div>
 
+      <ResizeHandle
+        direction="horizontal"
+        className="git-panel-resize-handle"
+        onResize={(delta) => {
+          setSidebarWidth(prev => clampSidebarWidth(prev + delta))
+        }}
+        onDoubleClick={() => {
+          setSidebarWidth(() => clampSidebarWidth(280))
+        }}
+      />
+
       {/* Right Panel - Git Details */}
       <div style={{
         flex: 1,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        minWidth: 0
       }}>
         {/* Header */}
         <div style={{
@@ -1387,10 +1512,10 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
         )}
 
         {activeTab === 'log' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', height: '100%', minHeight: 0 }}>
             {selectedCommit ? (
               // 显示提交详情 - Diff Viewer
-              <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                 <button
                   onClick={() => { 
                     setSelectedCommit(null)
@@ -1433,7 +1558,9 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
                   <div style={{ display: 'flex', gap: '12px', flex: 1, minHeight: 0 }}>
                     {/* File List */}
                     <div style={{
-                      width: '250px',
+                      flex: '0 0 220px',
+                      minWidth: '160px',
+                      maxWidth: '35%',
                       backgroundColor: '#2a2a2a',
                       borderRadius: '4px',
                       border: '1px solid #3a3a3a',
@@ -1518,6 +1645,7 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
                     {/* Diff Display */}
                     <div style={{
                       flex: 1,
+                      minWidth: 0,
                       backgroundColor: '#1e1e1e',
                       borderRadius: '4px',
                       border: '1px solid #3a3a3a',
@@ -1635,7 +1763,8 @@ export function GitPanel({ isVisible, onClose, isFloating, workspaceId }: GitPan
                     fontSize: '12px',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
-                    maxHeight: 'calc(100vh - 300px)',
+                    flex: 1,
+                    minHeight: 0,
                     overflow: 'auto'
                   }}>
                     {commitDetails || '載入中...'}
