@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
+import { AIAnalysisStepsView } from './AIAnalysisStepsView'
+import type { AIAnalysisMeta, AIAnalysisStep, KnowledgeSelectionMode } from '../types/ai-analysis'
+import { buildKnowledgePromptForInput } from '../services/ai-analysis-pipeline'
 
 interface OraclePanelProps {
   onQueryResult?: (result: string) => void
@@ -63,7 +66,9 @@ export function OraclePanel({ onQueryResult, isFloating = false, onToggleFloat, 
   // AI Analysis state
   const [hoveredData, setHoveredData] = useState<{ text: string; x: number; y: number } | null>(null)
   const [aiAnalysis, setAiAnalysis] = useState<string>('')
-  const [aiAnalysisMeta, setAiAnalysisMeta] = useState<{ mode?: string; sources?: string[] } | null>(null)
+  const [aiAnalysisMeta, setAiAnalysisMeta] = useState<AIAnalysisMeta | null>(null)
+  const [aiAnalysisSteps, setAiAnalysisSteps] = useState<AIAnalysisStep[]>([])
+  const [showAiAnalysisSteps, setShowAiAnalysisSteps] = useState(true)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -575,26 +580,52 @@ Value7       Value8       Value9
     setHoveredData(null)
     setAiAnalysis('')
     setAiAnalysisMeta(null)
+    setAiAnalysisSteps([])
     setIsAnalyzing(false)
   }
 
   const performAIAnalysis = async (data: string, sqlQuery: string) => {
     try {
+      setAiAnalysis('')
+      setAiAnalysisMeta(null)
+
       // Check if Copilot is enabled
       const copilotEnabled = await window.electronAPI.copilot.isEnabled()
       
       if (copilotEnabled) {
-        // Match Terminal behavior: use knowledge base according to selection mode
         const copilotConfigFromStore = settingsStore.getCopilotConfig()
-        const selectionMode = copilotConfigFromStore?.knowledgeSelectionMode || 'ai'
+        const selectionMode = (copilotConfigFromStore?.knowledgeSelectionMode || 'ai') as KnowledgeSelectionMode
         const isDeepMode = selectionMode === 'ai-deep' || selectionMode === 'ai-ultra'
+        const isUltraMode = selectionMode === 'ai-ultra'
 
-        const safeJsonParse = <T,>(value: string): T | null => {
-          try {
-            return JSON.parse(value) as T
-          } catch {
-            return null
-          }
+        const steps: AIAnalysisStep[] = [
+          { id: 'prepare', label: '🧩 準備 SQL 與目標值 [本地]', status: 'pending' },
+          {
+            id: 'select',
+            label: isDeepMode
+              ? '📚 深度挑選知識庫 [AI + 本地]'
+              : (selectionMode === 'ai' ? '📚 AI 挑選知識庫 [AI]' : '📚 關鍵詞挑選知識庫 [本地]'),
+            status: 'pending'
+          },
+          ...(isUltraMode
+            ? [{ id: 'validate', label: '🔎 二次驗證與校準 [AI]', status: 'pending' as const }]
+            : []),
+          { id: 'analyze', label: '✨ 生成分析結果 [AI]', status: 'pending' }
+        ]
+        setAiAnalysisSteps(steps)
+        setShowAiAnalysisSteps(true)
+
+        const updateStep = (stepId: string, updates: Partial<AIAnalysisStep>) => {
+          setAiAnalysisSteps(prev => prev.map(s =>
+            s.id === stepId
+              ? {
+                  ...s,
+                  ...updates,
+                  ...(updates.status === 'running' && !s.startTime ? { startTime: Date.now() } : {}),
+                  ...(updates.status === 'completed' || updates.status === 'error' ? { endTime: Date.now() } : {})
+                }
+              : s
+          ))
         }
 
         const trimText = (value: string, maxLen: number) => {
@@ -603,216 +634,27 @@ Value7       Value8       Value9
           return t.slice(0, maxLen) + '…'
         }
 
-        const extractKeywords = (question: string) => {
-          const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
-          return question
-            .split(/[\s,，、。！？;；:：()\[\]{}<>\n\r\t]+/)
-            .map(w => w.trim())
-            .filter(word => word.length >= 2 && !stopWords.includes(word))
-            .slice(0, 40)
-        }
-
-        const scoreKnowledgeEntry = (k: any, terms: string[]) => {
-          const name = String(k?.name || '').toLowerCase()
-          const tags = (typeof k?.tags === 'string' ? k.tags : '').toLowerCase()
-          const idx = k?.index
-          const indexedBonus = idx ? 6 : 0
-          const idxSummary = String(idx?.summary || '').toLowerCase()
-          const idxKeywords = Array.isArray(idx?.keywords) ? idx.keywords.map((x: any) => String(x).toLowerCase()) : []
-          const idxTopics = Array.isArray(idx?.topics) ? idx.topics.map((x: any) => String(x).toLowerCase()) : []
-          const idxBiz = Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.map((x: any) => String(x).toLowerCase()) : []
-          const idxTech = Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.map((x: any) => String(x).toLowerCase()) : []
-
-          const haystack = [name, tags, idxSummary, ...idxKeywords, ...idxTopics, ...idxBiz, ...idxTech].join(' | ')
-          let score = indexedBonus
-          for (const rawTerm of terms) {
-            const term = String(rawTerm || '').trim().toLowerCase()
-            if (term.length < 2) continue
-            if (name.includes(term)) score += 14
-            if (tags && tags.includes(term)) score += 10
-            if (idxKeywords.includes(term)) score += 12
-            if (idxTopics.includes(term)) score += 8
-            if (idxBiz.some((x: string) => x.includes(term))) score += 8
-            if (idxTech.some((x: string) => x.includes(term))) score += 8
-            if (haystack.includes(term)) score += 2
-          }
-          return score
-        }
-
-        const buildKnowledgeDescriptor = (k: any) => {
-          const idx = k?.index
-          const isIndexed = !!idx
-          const summary = isIndexed ? trimText(String(idx?.summary || ''), 220) : ''
-          const keywords = isIndexed && Array.isArray(idx?.keywords) ? idx.keywords.slice(0, 12).map((x: any) => String(x)) : []
-          const topics = isIndexed && Array.isArray(idx?.topics) ? idx.topics.slice(0, 8).map((x: any) => String(x)) : []
-          const businessProcesses = isIndexed && Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.slice(0, 8).map((x: any) => String(x)) : []
-          const technicalAreas = isIndexed && Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.slice(0, 8).map((x: any) => String(x)) : []
-          return {
-            name: String(k?.name || ''),
-            category: String(k?.category || ''),
-            tags: typeof k?.tags === 'string' ? k.tags : '',
-            isIndexed,
-            summary,
-            keywords,
-            topics,
-            businessProcesses,
-            technicalAreas
-          }
-        }
-
-        const { knowledgeStore } = await import('../stores/knowledge-store')
-        const activeKnowledge = knowledgeStore.getActiveKnowledge()
+        updateStep('prepare', { status: 'running', detail: '整理 SQL 上下文與 hovered 值' })
 
         const copilotConfig = await window.electronAPI.copilot.getConfig()
         const model = copilotConfig?.model || 'gpt-4'
 
-        // Build selection seed from SQL + hovered value
         const querySeed = [sqlQuery ? trimText(sqlQuery, 1200) : '', data].filter(Boolean).join('\n')
-        const baseTerms = extractKeywords(querySeed)
 
-        let selectedKnowledge: any[] = []
-        let knowledgePrompt = ''
+        updateStep('prepare', { status: 'completed', detail: '完成' })
 
-        if (activeKnowledge.length === 0) {
-          selectedKnowledge = []
-        } else if (selectionMode === 'keyword') {
-          const { smartSelect } = await import('../types/skill-selector')
-          const result = smartSelect(querySeed, [], activeKnowledge as any)
-          selectedKnowledge = (result.selectedKnowledge || []).slice(0, 5)
-        } else {
-          let combinedTerms = [...baseTerms]
+        const knowledge = await buildKnowledgePromptForInput({
+          selectionMode,
+          model,
+          seedText: querySeed,
+          chatTagPrefix: 'oracle',
+          reporter: (stepId, updates) => updateStep(stepId, updates)
+        })
 
-          if (isDeepMode) {
-            try {
-              const expandRes = await window.electronAPI.copilot.chat('oracle-knowledge-expand', {
-                messages: [
-                  {
-                    role: 'system',
-                    content: '你是查詢擴寫助手。請把輸入的內容擴寫成多條可用於檢索的查詢。只輸出 JSON：{"queries":["..."],"keywords":["..."]}，不要 markdown。'
-                  },
-                  { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}` }
-                ],
-                model
-              })
+        setAiAnalysisMeta({ mode: selectionMode, sources: knowledge.sources })
+        const knowledgePrompt = knowledge.knowledgePrompt
 
-              const raw = String(expandRes?.content || '').trim()
-              const parsed = safeJsonParse<{ queries?: string[]; keywords?: string[] }>(raw)
-              const extra = [
-                ...(Array.isArray(parsed?.queries) ? parsed!.queries : []),
-                ...(Array.isArray(parsed?.keywords) ? parsed!.keywords : [])
-              ]
-                .map(s => String(s).trim())
-                .filter(Boolean)
-                .slice(0, 40)
-
-              combinedTerms = Array.from(new Set([...combinedTerms, ...extra]))
-            } catch {
-              // ignore
-            }
-          }
-
-          const scored = (activeKnowledge as any[])
-            .map((k: any) => ({ k, score: scoreKnowledgeEntry(k, combinedTerms) }))
-            .sort((a, b) => b.score - a.score)
-
-          const MAX_CANDIDATES = selectionMode === 'ai-ultra'
-            ? Math.min(40, Math.max(14, Math.floor(activeKnowledge.length * 0.25)))
-            : selectionMode === 'ai-deep'
-              ? Math.min(24, Math.max(10, Math.floor(activeKnowledge.length * 0.15)))
-              : Math.min(18, Math.max(8, Math.floor(activeKnowledge.length * 0.12)))
-
-          const candidates = scored
-            .filter(x => x.score > 0 || x.k?.index)
-            .slice(0, MAX_CANDIDATES)
-
-          if (candidates.length === 0) {
-            selectedKnowledge = []
-          } else {
-            const descriptors = candidates.map(c => buildKnowledgeDescriptor(c.k))
-            const candidateListPrompt = descriptors
-              .map((d, i) => {
-                const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
-                const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
-                const indexBlock = d.isIndexed
-                  ? `\n   摘要: ${d.summary}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
-                  : ''
-                return `${i + 1}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
-              })
-              .join('\n\n---\n\n')
-
-            const pickMax = selectionMode === 'ai-ultra' ? 8 : (selectionMode === 'ai-deep' ? 5 : 4)
-            const selectionSystemPrompt = `你是知識庫選擇助手。\n\n請從候選清單中選出最相關的文件（1-${pickMax} 個），寧缺毋濫。\n\n輸出格式：只回答候選清單的編號，用逗號分隔，例如：3,7,11。若完全無相關，回答：無。`
-
-            try {
-              const selRes = await window.electronAPI.copilot.chat('oracle-knowledge-select', {
-                messages: [
-                  { role: 'system', content: selectionSystemPrompt },
-                  { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}\n\n候選清單（共 ${descriptors.length}）：\n\n${candidateListPrompt}` }
-                ],
-                model
-              })
-
-              const content = String(selRes?.content || '')
-              const selectedIdx: number[] = []
-              if (content && !content.includes('無') && !content.includes('没有')) {
-                const matches = content.match(/\d+/g)
-                if (matches) selectedIdx.push(...matches.map(n => parseInt(n, 10) - 1))
-              }
-
-              const picked = selectedIdx
-                .filter(i => i >= 0 && i < candidates.length)
-                .map(i => candidates[i].k)
-
-              if (picked.length > 0) {
-                selectedKnowledge = picked
-              } else {
-                const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
-                selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
-              }
-            } catch {
-              const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
-              selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
-            }
-          }
-        }
-
-        const usedSources = selectedKnowledge.map((k: any) => String(k?.name || '')).filter(Boolean)
-        setAiAnalysisMeta({ mode: selectionMode, sources: usedSources })
-
-        if (selectedKnowledge.length > 0) {
-          const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
-          const modelLimits = getModelKnowledgeLimit(model)
-          const MAX_KNOWLEDGE_LENGTH = Math.min(modelLimits.maxTotal, 40000)
-          const MAX_SINGLE_ENTRY = modelLimits.maxSingle
-          let totalLength = 0
-          const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
-
-          for (const k of selectedKnowledge) {
-            let entryContent = String(k?.content || '')
-            let truncated = false
-            if (entryContent.length > MAX_SINGLE_ENTRY) {
-              entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
-              truncated = true
-            }
-            const entryText = `【${k.name}】\n${entryContent}`
-            if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
-              includedKnowledge.push({ name: String(k.name), content: entryContent, truncated })
-              totalLength += entryText.length
-            } else {
-              break
-            }
-          }
-
-          if (includedKnowledge.length > 0) {
-            knowledgePrompt = `\n\n## 📚 參考知識庫（${includedKnowledge.length} 個）\n\n` +
-              includedKnowledge
-                .map(item => {
-                  const truncNote = item.truncated ? `\n(註：內容過長，已截取前 ${item.content.length.toLocaleString()} 字元)\n` : ''
-                  return `### 【${item.name}】${truncNote}\n${item.content}`
-                })
-                .join('\n\n---\n\n')
-          }
-        }
+        updateStep('analyze', { status: 'running', detail: `使用 ${model} 生成中...` })
 
         // Use real Copilot API
         const systemPrompt = {
@@ -846,18 +688,22 @@ ${sqlQuery || '未提供 SQL 語句'}
         
         if (response.error) {
           setAiAnalysis(`❌ Copilot 分析失敗: ${response.error}`)
+          updateStep('analyze', { status: 'error', detail: '分析失敗' })
         } else {
           setAiAnalysis(response.content)
+          updateStep('analyze', { status: 'completed', detail: '分析完成' })
         }
       } else {
         // Fallback to rule-based analysis
         setAiAnalysisMeta(null)
+        setAiAnalysisSteps([])
         await performRuleBasedAnalysis(data, sqlQuery)
       }
     } catch (err) {
       console.error('AI analysis error:', err)
       // Fallback to rule-based analysis on error
       setAiAnalysisMeta(null)
+      setAiAnalysisSteps([])
       await performRuleBasedAnalysis(data, sqlQuery)
     } finally {
       setIsAnalyzing(false)
@@ -1621,17 +1467,20 @@ ORDER BY c.pkg_type_dtl, a.offer_id, c.pkg_id` })}
                   </button>
                   
                   {isAnalyzing ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div className="loading-spinner" style={{
-                        width: '16px',
-                        height: '16px',
-                        border: '2px solid #3b82f6',
-                        borderTopColor: 'transparent',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite'
-                      }} />
-                      <span>AI 分析中...</span>
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: aiAnalysisSteps.length > 0 ? '10px' : 0 }}>
+                        <div className="loading-spinner" style={{
+                          width: '16px',
+                          height: '16px',
+                          border: '2px solid #3b82f6',
+                          borderTopColor: 'transparent',
+                          borderRadius: '50%',
+                          animation: 'spin 1s linear infinite'
+                        }} />
+                        <span>AI 分析中...</span>
+                      </div>
+                      <AIAnalysisStepsView steps={aiAnalysisSteps} compact />
+                    </>
                   ) : aiAnalysis ? (
                     <>
                       <div style={{ 
@@ -1643,6 +1492,26 @@ ORDER BY c.pkg_type_dtl, a.offer_id, c.pkg_id` })}
                       }}>
                         🤖 AI 智能分析
                       </div>
+                      {aiAnalysisSteps.length > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                          <button
+                            onClick={() => setShowAiAnalysisSteps(v => !v)}
+                            style={{
+                              fontSize: '11px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #334155',
+                              background: 'rgba(15, 23, 42, 0.6)',
+                              color: '#cbd5e1',
+                              cursor: 'pointer'
+                            }}
+                            title={showAiAnalysisSteps ? '隱藏處理步驟' : '顯示處理步驟'}
+                          >
+                            {showAiAnalysisSteps ? '隱藏步驟' : '顯示步驟'}
+                          </button>
+                        </div>
+                      )}
+                      {showAiAnalysisSteps && <AIAnalysisStepsView steps={aiAnalysisSteps} compact />}
                       {aiAnalysisMeta && (aiAnalysisMeta.mode || (aiAnalysisMeta.sources && aiAnalysisMeta.sources.length > 0)) && (
                         <div style={{
                           fontSize: '11px',

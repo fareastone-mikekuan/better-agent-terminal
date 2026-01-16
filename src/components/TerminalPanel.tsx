@@ -5,7 +5,9 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
-import { CopilotPanel } from './CopilotPanel'
+import { AIAnalysisStepsView } from './AIAnalysisStepsView'
+import type { AIAnalysisStep, KnowledgeSelectionMode } from '../types/ai-analysis'
+import { buildKnowledgePromptForInput } from '../services/ai-analysis-pipeline'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -22,18 +24,7 @@ interface ContextMenu {
   selectedText?: string
 }
 
-type AIAnalysisStepStatus = 'pending' | 'running' | 'completed' | 'error'
-
-interface AIAnalysisStep {
-  id: string
-  label: string
-  status: AIAnalysisStepStatus
-  detail?: string
-  startTime?: number
-  endTime?: number
-}
-
-export function TerminalPanel({ terminalId, isActive = true, terminalType = 'terminal', oracleQueryResult }: TerminalPanelProps) {
+export function TerminalPanel({ terminalId, isActive = true, terminalType: _terminalType = 'terminal', oracleQueryResult: _oracleQueryResult }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -49,7 +40,6 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const [showAiAnalysisSteps, setShowAiAnalysisSteps] = useState(false)
   const aiAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null)
   const insightTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const lastKeypressRef = useRef<{ key: string, time: number } | null>(null)
   const commandStartTimeRef = useRef<number | null>(null)
   const currentCommandRef = useRef<string | null>(null)
   const commandBufferRef = useRef<string>('')  // 追踪用户输入的命令
@@ -242,7 +232,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       setTimeout(() => setShowQuickAIPrompt(false), 3000)
       
       // 獲取最近的輸出進行 AI 分析
-      const terminal = workspaceStore.getTerminal(terminalId)
+      const terminal = workspaceStore.getState().terminals.find(t => t.id === terminalId)
       if (terminal?.scrollbackBuffer && terminal.scrollbackBuffer.length > 0) {
         const recentOutput = terminal.scrollbackBuffer.slice(-50).join('\n')
         if (recentOutput.trim()) {
@@ -680,8 +670,9 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     
     try {
       const copilotConfigFromStore = settingsStore.getCopilotConfig()
-      const selectionMode = copilotConfigFromStore?.knowledgeSelectionMode || 'ai'
+      const selectionMode = (copilotConfigFromStore?.knowledgeSelectionMode || 'ai') as KnowledgeSelectionMode
       const isDeepMode = selectionMode === 'ai-deep' || selectionMode === 'ai-ultra'
+      const isUltraMode = selectionMode === 'ai-ultra'
 
       const steps: AIAnalysisStep[] = [
         { id: 'prepare', label: '🧩 判斷輸入與準備 [本地]', status: 'pending' },
@@ -692,6 +683,9 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
             : (selectionMode === 'ai' ? '📚 AI 挑選知識庫 [AI]' : '📚 關鍵詞挑選知識庫 [本地]'),
           status: 'pending'
         },
+        ...(isUltraMode
+          ? [{ id: 'validate', label: '🔎 二次驗證與校準 [AI]', status: 'pending' as const }]
+          : []),
         { id: 'analyze', label: '✨ 生成分析結果 [AI]', status: 'pending' }
       ]
       setAiAnalysisSteps(steps)
@@ -709,84 +703,14 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
         ))
       }
 
-      const safeJsonParse = <T,>(value: string): T | null => {
-        try {
-          return JSON.parse(value) as T
-        } catch {
-          return null
-        }
-      }
-
       const trimText = (value: string, maxLen: number) => {
         const t = String(value || '').trim()
         if (t.length <= maxLen) return t
         return t.slice(0, maxLen) + '…'
       }
 
-      const extractKeywords = (question: string) => {
-        const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
-        return question
-          .split(/[\s,，、。！？;；:：()\[\]{}<>\n\r\t]+/)
-          .map(w => w.trim())
-          .filter(word => word.length >= 2 && !stopWords.includes(word))
-          .slice(0, 40)
-      }
-
-      const scoreKnowledgeEntry = (k: any, terms: string[]) => {
-        const name = String(k?.name || '').toLowerCase()
-        const tags = (typeof k?.tags === 'string' ? k.tags : '').toLowerCase()
-        const idx = k?.index
-        const indexedBonus = idx ? 6 : 0
-        const idxSummary = String(idx?.summary || '').toLowerCase()
-        const idxKeywords = Array.isArray(idx?.keywords) ? idx.keywords.map((x: any) => String(x).toLowerCase()) : []
-        const idxTopics = Array.isArray(idx?.topics) ? idx.topics.map((x: any) => String(x).toLowerCase()) : []
-        const idxBiz = Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.map((x: any) => String(x).toLowerCase()) : []
-        const idxTech = Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.map((x: any) => String(x).toLowerCase()) : []
-
-        const haystack = [name, tags, idxSummary, ...idxKeywords, ...idxTopics, ...idxBiz, ...idxTech].join(' | ')
-        let score = indexedBonus
-        for (const rawTerm of terms) {
-          const term = String(rawTerm || '').trim().toLowerCase()
-          if (term.length < 2) continue
-          if (name.includes(term)) score += 14
-          if (tags && tags.includes(term)) score += 10
-          if (idxKeywords.includes(term)) score += 12
-          if (idxTopics.includes(term)) score += 8
-          if (idxBiz.some((x: string) => x.includes(term))) score += 8
-          if (idxTech.some((x: string) => x.includes(term))) score += 8
-          if (haystack.includes(term)) score += 2
-        }
-        return score
-      }
-
-      const buildKnowledgeDescriptor = (k: any) => {
-        const idx = k?.index
-        const isIndexed = !!idx
-        const summary = isIndexed ? trimText(String(idx?.summary || ''), 220) : ''
-        const keywords = isIndexed && Array.isArray(idx?.keywords) ? idx.keywords.slice(0, 12).map((x: any) => String(x)) : []
-        const topics = isIndexed && Array.isArray(idx?.topics) ? idx.topics.slice(0, 8).map((x: any) => String(x)) : []
-        const businessProcesses = isIndexed && Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.slice(0, 8).map((x: any) => String(x)) : []
-        const technicalAreas = isIndexed && Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.slice(0, 8).map((x: any) => String(x)) : []
-        return {
-          name: String(k?.name || ''),
-          category: String(k?.category || ''),
-          tags: typeof k?.tags === 'string' ? k.tags : '',
-          isIndexed,
-          summary,
-          keywords,
-          topics,
-          businessProcesses,
-          technicalAreas
-        }
-      }
-
       updateStep('prepare', { status: 'running', detail: `模式：${selectionMode}` })
 
-      // 獲取知識庫內容
-      const { knowledgeStore } = await import('../stores/knowledge-store')
-      const activeKnowledge = knowledgeStore.getActiveKnowledge()
-      
-      console.log('[Terminal AI Analysis] Active knowledge entries:', activeKnowledge.length)
       
       // 判断是文件名还是错误/命令
       const isFilePath = /^[.\w\/-]+\.(ts|tsx|js|jsx|json|md|sh|py|css|html|txt|yml|yaml|toml|env|gitignore)$/i.test(text.trim())
@@ -906,164 +830,20 @@ ${fileContent.substring(0, 1500)}
       }
       
       // 建構知識庫 prompt（依目前設定的「知識庫選擇模式」挑選相關文檔）
-      updateStep('select', {
-        status: 'running',
-        detail: activeKnowledge.length > 0 ? `知識庫共 ${activeKnowledge.length} 個，挑選中...` : '未啟用知識庫'
-      })
-
       const copilotConfig = await window.electronAPI.copilot.getConfig()
       const model = copilotConfig?.model || 'gpt-4'
 
-      let selectedKnowledge: any[] = []
-      let knowledgePrompt = ''
       const querySeed = [text, fileContent ? trimText(fileContent, 800) : ''].filter(Boolean).join('\n')
-      const baseTerms = extractKeywords(querySeed)
+      const knowledge = await buildKnowledgePromptForInput({
+        selectionMode,
+        model,
+        seedText: querySeed,
+        chatTagPrefix: 'terminal',
+        reporter: (stepId, updates) => updateStep(stepId, updates)
+      })
 
-      if (activeKnowledge.length === 0) {
-        selectedKnowledge = []
-        updateStep('select', { status: 'completed', detail: '未啟用知識庫' })
-      } else if (selectionMode === 'keyword') {
-        const { smartSelect } = await import('../types/skill-selector')
-        const result = smartSelect(querySeed, [], activeKnowledge as any)
-        selectedKnowledge = (result.selectedKnowledge || []).slice(0, 5)
-        updateStep('select', { status: 'completed', detail: `關鍵詞挑選：${selectedKnowledge.length} 個` })
-      } else {
-        // ai / ai-deep / ai-ultra：先本地縮候選，再讓 AI 選更精準
-        let combinedTerms = [...baseTerms]
-
-        if (isDeepMode) {
-          // 深度：先做一次擴寫，補足同義詞/關聯詞
-          try {
-            const expandRes = await window.electronAPI.copilot.chat('terminal-knowledge-expand', {
-              messages: [
-                {
-                  role: 'system',
-                  content: '你是查詢擴寫助手。請把輸入的內容擴寫成多條可用於檢索的查詢。只輸出 JSON：{"queries":["..."],"keywords":["..."]}，不要 markdown。'
-                },
-                { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}` }
-              ],
-              model
-            })
-            const raw = String(expandRes?.content || '').trim()
-            const parsed = safeJsonParse<{ queries?: string[]; keywords?: string[] }>(raw)
-            const extra = [
-              ...(Array.isArray(parsed?.queries) ? parsed!.queries : []),
-              ...(Array.isArray(parsed?.keywords) ? parsed!.keywords : [])
-            ]
-              .map(s => String(s).trim())
-              .filter(Boolean)
-              .slice(0, 40)
-            combinedTerms = Array.from(new Set([...combinedTerms, ...extra]))
-          } catch {
-            // ignore
-          }
-        }
-
-        const scored = (activeKnowledge as any[])
-          .map((k: any) => ({ k, score: scoreKnowledgeEntry(k, combinedTerms) }))
-          .sort((a, b) => b.score - a.score)
-
-        const MAX_CANDIDATES = selectionMode === 'ai-ultra'
-          ? Math.min(40, Math.max(14, Math.floor(activeKnowledge.length * 0.25)))
-          : selectionMode === 'ai-deep'
-            ? Math.min(24, Math.max(10, Math.floor(activeKnowledge.length * 0.15)))
-            : Math.min(18, Math.max(8, Math.floor(activeKnowledge.length * 0.12)))
-
-        const candidates = scored
-          .filter(x => x.score > 0 || x.k?.index)
-          .slice(0, MAX_CANDIDATES)
-
-        if (candidates.length === 0) {
-          selectedKnowledge = []
-          updateStep('select', { status: 'completed', detail: '無候選知識庫（跳過）' })
-        } else {
-          const descriptors = candidates.map(c => buildKnowledgeDescriptor(c.k))
-          const candidateListPrompt = descriptors
-            .map((d, i) => {
-              const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
-              const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
-              const indexBlock = d.isIndexed
-                ? `\n   摘要: ${d.summary}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
-                : ''
-              return `${i + 1}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
-            })
-            .join('\n\n---\n\n')
-
-          const pickMax = selectionMode === 'ai-ultra' ? 8 : (selectionMode === 'ai-deep' ? 5 : 4)
-          const selectionSystemPrompt = `你是知識庫選擇助手。\n\n請從候選清單中選出最相關的文件（1-${pickMax} 個），寧缺毋濫。\n\n輸出格式：只回答候選清單的編號，用逗號分隔，例如：3,7,11。若完全無相關，回答：無。`
-
-          try {
-            const selRes = await window.electronAPI.copilot.chat('terminal-knowledge-select', {
-              messages: [
-                { role: 'system', content: selectionSystemPrompt },
-                { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}\n\n候選清單（共 ${descriptors.length}）：\n\n${candidateListPrompt}` }
-              ],
-              model
-            })
-
-            const content = String(selRes?.content || '')
-            const selectedIdx: number[] = []
-            if (content && !content.includes('無') && !content.includes('没有')) {
-              const matches = content.match(/\d+/g)
-              if (matches) selectedIdx.push(...matches.map(n => parseInt(n, 10) - 1))
-            }
-
-            const picked = selectedIdx
-              .filter(i => i >= 0 && i < candidates.length)
-              .map(i => candidates[i].k)
-
-            if (picked.length > 0) {
-              selectedKnowledge = picked
-              updateStep('select', { status: 'completed', detail: `候選 ${candidates.length} → 選中 ${selectedKnowledge.length} 個` })
-            } else {
-              const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
-              selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
-              updateStep('select', { status: 'completed', detail: `無結果，保底 ${selectedKnowledge.length} 個` })
-            }
-          } catch {
-            const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
-            selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
-            updateStep('select', { status: 'error', detail: `AI 選擇失敗，保底 ${selectedKnowledge.length} 個` })
-          }
-        }
-      }
-
-      const usedSources = selectedKnowledge.map((k: any) => String(k?.name || '')).filter(Boolean)
-
-      if (selectedKnowledge.length > 0) {
-        const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
-        const modelLimits = getModelKnowledgeLimit(model)
-        const MAX_KNOWLEDGE_LENGTH = Math.min(modelLimits.maxTotal, 40000)
-        const MAX_SINGLE_ENTRY = modelLimits.maxSingle
-        let totalLength = 0
-        const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
-
-        for (const k of selectedKnowledge) {
-          let entryContent = String(k?.content || '')
-          let truncated = false
-          if (entryContent.length > MAX_SINGLE_ENTRY) {
-            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
-            truncated = true
-          }
-          const entryText = `【${k.name}】\n${entryContent}`
-          if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
-            includedKnowledge.push({ name: String(k.name), content: entryContent, truncated })
-            totalLength += entryText.length
-          } else {
-            break
-          }
-        }
-
-        if (includedKnowledge.length > 0) {
-          knowledgePrompt = `\n\n## 📚 參考知識庫（${includedKnowledge.length} 個）\n\n` +
-            includedKnowledge
-              .map(item => {
-                const truncNote = item.truncated ? `\n(註：內容過長，已截取前 ${item.content.length.toLocaleString()} 字元)\n` : ''
-                return `### 【${item.name}】${truncNote}\n${item.content}`
-              })
-              .join('\n\n---\n\n')
-        }
-      }
+      const usedSources = knowledge.sources
+      const knowledgePrompt = knowledge.knowledgePrompt
 
       updateStep('analyze', { status: 'running', detail: `使用 ${model} 生成中...` })
 
@@ -1231,12 +1011,12 @@ ${fileContent.substring(0, 1500)}
       convertEol: true,
       allowProposedApi: true,
       allowTransparency: true,
-      scrollOnOutput: true
+      // xterm.js does not support scrollOnOutput; keep defaults.
     })
 
     const fitAddon = new FitAddon()
     const unicode11Addon = new Unicode11Addon()
-    const webLinksAddon = new WebLinksAddon((event, uri) => {
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
       // Open URL in default browser
       window.electronAPI.shell.openExternal(uri)
     })
@@ -1522,34 +1302,40 @@ ${fileContent.substring(0, 1500)}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         {/* AI 分析中的 loading */}
         {aiAnalyzing && (
-        <div style={{
-          position: 'absolute',
-          top: '12px',
-          right: '12px',
-          background: 'rgba(30, 64, 95, 0.95)',
-          border: '1px solid #3b82f6',
-          borderRadius: '8px',
-          padding: '12px 16px',
-          maxWidth: '300px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(10px)',
-          animation: 'slideIn 0.3s ease-out',
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}>
-          <span style={{
-            display: 'inline-block',
-            width: '16px',
-            height: '16px',
-            border: '2px solid #93c5fd',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite'
-          }} />
-          <span style={{ color: '#93c5fd', fontSize: '12px' }}>AI 分析中...</span>
-        </div>
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              background: 'rgba(30, 64, 95, 0.95)',
+              border: '1px solid #3b82f6',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              maxWidth: '420px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(10px)',
+              animation: 'slideIn 0.3s ease-out',
+              zIndex: 100
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: aiAnalysisSteps.length > 0 ? '10px' : 0 }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid #93c5fd',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}
+              />
+              <span style={{ color: '#93c5fd', fontSize: '12px' }}>AI 分析中...</span>
+            </div>
+
+            {/* Live steps (same behavior as Oracle tooltip) */}
+            <AIAnalysisStepsView steps={aiAnalysisSteps} compact />
+          </div>
         )}
         
         {/* 快速 AI 分析提示 (Ctrl+K) */}
@@ -1747,39 +1533,7 @@ ${fileContent.substring(0, 1500)}
               )}
 
               {showAiAnalysisSteps && aiAnalysisSteps.length > 0 && (
-                <div style={{
-                  fontSize: '11px',
-                  color: '#e2e8f0',
-                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{ color: '#93c5fd', fontWeight: 700, marginBottom: '6px' }}>🧭 處理步驟</div>
-                  {aiAnalysisSteps.map((s) => {
-                    const durationMs = s.startTime && s.endTime ? (s.endTime - s.startTime) : 0
-                    const duration = durationMs > 0 ? `${(durationMs / 1000).toFixed(1)}s` : ''
-                    const icon = s.status === 'completed' ? '✅' : s.status === 'running' ? '⏳' : s.status === 'error' ? '❌' : '▫️'
-                    return (
-                      <div key={s.id} style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '2px',
-                        padding: '6px 0',
-                        borderTop: '1px solid rgba(148, 163, 184, 0.12)'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                            <span>{icon}</span>
-                            <span style={{ color: '#e2e8f0', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.label}</span>
-                          </div>
-                          {duration && <span style={{ color: '#94a3b8' }}>{duration}</span>}
-                        </div>
-                        {s.detail && <div style={{ color: '#94a3b8' }}>{s.detail}</div>}
-                      </div>
-                    )
-                  })}
-                </div>
+                <AIAnalysisStepsView steps={aiAnalysisSteps} />
               )}
               
               {/* 分析结果 */}

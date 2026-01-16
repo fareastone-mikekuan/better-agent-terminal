@@ -26,8 +26,8 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [availableCopilotModels, setAvailableCopilotModels] = useState<string[]>([])
-  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false)
-  const [copilotModelsError, setCopilotModelsError] = useState<string>('')
+  const [, setCopilotModelsLoading] = useState(false)
+  const [, setCopilotModelsError] = useState<string>('')
   const [copilotConfig, setCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const [copilotSkills, setCopilotSkills] = useState(() => settingsStore.getCopilotSkills())
 
@@ -562,9 +562,6 @@ ${preview}
       const summaries: string[] = []
       let lastResponseModel: string | undefined
       let failedChunks = 0
-      
-      // 深度學習模式：保留最大限度的細節（大幅提升輸出限制避免壓縮）
-      const MAX_EXTRACT_CHARS_PER_PART = 60000
 
       for (let i = 0; i < chunks.length; i++) {
         setLearningStatus(`正在深度學習「${entry.name}」...\n處理第 ${i + 1}/${chunks.length} 部分 (已完成 ${summaries.length}/${chunks.length})`)
