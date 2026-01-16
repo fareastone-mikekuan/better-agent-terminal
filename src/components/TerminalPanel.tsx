@@ -39,6 +39,8 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
   const [aiInsight, setAiInsight] = useState<{ type: 'error' | 'warning' | 'info' | 'success' | 'running', message: string, suggestion?: string, startTime?: number } | null>(null)
+  const [aiInsightHistory, setAiInsightHistory] = useState<Array<{ id: string, ts: number, type: 'error' | 'warning' | 'info' | 'success', message: string, suggestion?: string, command?: string }>>([])
+  const [showAiInsightHistory, setShowAiInsightHistory] = useState(false)
   const [aiAnalyzing, setAiAnalyzing] = useState(false)  // AI 分析中
   const [aiAnalysisResult, setAiAnalysisResult] = useState<{ text: string, result: string, mode?: string, sources?: string[] } | null>(null)  // AI 分析结果
   const [aiAnalysisMinimized, setAiAnalysisMinimized] = useState(false)  // AI 分析结果是否缩小显示
@@ -55,6 +57,43 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const lastCommandOutputTimeRef = useRef<number | null>(null)
   const outputTailRef = useRef<string>('')
   const idleCompletionTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSunkCommandStartRef = useRef<number | null>(null)
+  const lastAutoAnalysisCommandStartRef = useRef<number | null>(null)
+
+  const getCommandFromCurrentInputLine = () => {
+    const terminal = terminalRef.current
+    if (!terminal) return null
+
+    try {
+      const buffer = terminal.buffer.active
+      // cursorY is relative to viewport; baseY is the scrollback offset.
+      const lineIndex = buffer.baseY + buffer.cursorY
+      const line = buffer.getLine(lineIndex)
+      const raw = (line ? line.translateToString(true) : '').replace(/\r/g, '')
+      const text = raw.trimEnd()
+      if (!text.trim()) return null
+
+      // Heuristic: split by the LAST prompt separator and take the tail as the command.
+      // This captures shell-completed text (e.g. after Tab completion), unlike key-by-key buffering.
+      const promptSepRe = /(?:^|\s)(PS\s+.+?>\s+)|([\$#%›»❯➜→>]\s+)/g
+      let lastIdx = -1
+      let lastLen = 0
+      for (const m of text.matchAll(promptSepRe)) {
+        lastIdx = m.index ?? -1
+        lastLen = m[0].length
+      }
+
+      if (lastIdx >= 0) {
+        const candidate = text.slice(lastIdx + lastLen).trim()
+        return candidate || null
+      }
+
+      // Fallback: if we can't detect prompt boundaries, return the whole line.
+      return text.trim() || null
+    } catch {
+      return null
+    }
+  }
 
   const stripAnsi = (text: string) => {
     // Remove ANSI escape sequences (colors, cursor moves, etc.)
@@ -104,13 +143,69 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     return null
   }
 
-  const markCommandCompleted = (type: 'success' | 'error' | 'warning', message: string, suggestion?: string) => {
-    if (insightTimeoutRef.current) {
-      clearTimeout(insightTimeoutRef.current)
+  const sinkInsightToHistory = (insight: { type: 'error' | 'warning' | 'info' | 'success', message: string, suggestion?: string, command?: string }) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setAiInsightHistory(prev => {
+      const next = [{ id, ts: Date.now(), ...insight }, ...prev]
+      return next.slice(0, 50)
+    })
+  }
+
+  const trimText = (value: string, maxLen: number) => {
+    const t = String(value || '').trim()
+    if (t.length <= maxLen) return t
+    return t.slice(0, maxLen) + '…'
+  }
+
+  const extractLogPaths = (data: string): string[] => {
+    const text = String(data || '').replace(/\r/g, '')
+    const found: string[] = []
+
+    // Common direct log paths
+    const unixLogRe = /(^|\s)(\/[\w@.\-~+\/,:=\[\]{}()]+\.log)\b/gm
+    const winLogRe = /(^|\s)([A-Za-z]:\\[^\s"']+\.log)\b/gm
+
+    let m: RegExpExecArray | null
+    while ((m = unixLogRe.exec(text))) found.push(m[2])
+    while ((m = winLogRe.exec(text))) found.push(m[2])
+
+    // npm / pnpm / yarn common hints
+    const lines = text.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!line) continue
+      if (/a complete log of this run can be found in:/i.test(line)) {
+        const next = (lines[i + 1] || '').trim()
+        if (next) found.push(next)
+      }
+      if (/yarn-error\.log/i.test(line)) found.push('yarn-error.log')
+      if (/npm-debug\.log/i.test(line)) found.push('npm-debug.log')
+      if (/pnpm-debug\.log/i.test(line)) found.push('pnpm-debug.log')
     }
+
+    const uniq = Array.from(new Set(found.map(s => s.trim()).filter(Boolean)))
+    return uniq.slice(0, 3)
+  }
+
+  const buildFailureSuggestion = (output: string) => {
+    const base = getSuggestion(output)
+    const logs = extractLogPaths(output)
+    if (logs.length === 0) return base
+    return `${base}｜🔎 可能的 Log：${logs.join(' ; ')}`
+  }
+
+  const markCommandCompleted = (type: 'success' | 'error' | 'warning', message: string, suggestion?: string) => {
+    // Completion/error should persist (do NOT auto-hide). We'll sink it to history once per command.
     if (idleCompletionTimerRef.current) {
       clearTimeout(idleCompletionTimerRef.current)
       idleCompletionTimerRef.current = null
+    }
+
+    const command = currentCommandRef.current || undefined
+    const startedAt = commandStartTimeRef.current
+    if (startedAt && lastSunkCommandStartRef.current !== startedAt) {
+      lastSunkCommandStartRef.current = startedAt
+      sinkInsightToHistory({ type, message, suggestion, command })
     }
 
     setAiInsight({
@@ -124,9 +219,19 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     isExecutingRef.current = false
     lastCommandOutputTimeRef.current = null
 
-    insightTimeoutRef.current = setTimeout(() => {
-      setAiInsight(null)
-    }, type === 'success' ? 5000 : 15000)
+    // keep visible until next command or manual close
+  }
+
+  const autoAnalyzeFailedCommand = (output: string, command: string | null, startedAt: number | null) => {
+    if (!startedAt) return
+    if (lastAutoAnalysisCommandStartRef.current === startedAt) return
+    lastAutoAnalysisCommandStartRef.current = startedAt
+
+    // Prefer the rolling tail so we capture context across chunks.
+    const snippet = trimText(outputTailRef.current || output, 5000)
+    const prompt = `分析這次指令執行失敗\n\n指令：${command || '(未知)'}\n\n錯誤輸出（截斷）：\n${snippet}`
+    // Fire-and-forget; UI will show steps + sources + result.
+    performAIAnalysis(prompt)
   }
 
   // 处理用户输入，追踪命令
@@ -149,7 +254,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     
     // Enter 键 - 用户按下回车执行命令
     if (data === '\r' || data === '\n') {
-      const command = commandBufferRef.current.trim()
+      const command = (getCommandFromCurrentInputLine() || commandBufferRef.current.trim()).trim()
       
       // 如果上一个命令还在执行：只有在“明显已经闲置一段时间”时，才作为兜底标记完成
       if (isExecutingRef.current && commandStartTimeRef.current) {
@@ -190,19 +295,13 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           clearTimeout(insightTimeoutRef.current)
         }
         
-        setAiInsight({
-          type: 'warning',
-          message: `命令被中斷${duration ? ` (耗時 ${duration}s)` : ''}`,
-          suggestion: currentCommandRef.current || ''
-        })
-        
-        commandStartTimeRef.current = null
-        currentCommandRef.current = null
-        isExecutingRef.current = false
-        
-        insightTimeoutRef.current = setTimeout(() => {
-          setAiInsight(null)
-        }, 5000)
+        // Interrupt should also persist + sink to history (no auto-hide)
+        const cmd = currentCommandRef.current
+        markCommandCompleted(
+          'warning',
+          `命令被中斷${duration ? ` (耗時 ${duration}s)` : ''}`,
+          cmd ? (cmd.length > 80 ? cmd.substring(0, 80) + '...' : cmd) : ''
+        )
       }
       commandBufferRef.current = ''
     }
@@ -233,6 +332,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       /^(curl|wget)\s+/i,               
       /^(git)\s+(push|pull|clone|fetch|commit|status|log|diff)/i,
       /^(ls|cat|echo|mkdir|rm|cp|mv|chmod|chown|find|grep)\b/i,  // 常见命令
+      /^(pwd)\b/i,  // pwd 命令
       /^(brew|apt|apt-get|yum|pip|pip3)\s+/i,  // 包管理
       /^(cd)\s+/i,  // cd 命令
     ]
@@ -246,9 +346,6 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     }
     
     if (shouldTrack) {
-      if (insightTimeoutRef.current) {
-        clearTimeout(insightTimeoutRef.current)
-      }
       if (idleCompletionTimerRef.current) {
         clearTimeout(idleCompletionTimerRef.current)
         idleCompletionTimerRef.current = null
@@ -331,11 +428,17 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           line.toLowerCase().includes('not found')
         ) || cleaned.substring(0, 100)
 
+        const cmd = currentCommandRef.current
+        const startedAt = commandStartTimeRef.current
+        const suggestion = buildFailureSuggestion(cleaned) + '｜已自動啟動 AI 分析'
+
         markCommandCompleted(
           'error',
           `${errorLine.trim().substring(0, 120)} (耗時 ${duration}s)`,
-          getSuggestion(cleaned)
+          suggestion
         )
+
+        autoAnalyzeFailedCommand(cleaned, cmd, startedAt)
         return
       }
       
@@ -399,10 +502,12 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           message: errorLine.trim().substring(0, 150),
           suggestion: getSuggestion(cleaned)
         })
-        
-        insightTimeoutRef.current = setTimeout(() => {
-          setAiInsight(null)
-        }, 10000)
+
+        sinkInsightToHistory({
+          type: 'error',
+          message: errorLine.trim().substring(0, 150),
+          suggestion: getSuggestion(cleaned)
+        })
         return
       }
       
@@ -423,10 +528,12 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           message: warningLine.trim().substring(0, 150),
           suggestion: '建議檢查警告原因，可能影響後續操作'
         })
-        
-        insightTimeoutRef.current = setTimeout(() => {
-          setAiInsight(null)
-        }, 8000)
+
+        sinkInsightToHistory({
+          type: 'warning',
+          message: warningLine.trim().substring(0, 150),
+          suggestion: '建議檢查警告原因，可能影響後續操作'
+        })
       }
     }
   }
@@ -1692,6 +1799,116 @@ ${fileContent.substring(0, 1500)}
         <div ref={containerRef} className="terminal-panel" style={{ flex: 1, minHeight: 0, width: '100%' }} />
       </div>
 
+      {/* 歷史訊息抽屜（不影響 layout，避免終端高度跳動） */}
+      {showAiInsightHistory && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 8,
+            right: 8,
+            bottom: 52 + 8,
+            maxHeight: 220,
+            overflow: 'auto',
+            zIndex: 250,
+            background: 'rgba(2, 6, 23, 0.92)',
+            border: '1px solid rgba(148, 163, 184, 0.25)',
+            borderRadius: 10,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(12px)'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 12px',
+            borderBottom: '1px solid rgba(148, 163, 184, 0.12)'
+          }}>
+            <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 700 }}>指令訊息紀錄</div>
+            <button
+              onClick={() => setShowAiInsightHistory(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: '2px 6px'
+              }}
+              title="收合"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{ padding: '8px 12px' }}>
+            {aiInsightHistory.length === 0 ? (
+              <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 0' }}>目前尚無紀錄</div>
+            ) : (
+              aiInsightHistory.map(item => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    padding: '8px 0',
+                    borderTop: '1px solid rgba(148, 163, 184, 0.10)'
+                  }}
+                >
+                  <div style={{
+                    width: 4,
+                    borderRadius: 999,
+                    backgroundColor: item.type === 'error' ? '#ef4444' :
+                                    item.type === 'warning' ? '#f59e0b' :
+                                    item.type === 'success' ? '#22c55e' : '#3b82f6'
+                  }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      minWidth: 0
+                    }}>
+                      <span style={{ fontSize: 12 }}>
+                        {item.type === 'error' ? '❌' : item.type === 'warning' ? '⚠️' : item.type === 'success' ? '✅' : '💡'}
+                      </span>
+                      <div style={{
+                        color: '#e2e8f0',
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {item.message}
+                      </div>
+                    </div>
+                    {item.command && (
+                      <div style={{
+                        marginTop: 2,
+                        color: '#93c5fd',
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {item.command}
+                      </div>
+                    )}
+                    {item.suggestion && (
+                      <div style={{ marginTop: 2, color: '#94a3b8', fontSize: 11, lineHeight: 1.35 }}>
+                        {item.suggestion}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 指令狀態/警示（固定高度，避免出現/消失造成輸入列跳動） */}
       <div
         style={{
@@ -1780,11 +1997,25 @@ ${fileContent.substring(0, 1500)}
           </div>
 
           <button
+            onClick={() => setShowAiInsightHistory(v => !v)}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(148, 163, 184, 0.22)',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              fontSize: '11px',
+              padding: '3px 8px',
+              borderRadius: 8,
+              flex: '0 0 auto'
+            }}
+            title={showAiInsightHistory ? '隱藏紀錄' : '顯示紀錄'}
+          >
+            {showAiInsightHistory ? '收合' : '紀錄'}
+          </button>
+
+          <button
             onClick={() => {
               setAiInsight(null)
-              if (insightTimeoutRef.current) {
-                clearTimeout(insightTimeoutRef.current)
-              }
               setTimeout(() => terminalRef.current?.focus(), 0)
             }}
             style={{
