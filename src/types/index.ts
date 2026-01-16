@@ -295,7 +295,7 @@ export interface CopilotConfig {
   };
   
   // 知識庫選擇策略
-  knowledgeSelectionMode?: 'keyword' | 'ai' | 'ai-deep'; // keyword: 關鍵詞匹配, ai: 單次AI選擇, ai-deep: 多輪AI檢索/重排
+  knowledgeSelectionMode?: 'keyword' | 'ai' | 'ai-deep' | 'ai-ultra'; // keyword: 關鍵詞匹配, ai: 單次AI選擇, ai-deep: 多輪AI檢索/重排, ai-ultra: 更激進的深度檢索
 }
 
 export interface CopilotMessage {

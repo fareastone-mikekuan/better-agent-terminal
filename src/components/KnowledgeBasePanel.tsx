@@ -19,6 +19,7 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [entries, setEntries] = useState(knowledgeStore.getEntries())
   const [isLearning, setIsLearning] = useState(false)
   const [learningStatus, setLearningStatus] = useState<string>('')
+  const [showKnowledgeSelectionModeHelp, setShowKnowledgeSelectionModeHelp] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<'uploadedAt' | 'name' | 'size' | 'learnedAt' | 'learnedSize'>('uploadedAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -29,6 +30,18 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [copilotModelsError, setCopilotModelsError] = useState<string>('')
   const [copilotConfig, setCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const [copilotSkills, setCopilotSkills] = useState(() => settingsStore.getCopilotSkills())
+
+  // Close selection mode help on Escape
+  useEffect(() => {
+    if (!showKnowledgeSelectionModeHelp) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowKnowledgeSelectionModeHelp(false)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showKnowledgeSelectionModeHelp])
 
   const extractVsdxToText = (arrayBuffer: ArrayBuffer, fileName: string): string => {
     const now = new Date().toLocaleString('zh-TW')
@@ -986,6 +999,154 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
+        {showKnowledgeSelectionModeHelp && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="知識庫選擇模式比較"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowKnowledgeSelectionModeHelp(false)
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px'
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 'min(960px, 96vw)',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                backgroundColor: '#1f1d1a',
+                border: '1px solid #3a3836',
+                borderRadius: '10px',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.45)'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 16px',
+                borderBottom: '1px solid #3a3836'
+              }}>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#dfdbc3' }}>
+                  📚 知識庫選擇模式比較
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowKnowledgeSelectionModeHelp(false)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
+                    border: '1px solid #3a3836',
+                    backgroundColor: '#2a2826',
+                    color: '#dfdbc3',
+                    cursor: 'pointer'
+                  }}
+                  title="關閉"
+                  aria-label="關閉"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ padding: '14px 16px' }}>
+                <div style={{
+                  color: '#888',
+                  fontSize: '12px',
+                  lineHeight: '1.6',
+                  marginBottom: '12px'
+                }}>
+                  這裡的「模式」決定你提問時系統怎麼挑選知識文檔、以及需要幾輪 Copilot API。
+                  （實際次數/耗時會受模型、文件量與問題長度影響。）
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: '12px',
+                    color: '#dfdbc3'
+                  }}>
+                    <thead>
+                      <tr>
+                        {['模式', '適合情境', '選檔/流程', '典型 API 次數', '速度/成本', '注意事項'].map((h) => (
+                          <th
+                            key={h}
+                            style={{
+                              textAlign: 'left',
+                              padding: '10px 10px',
+                              borderBottom: '1px solid #3a3836',
+                              backgroundColor: '#2a2826',
+                              position: 'sticky',
+                              top: 0,
+                              zIndex: 1
+                            }}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836', whiteSpace: 'nowrap' }}>🔍 keyword</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>快速查關鍵字、檔名很明確</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>本地關鍵詞匹配 → 直接載入 → 回答</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>通常 1 次</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>最快 / 最省 Token</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>語意理解弱，可能漏掉同義詞/隱性關聯</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836', whiteSpace: 'nowrap' }}>🤖 ai</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>一般問答、希望有語意選檔</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>AI 選檔 → 載入選中的文件 → 回答</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>通常 2 次</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>中等 / 中等 Token</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>選錯檔時品質會下降（但通常比 keyword 穩）</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836', whiteSpace: 'nowrap' }}>🧠 ai-deep</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>更準的選檔、問題模糊/跨文件</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>AI 擴寫查詢 → 本地縮小候選 → AI 重排 → 載入 → 回答</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>通常 3 次</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>較慢 / 更多 Token</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>遇到長文可能因 prompt 限制無法全文載入；會加入「索引補充」降低漏資訊風險</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836', whiteSpace: 'nowrap' }}>🔥 ai-ultra</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>最嚴格/最怕漏、希望保留最相關</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>同 ai-deep 流程（擴寫→縮候選→重排→載入→回答），但候選更大、保底更強、嘗試載入更多份（不足時加索引補充）</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>通常 3 次</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>最慢 / 最多 Token</td>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #3a3836' }}>適合重要問題；若文件非常多仍受 prompt 長度限制（但保底/索引補充更偏向「不漏」）</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{
+                  marginTop: '12px',
+                  color: '#888',
+                  fontSize: '12px'
+                }}>
+                  小技巧：如果你重視「速度」選 ai / keyword；重視「不漏」選 ai-deep / ai-ultra。
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tab Navigation */}
         <div style={{ 
           display: 'flex', 
@@ -1450,6 +1611,74 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                     </option>
                   ))
                 })()}
+              </select>
+            </div>
+
+            <div style={{
+              flex: 1,
+              padding: '12px',
+              backgroundColor: '#2a2826',
+              borderRadius: '6px',
+              border: '1px solid #3a3836'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                marginBottom: '8px'
+              }}>
+                <label style={{ fontSize: '13px', color: '#dfdbc3', fontWeight: 'bold' }}>
+                  📚 知識庫選擇模式
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowKnowledgeSelectionModeHelp(true)}
+                  title="查看四種模式比較"
+                  aria-label="查看四種模式比較"
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '999px',
+                    border: '1px solid #3a3836',
+                    backgroundColor: '#1f1d1a',
+                    color: '#dfdbc3',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    lineHeight: '18px',
+                    textAlign: 'center',
+                    padding: 0,
+                    flex: '0 0 auto'
+                  }}
+                >
+                  ?
+                </button>
+              </div>
+              <select
+                value={copilotConfig?.knowledgeSelectionMode || 'ai'}
+                onChange={async e => {
+                  const newConfig = {
+                    ...copilotConfig,
+                    knowledgeSelectionMode: e.target.value as 'keyword' | 'ai' | 'ai-deep' | 'ai-ultra'
+                  }
+                  setCopilotConfig(newConfig)
+                  await settingsStore.setCopilotConfig(newConfig)
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  backgroundColor: '#1f1d1a',
+                  color: '#dfdbc3',
+                  border: '1px solid #3a3836',
+                  borderRadius: '4px',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ai">🤖 AI 智能選擇</option>
+                <option value="ai-deep">🧠 AI 深度檢索</option>
+                <option value="ai-ultra">🔥 AI 超深度檢索</option>
+                <option value="keyword">🔍 關鍵詞匹配（快速）</option>
               </select>
             </div>
 

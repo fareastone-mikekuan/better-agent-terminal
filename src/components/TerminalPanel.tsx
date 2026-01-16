@@ -22,6 +22,17 @@ interface ContextMenu {
   selectedText?: string
 }
 
+type AIAnalysisStepStatus = 'pending' | 'running' | 'completed' | 'error'
+
+interface AIAnalysisStep {
+  id: string
+  label: string
+  status: AIAnalysisStepStatus
+  detail?: string
+  startTime?: number
+  endTime?: number
+}
+
 export function TerminalPanel({ terminalId, isActive = true, terminalType = 'terminal', oracleQueryResult }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -29,9 +40,11 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
   const [aiInsight, setAiInsight] = useState<{ type: 'error' | 'warning' | 'info' | 'success' | 'running', message: string, suggestion?: string, startTime?: number } | null>(null)
   const [aiAnalyzing, setAiAnalyzing] = useState(false)  // AI 分析中
-  const [aiAnalysisResult, setAiAnalysisResult] = useState<{ text: string, result: string } | null>(null)  // AI 分析结果
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<{ text: string, result: string, mode?: string, sources?: string[] } | null>(null)  // AI 分析结果
   const [aiAnalysisMinimized, setAiAnalysisMinimized] = useState(false)  // AI 分析结果是否缩小显示
   const [showQuickAIPrompt, setShowQuickAIPrompt] = useState(false)  // 顯示快速 AI 提示
+  const [aiAnalysisSteps, setAiAnalysisSteps] = useState<AIAnalysisStep[]>([])
+  const [showAiAnalysisSteps, setShowAiAnalysisSteps] = useState(false)
   const aiAnalysisTimerRef = useRef<NodeJS.Timeout | null>(null)
   const insightTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastKeypressRef = useRef<{ key: string, time: number } | null>(null)
@@ -39,6 +52,82 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
   const currentCommandRef = useRef<string | null>(null)
   const commandBufferRef = useRef<string>('')  // 追踪用户输入的命令
   const isExecutingRef = useRef<boolean>(false)  // 是否正在执行命令
+  const lastCommandOutputTimeRef = useRef<number | null>(null)
+  const outputTailRef = useRef<string>('')
+  const idleCompletionTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const stripAnsi = (text: string) => {
+    // Remove ANSI escape sequences (colors, cursor moves, etc.)
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\x1B\][^\x07]*\x07/g, '')
+  }
+
+  const classifyCommand = (command: string | null): 'fast' | 'medium' | 'heavy' => {
+    if (!command) return 'medium'
+    const trimmed = command.trim()
+    const lower = trimmed.toLowerCase()
+    const firstToken = (lower.split(/\s+/)[0] || '').trim()
+
+    const heavyPrefixes = [
+      'npm ', 'yarn ', 'pnpm ',
+      'docker ', 'kubectl ', 'terraform ',
+      'make', 'cmake', 'mvn', 'gradle',
+      'cargo ', 'go run',
+      'pip ', 'pip3 ',
+      'curl ', 'wget ',
+      'brew install', 'apt ', 'apt-get ', 'yum ',
+    ]
+    for (const p of heavyPrefixes) {
+      if (lower.startsWith(p)) return 'heavy'
+    }
+
+    const fastTokens = new Set([
+      'cd', 'ls', 'pwd', 'cat', 'echo', 'mkdir', 'rm', 'cp', 'mv', 'chmod', 'chown', 'find', 'grep',
+      'git',
+    ])
+    if (fastTokens.has(firstToken)) {
+      // Some git ops can take time, but most “status/log/diff” are fast.
+      if (firstToken === 'git') {
+        if (/(^|\s)(pull|push|clone|fetch)(\s|$)/.test(lower)) return 'heavy'
+        return 'fast'
+      }
+      return 'fast'
+    }
+
+    return 'medium'
+  }
+
+  const getIdleCompletionMs = (command: string | null) => {
+    const kind = classifyCommand(command)
+    if (kind === 'fast') return 700
+    if (kind === 'medium') return 3500
+    return null
+  }
+
+  const markCommandCompleted = (type: 'success' | 'error' | 'warning', message: string, suggestion?: string) => {
+    if (insightTimeoutRef.current) {
+      clearTimeout(insightTimeoutRef.current)
+    }
+    if (idleCompletionTimerRef.current) {
+      clearTimeout(idleCompletionTimerRef.current)
+      idleCompletionTimerRef.current = null
+    }
+
+    setAiInsight({
+      type,
+      message,
+      suggestion
+    })
+
+    commandStartTimeRef.current = null
+    currentCommandRef.current = null
+    isExecutingRef.current = false
+    lastCommandOutputTimeRef.current = null
+
+    insightTimeoutRef.current = setTimeout(() => {
+      setAiInsight(null)
+    }, type === 'success' ? 5000 : 15000)
+  }
 
   // 处理用户输入，追踪命令
   const handleUserInput = (data: string) => {
@@ -62,29 +151,24 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     if (data === '\r' || data === '\n') {
       const command = commandBufferRef.current.trim()
       
-      // 如果上一个命令还在执行，先标记为完成
+      // 如果上一个命令还在执行：只有在“明显已经闲置一段时间”时，才作为兜底标记完成
       if (isExecutingRef.current && commandStartTimeRef.current) {
-        const duration = Math.round((Date.now() - commandStartTimeRef.current) / 1000 * 10) / 10
-        const prevCommand = currentCommandRef.current
-        
-        if (insightTimeoutRef.current) {
-          clearTimeout(insightTimeoutRef.current)
+        const now = Date.now()
+        const lastOut = lastCommandOutputTimeRef.current
+        const idleForMs = lastOut ? (now - lastOut) : (now - commandStartTimeRef.current)
+        if (idleForMs > 1500) {
+          const duration = Math.round((now - commandStartTimeRef.current) / 1000 * 10) / 10
+          const prevCommand = currentCommandRef.current
+          markCommandCompleted(
+            'success',
+            `✅ 執行完成 (耗時 ${duration}s)`,
+            prevCommand ? (prevCommand.length > 50 ? prevCommand.substring(0, 50) + '...' : prevCommand) : ''
+          )
+          // 短暂显示后清除，准备显示新命令
+          setTimeout(() => {
+            if (command) startNewCommand(command)
+          }, 800)
         }
-        
-        setAiInsight({
-          type: 'success',
-          message: `✅ 執行完成 (耗時 ${duration}s)`,
-          suggestion: prevCommand ? (prevCommand.length > 50 ? prevCommand.substring(0, 50) + '...' : prevCommand) : ''
-        })
-        
-        // 短暂显示后清除，准备显示新命令
-        setTimeout(() => {
-          if (command) startNewCommand(command)
-        }, 800)
-        
-        commandStartTimeRef.current = null
-        currentCommandRef.current = null
-        isExecutingRef.current = false
       } else if (command) {
         startNewCommand(command)
       }
@@ -165,8 +249,13 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
       if (insightTimeoutRef.current) {
         clearTimeout(insightTimeoutRef.current)
       }
+      if (idleCompletionTimerRef.current) {
+        clearTimeout(idleCompletionTimerRef.current)
+        idleCompletionTimerRef.current = null
+      }
       
       commandStartTimeRef.current = Date.now()
+      lastCommandOutputTimeRef.current = commandStartTimeRef.current
       currentCommandRef.current = command
       isExecutingRef.current = true
       
@@ -176,49 +265,77 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
         suggestion: '請稍候...',
         startTime: commandStartTimeRef.current
       })
+
+      const idleMs = getIdleCompletionMs(command)
+      if (idleMs != null) {
+        idleCompletionTimerRef.current = setTimeout(() => {
+          if (!isExecutingRef.current || !commandStartTimeRef.current) return
+          const now = Date.now()
+          const duration = Math.round((now - commandStartTimeRef.current) / 1000 * 10) / 10
+          const cmd = currentCommandRef.current
+          markCommandCompleted(
+            'success',
+            `✅ 執行完成 (耗時 ${duration}s)`,
+            cmd ? (cmd.length > 50 ? cmd.substring(0, 50) + '...' : cmd) : ''
+          )
+        }, idleMs)
+      }
     }
   }
 
   // 智能分析输出内容，检测命令执行状态
   const analyzeOutputForInsights = (data: string) => {
-    const lowerData = data.toLowerCase()
+    const cleaned = stripAnsi(data).replace(/\r/g, '')
+    const lowerData = cleaned.toLowerCase()
+
+    // Keep a small rolling tail for prompt detection across chunk boundaries
+    outputTailRef.current = (outputTailRef.current + cleaned).slice(-8000)
     
     // 如果正在执行命令，检测完成状态
     if (isExecutingRef.current && commandStartTimeRef.current) {
       const duration = Math.round((Date.now() - commandStartTimeRef.current) / 1000 * 10) / 10
+
+      lastCommandOutputTimeRef.current = Date.now()
+
+      // Idle fallback: re-arm timer on every output chunk
+      const idleMs = getIdleCompletionMs(currentCommandRef.current)
+      if (idleMs != null) {
+        if (idleCompletionTimerRef.current) {
+          clearTimeout(idleCompletionTimerRef.current)
+        }
+        idleCompletionTimerRef.current = setTimeout(() => {
+          if (!isExecutingRef.current || !commandStartTimeRef.current) return
+          const now = Date.now()
+          const dur = Math.round((now - commandStartTimeRef.current) / 1000 * 10) / 10
+          const cmd = currentCommandRef.current
+          markCommandCompleted(
+            'success',
+            `✅ 執行完成 (耗時 ${dur}s)`,
+            cmd ? (cmd.length > 50 ? cmd.substring(0, 50) + '...' : cmd) : ''
+          )
+        }, idleMs)
+      }
       
       // 检测错误
       if (lowerData.includes('error') || lowerData.includes('failed') || lowerData.includes('exception') || 
           lowerData.includes('command not found') || lowerData.includes('permission denied') ||
           lowerData.includes('no such file or directory') || lowerData.includes('not found') ||
-          /exit(ed)?\s+(with\s+)?code\s+[1-9]/i.test(data)) {
+          /exit(ed)?\s+(with\s+)?code\s+[1-9]/i.test(cleaned)) {
         
-        if (insightTimeoutRef.current) {
-          clearTimeout(insightTimeoutRef.current)
-        }
-        
-        const errorLine = data.split('\n').find(line => 
+        const errorLine = cleaned.split('\n').find(line => 
           line.toLowerCase().includes('error') || 
           line.toLowerCase().includes('failed') ||
           line.toLowerCase().includes('command not found') ||
           line.toLowerCase().includes('permission denied') ||
           line.toLowerCase().includes('no such file or directory') ||
           line.toLowerCase().includes('not found')
-        ) || data.substring(0, 100)
-        
-        setAiInsight({
-          type: 'error',
-          message: `${errorLine.trim().substring(0, 120)} (耗時 ${duration}s)`,
-          suggestion: getSuggestion(data)
-        })
-        
-        commandStartTimeRef.current = null
-        currentCommandRef.current = null
-        isExecutingRef.current = false
-        
-        insightTimeoutRef.current = setTimeout(() => {
-          setAiInsight(null)
-        }, 15000)
+        ) || cleaned.substring(0, 100)
+
+        markCommandCompleted(
+          'error',
+          `${errorLine.trim().substring(0, 120)} (耗時 ${duration}s)`,
+          getSuggestion(cleaned)
+        )
         return
       }
       
@@ -230,29 +347,17 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
         /\w+@[\w-]+:[\w~\/-]+[\$#]\s*$/m,         // Linux bash: user@host:path$
         /^\s*[\$#>%]\s*$/m,                       // 单独一行只有提示符
         /\d+\s+\d+\s+[\w\-:\.]+\s*$/m,           // 某些系统显示时间和命令号
+        /(?:^|\n)[^\n]{0,200}(?:[\$#%›»❯➜→]\s*)$/m // 常见自定义 prompt 结尾符号
       ]
       
       for (const pattern of shellPromptPatterns) {
-        if (pattern.test(data)) {
-          if (insightTimeoutRef.current) {
-            clearTimeout(insightTimeoutRef.current)
-          }
-          
+        if (pattern.test(outputTailRef.current)) {
           const command = currentCommandRef.current
-          
-          setAiInsight({
-            type: 'success',
-            message: `✅ 執行完成 (耗時 ${duration}s)`,
-            suggestion: command ? (command.length > 50 ? command.substring(0, 50) + '...' : command) : ''
-          })
-          
-          commandStartTimeRef.current = null
-          currentCommandRef.current = null
-          isExecutingRef.current = false
-          
-          insightTimeoutRef.current = setTimeout(() => {
-            setAiInsight(null)
-          }, 5000)
+          markCommandCompleted(
+            'success',
+            `✅ 執行完成 (耗時 ${duration}s)`,
+            command ? (command.length > 50 ? command.substring(0, 50) + '...' : command) : ''
+          )
           return
         }
       }
@@ -281,18 +386,18 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           clearTimeout(insightTimeoutRef.current)
         }
         
-        const errorLine = data.split('\n').find(line => 
+        const errorLine = cleaned.split('\n').find(line => 
           line.toLowerCase().includes('error') || 
           line.toLowerCase().includes('failed') ||
           line.toLowerCase().includes('command not found') ||
           line.toLowerCase().includes('permission denied') ||
           line.toLowerCase().includes('no such file or directory')
-        ) || data.substring(0, 100)
+        ) || cleaned.substring(0, 100)
         
         setAiInsight({
           type: 'error',
           message: errorLine.trim().substring(0, 150),
-          suggestion: getSuggestion(data)
+          suggestion: getSuggestion(cleaned)
         })
         
         insightTimeoutRef.current = setTimeout(() => {
@@ -307,11 +412,11 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           clearTimeout(insightTimeoutRef.current)
         }
         
-        const warningLine = data.split('\n').find(line => 
+        const warningLine = cleaned.split('\n').find(line => 
           line.toLowerCase().includes('warning') || 
           line.toLowerCase().includes('warn') ||
           line.toLowerCase().includes('deprecated')
-        ) || data.substring(0, 100)
+        ) || cleaned.substring(0, 100)
         
         setAiInsight({
           type: 'warning',
@@ -458,6 +563,8 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     setAiAnalysisResult(null)
     setAiAnalysisMinimized(false)
     setContextMenu(null)
+    setShowAiAnalysisSteps(true)
+    setAiAnalysisSteps([])
     
     // 清除之前的定时器
     if (aiAnalysisTimerRef.current) {
@@ -465,6 +572,109 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
     }
     
     try {
+      const copilotConfigFromStore = settingsStore.getCopilotConfig()
+      const selectionMode = copilotConfigFromStore?.knowledgeSelectionMode || 'ai'
+      const isDeepMode = selectionMode === 'ai-deep' || selectionMode === 'ai-ultra'
+
+      const steps: AIAnalysisStep[] = [
+        { id: 'prepare', label: '🧩 判斷輸入與準備 [本地]', status: 'pending' },
+        {
+          id: 'select',
+          label: isDeepMode
+            ? '📚 深度挑選知識庫 [AI + 本地]'
+            : (selectionMode === 'ai' ? '📚 AI 挑選知識庫 [AI]' : '📚 關鍵詞挑選知識庫 [本地]'),
+          status: 'pending'
+        },
+        { id: 'analyze', label: '✨ 生成分析結果 [AI]', status: 'pending' }
+      ]
+      setAiAnalysisSteps(steps)
+
+      const updateStep = (stepId: string, updates: Partial<AIAnalysisStep>) => {
+        setAiAnalysisSteps(prev => prev.map(s =>
+          s.id === stepId
+            ? {
+                ...s,
+                ...updates,
+                ...(updates.status === 'running' && !s.startTime ? { startTime: Date.now() } : {}),
+                ...(updates.status === 'completed' || updates.status === 'error' ? { endTime: Date.now() } : {})
+              }
+            : s
+        ))
+      }
+
+      const safeJsonParse = <T,>(value: string): T | null => {
+        try {
+          return JSON.parse(value) as T
+        } catch {
+          return null
+        }
+      }
+
+      const trimText = (value: string, maxLen: number) => {
+        const t = String(value || '').trim()
+        if (t.length <= maxLen) return t
+        return t.slice(0, maxLen) + '…'
+      }
+
+      const extractKeywords = (question: string) => {
+        const stopWords = ['如何', '怎麼', '什麼', '為什麼', '是', '的', '嗎', '呢', '吧', '啊', '了', '我', '你', '他', '要', '能', '會', '有', '在', '到']
+        return question
+          .split(/[\s,，、。！？;；:：()\[\]{}<>\n\r\t]+/)
+          .map(w => w.trim())
+          .filter(word => word.length >= 2 && !stopWords.includes(word))
+          .slice(0, 40)
+      }
+
+      const scoreKnowledgeEntry = (k: any, terms: string[]) => {
+        const name = String(k?.name || '').toLowerCase()
+        const tags = (typeof k?.tags === 'string' ? k.tags : '').toLowerCase()
+        const idx = k?.index
+        const indexedBonus = idx ? 6 : 0
+        const idxSummary = String(idx?.summary || '').toLowerCase()
+        const idxKeywords = Array.isArray(idx?.keywords) ? idx.keywords.map((x: any) => String(x).toLowerCase()) : []
+        const idxTopics = Array.isArray(idx?.topics) ? idx.topics.map((x: any) => String(x).toLowerCase()) : []
+        const idxBiz = Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.map((x: any) => String(x).toLowerCase()) : []
+        const idxTech = Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.map((x: any) => String(x).toLowerCase()) : []
+
+        const haystack = [name, tags, idxSummary, ...idxKeywords, ...idxTopics, ...idxBiz, ...idxTech].join(' | ')
+        let score = indexedBonus
+        for (const rawTerm of terms) {
+          const term = String(rawTerm || '').trim().toLowerCase()
+          if (term.length < 2) continue
+          if (name.includes(term)) score += 14
+          if (tags && tags.includes(term)) score += 10
+          if (idxKeywords.includes(term)) score += 12
+          if (idxTopics.includes(term)) score += 8
+          if (idxBiz.some((x: string) => x.includes(term))) score += 8
+          if (idxTech.some((x: string) => x.includes(term))) score += 8
+          if (haystack.includes(term)) score += 2
+        }
+        return score
+      }
+
+      const buildKnowledgeDescriptor = (k: any) => {
+        const idx = k?.index
+        const isIndexed = !!idx
+        const summary = isIndexed ? trimText(String(idx?.summary || ''), 220) : ''
+        const keywords = isIndexed && Array.isArray(idx?.keywords) ? idx.keywords.slice(0, 12).map((x: any) => String(x)) : []
+        const topics = isIndexed && Array.isArray(idx?.topics) ? idx.topics.slice(0, 8).map((x: any) => String(x)) : []
+        const businessProcesses = isIndexed && Array.isArray(idx?.businessProcesses) ? idx.businessProcesses.slice(0, 8).map((x: any) => String(x)) : []
+        const technicalAreas = isIndexed && Array.isArray(idx?.technicalAreas) ? idx.technicalAreas.slice(0, 8).map((x: any) => String(x)) : []
+        return {
+          name: String(k?.name || ''),
+          category: String(k?.category || ''),
+          tags: typeof k?.tags === 'string' ? k.tags : '',
+          isIndexed,
+          summary,
+          keywords,
+          topics,
+          businessProcesses,
+          technicalAreas
+        }
+      }
+
+      updateStep('prepare', { status: 'running', detail: `模式：${selectionMode}` })
+
       // 獲取知識庫內容
       const { knowledgeStore } = await import('../stores/knowledge-store')
       const activeKnowledge = knowledgeStore.getActiveKnowledge()
@@ -505,6 +715,13 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType = 'ter
           fileContent = null
         }
       }
+
+      updateStep('prepare', {
+        status: 'completed',
+        detail: isFilePath
+          ? (fileContent ? `已讀取檔案內容（${fileContent.length.toLocaleString()} 字元）` : '判定為檔案，但讀取失敗/略過')
+          : (isError ? '判定為錯誤訊息' : (isCommand ? '判定為命令' : '一般文字/片段'))
+      })
       
       if (isFilePath && isExecutable) {
         if (fileContent) {
@@ -581,49 +798,168 @@ ${fileContent.substring(0, 1500)}
 這是什麼？有什麼含義？`
       }
       
-      // 建構知識庫 prompt
+      // 建構知識庫 prompt（依目前設定的「知識庫選擇模式」挑選相關文檔）
+      updateStep('select', {
+        status: 'running',
+        detail: activeKnowledge.length > 0 ? `知識庫共 ${activeKnowledge.length} 個，挑選中...` : '未啟用知識庫'
+      })
+
+      const copilotConfig = await window.electronAPI.copilot.getConfig()
+      const model = copilotConfig?.model || 'gpt-4'
+
+      let selectedKnowledge: any[] = []
       let knowledgePrompt = ''
-      if (activeKnowledge.length > 0) {
+      const querySeed = [text, fileContent ? trimText(fileContent, 800) : ''].filter(Boolean).join('\n')
+      const baseTerms = extractKeywords(querySeed)
+
+      if (activeKnowledge.length === 0) {
+        selectedKnowledge = []
+        updateStep('select', { status: 'completed', detail: '未啟用知識庫' })
+      } else if (selectionMode === 'keyword') {
+        const { smartSelect } = await import('../types/skill-selector')
+        const result = smartSelect(querySeed, [], activeKnowledge as any)
+        selectedKnowledge = (result.selectedKnowledge || []).slice(0, 5)
+        updateStep('select', { status: 'completed', detail: `關鍵詞挑選：${selectedKnowledge.length} 個` })
+      } else {
+        // ai / ai-deep / ai-ultra：先本地縮候選，再讓 AI 選更精準
+        let combinedTerms = [...baseTerms]
+
+        if (isDeepMode) {
+          // 深度：先做一次擴寫，補足同義詞/關聯詞
+          try {
+            const expandRes = await window.electronAPI.copilot.chat('terminal-knowledge-expand', {
+              messages: [
+                {
+                  role: 'system',
+                  content: '你是查詢擴寫助手。請把輸入的內容擴寫成多條可用於檢索的查詢。只輸出 JSON：{"queries":["..."],"keywords":["..."]}，不要 markdown。'
+                },
+                { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}` }
+              ],
+              model
+            })
+            const raw = String(expandRes?.content || '').trim()
+            const parsed = safeJsonParse<{ queries?: string[]; keywords?: string[] }>(raw)
+            const extra = [
+              ...(Array.isArray(parsed?.queries) ? parsed!.queries : []),
+              ...(Array.isArray(parsed?.keywords) ? parsed!.keywords : [])
+            ]
+              .map(s => String(s).trim())
+              .filter(Boolean)
+              .slice(0, 40)
+            combinedTerms = Array.from(new Set([...combinedTerms, ...extra]))
+          } catch {
+            // ignore
+          }
+        }
+
+        const scored = (activeKnowledge as any[])
+          .map((k: any) => ({ k, score: scoreKnowledgeEntry(k, combinedTerms) }))
+          .sort((a, b) => b.score - a.score)
+
+        const MAX_CANDIDATES = selectionMode === 'ai-ultra'
+          ? Math.min(40, Math.max(14, Math.floor(activeKnowledge.length * 0.25)))
+          : selectionMode === 'ai-deep'
+            ? Math.min(24, Math.max(10, Math.floor(activeKnowledge.length * 0.15)))
+            : Math.min(18, Math.max(8, Math.floor(activeKnowledge.length * 0.12)))
+
+        const candidates = scored
+          .filter(x => x.score > 0 || x.k?.index)
+          .slice(0, MAX_CANDIDATES)
+
+        if (candidates.length === 0) {
+          selectedKnowledge = []
+          updateStep('select', { status: 'completed', detail: '無候選知識庫（跳過）' })
+        } else {
+          const descriptors = candidates.map(c => buildKnowledgeDescriptor(c.k))
+          const candidateListPrompt = descriptors
+            .map((d, i) => {
+              const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
+              const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
+              const indexBlock = d.isIndexed
+                ? `\n   摘要: ${d.summary}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
+                : ''
+              return `${i + 1}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
+            })
+            .join('\n\n---\n\n')
+
+          const pickMax = selectionMode === 'ai-ultra' ? 8 : (selectionMode === 'ai-deep' ? 5 : 4)
+          const selectionSystemPrompt = `你是知識庫選擇助手。\n\n請從候選清單中選出最相關的文件（1-${pickMax} 個），寧缺毋濫。\n\n輸出格式：只回答候選清單的編號，用逗號分隔，例如：3,7,11。若完全無相關，回答：無。`
+
+          try {
+            const selRes = await window.electronAPI.copilot.chat('terminal-knowledge-select', {
+              messages: [
+                { role: 'system', content: selectionSystemPrompt },
+                { role: 'user', content: `內容：\n${trimText(querySeed, 1200)}\n\n候選清單（共 ${descriptors.length}）：\n\n${candidateListPrompt}` }
+              ],
+              model
+            })
+
+            const content = String(selRes?.content || '')
+            const selectedIdx: number[] = []
+            if (content && !content.includes('無') && !content.includes('没有')) {
+              const matches = content.match(/\d+/g)
+              if (matches) selectedIdx.push(...matches.map(n => parseInt(n, 10) - 1))
+            }
+
+            const picked = selectedIdx
+              .filter(i => i >= 0 && i < candidates.length)
+              .map(i => candidates[i].k)
+
+            if (picked.length > 0) {
+              selectedKnowledge = picked
+              updateStep('select', { status: 'completed', detail: `候選 ${candidates.length} → 選中 ${selectedKnowledge.length} 個` })
+            } else {
+              const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
+              selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
+              updateStep('select', { status: 'completed', detail: `無結果，保底 ${selectedKnowledge.length} 個` })
+            }
+          } catch {
+            const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
+            selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
+            updateStep('select', { status: 'error', detail: `AI 選擇失敗，保底 ${selectedKnowledge.length} 個` })
+          }
+        }
+      }
+
+      const usedSources = selectedKnowledge.map((k: any) => String(k?.name || '')).filter(Boolean)
+
+      if (selectedKnowledge.length > 0) {
         const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
-        const copilotConfig = await window.electronAPI.copilot.getConfig()
-        const modelLimits = getModelKnowledgeLimit(copilotConfig?.model || 'gpt-4')
-        
-        const MAX_KNOWLEDGE_LENGTH = Math.min(modelLimits.maxTotal, 50000) // 終端分析限制較小
+        const modelLimits = getModelKnowledgeLimit(model)
+        const MAX_KNOWLEDGE_LENGTH = Math.min(modelLimits.maxTotal, 40000)
         const MAX_SINGLE_ENTRY = modelLimits.maxSingle
         let totalLength = 0
-        const includedKnowledge: Array<{ name: string; content: string }> = []
-        
-        for (const k of activeKnowledge) {
-          let entryContent = k.content
-          
-          // 截斷過大的單個條目
+        const includedKnowledge: Array<{ name: string; content: string; truncated: boolean }> = []
+
+        for (const k of selectedKnowledge) {
+          let entryContent = String(k?.content || '')
+          let truncated = false
           if (entryContent.length > MAX_SINGLE_ENTRY) {
-            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY) + '\n...(內容已截斷)'
+            entryContent = entryContent.substring(0, MAX_SINGLE_ENTRY)
+            truncated = true
           }
-          
           const entryText = `【${k.name}】\n${entryContent}`
-          
           if (totalLength + entryText.length < MAX_KNOWLEDGE_LENGTH) {
-            includedKnowledge.push({ name: k.name, content: entryContent })
+            includedKnowledge.push({ name: String(k.name), content: entryContent, truncated })
             totalLength += entryText.length
           } else {
             break
           }
         }
-        
+
         if (includedKnowledge.length > 0) {
           knowledgePrompt = `\n\n## 📚 參考知識庫（${includedKnowledge.length} 個）\n\n` +
-            includedKnowledge.map(item => `### ${item.name}\n\n${item.content}`).join('\n\n---\n\n')
-          
-          console.log('[Terminal AI Analysis] Included knowledge:', {
-            count: includedKnowledge.length,
-            totalLength: totalLength,
-            names: includedKnowledge.map(k => k.name)
-          })
+            includedKnowledge
+              .map(item => {
+                const truncNote = item.truncated ? `\n(註：內容過長，已截取前 ${item.content.length.toLocaleString()} 字元)\n` : ''
+                return `### 【${item.name}】${truncNote}\n${item.content}`
+              })
+              .join('\n\n---\n\n')
         }
       }
-      
-      const copilotConfig = await window.electronAPI.copilot.getConfig()
+
+      updateStep('analyze', { status: 'running', detail: `使用 ${model} 生成中...` })
+
       const response = await window.electronAPI.copilot.chat('terminal-analysis', {
         messages: [
           { 
@@ -632,19 +968,25 @@ ${fileContent.substring(0, 1500)}
           },
           { role: 'user', content: promptContent }
         ],
-        model: copilotConfig?.model || 'gpt-4'
+        model
       })
       
       if (response.error) {
         setAiAnalysisResult({
           text: text.length > 50 ? text.substring(0, 50) + '...' : text,
-          result: `分析失敗：${response.error}`
+          result: `分析失敗：${response.error}`,
+          mode: selectionMode,
+          sources: usedSources
         })
+        updateStep('analyze', { status: 'error', detail: '分析失敗' })
       } else {
         setAiAnalysisResult({
           text: text.length > 50 ? text.substring(0, 50) + '...' : text,
-          result: response.content || '無法獲取分析結果'
+          result: response.content || '無法獲取分析結果',
+          mode: selectionMode,
+          sources: usedSources
         })
+        updateStep('analyze', { status: 'completed', detail: '分析完成' })
         
         // 5秒后自动缩小
         aiAnalysisTimerRef.current = setTimeout(() => {
@@ -656,6 +998,11 @@ ${fileContent.substring(0, 1500)}
         text: text.length > 50 ? text.substring(0, 50) + '...' : text,
         result: '分析失敗：' + (error instanceof Error ? error.message : String(error))
       })
+      setAiAnalysisSteps(prev => prev.map(s =>
+        (s.status === 'pending' || s.status === 'running')
+          ? { ...s, status: 'error', endTime: Date.now() }
+          : s
+      ))
     } finally {
       setAiAnalyzing(false)
     }
@@ -977,9 +1324,16 @@ ${fileContent.substring(0, 1500)}
     const resizeObserver = new ResizeObserver(() => {
       // Only resize if terminal is currently active
       if (isActive) {
+        const buffer = terminal.buffer.active
+        const wasAtBottom = Math.abs(buffer.baseY - buffer.viewportY) <= 1
+
         fitAddon.fit()
         const { cols, rows } = terminal
         window.electronAPI.pty.resize(terminalId, cols, rows)
+
+        if (wasAtBottom) {
+          terminal.scrollToBottom()
+        }
       }
     })
     resizeObserver.observe(containerRef.current)
@@ -998,9 +1352,15 @@ ${fileContent.substring(0, 1500)}
 
     // Initial resize
     setTimeout(() => {
+      const buffer = terminal.buffer.active
+      const wasAtBottom = Math.abs(buffer.baseY - buffer.viewportY) <= 1
       fitAddon.fit()
       const { cols, rows } = terminal
       window.electronAPI.pty.resize(terminalId, cols, rows)
+
+      if (wasAtBottom) {
+        terminal.scrollToBottom()
+      }
     }, 100)
 
     // Subscribe to settings changes for font and color updates
@@ -1016,13 +1376,31 @@ ${fileContent.substring(0, 1500)}
         cursor: newColors.cursor,
         cursorAccent: newColors.background
       }
+      const buffer = terminal.buffer.active
+      const wasAtBottom = Math.abs(buffer.baseY - buffer.viewportY) <= 1
+
       fitAddon.fit()
       const { cols, rows } = terminal
       window.electronAPI.pty.resize(terminalId, cols, rows)
+
+      if (wasAtBottom) {
+        terminal.scrollToBottom()
+      }
     })
 
     return () => {
       clearInterval(saveBufferInterval)
+      if (insightTimeoutRef.current) {
+        clearTimeout(insightTimeoutRef.current)
+      }
+      if (idleCompletionTimerRef.current) {
+        clearTimeout(idleCompletionTimerRef.current)
+        idleCompletionTimerRef.current = null
+      }
+      if (aiAnalysisTimerRef.current) {
+        clearTimeout(aiAnalysisTimerRef.current)
+        aiAnalysisTimerRef.current = null
+      }
       unsubscribeOutput()
       unsubscribeExit()
       unsubscribeSettings()
@@ -1033,139 +1411,10 @@ ${fileContent.substring(0, 1500)}
   }, [terminalId])
 
   return (
-    <div style={{ position: 'relative', height: '100%', width: '100%' }}>
-      {/* AI智能提示 - 自动检测错误/警告时显示 */}
-      {aiInsight && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            zIndex: 200,
-            backgroundColor: aiInsight.type === 'error' ? 'rgba(127, 29, 29, 0.96)' : 
-                            aiInsight.type === 'warning' ? 'rgba(120, 53, 15, 0.96)' : 
-                            aiInsight.type === 'success' ? 'rgba(20, 83, 45, 0.96)' :
-                            aiInsight.type === 'running' ? 'rgba(30, 64, 95, 0.96)' :
-                            'rgba(30, 58, 95, 0.96)',
-            border: `2px solid ${aiInsight.type === 'error' ? '#ef4444' : 
-                                 aiInsight.type === 'warning' ? '#f59e0b' : 
-                                 aiInsight.type === 'success' ? '#22c55e' :
-                                 aiInsight.type === 'running' ? '#3b82f6' : '#3b82f6'}`,
-            borderRadius: '12px',
-            padding: '14px 18px',
-            maxWidth: '420px',
-            boxShadow: aiInsight.type === 'error' 
-              ? '0 8px 32px rgba(239, 68, 68, 0.3), 0 4px 16px rgba(0, 0, 0, 0.6)' 
-              : '0 8px 24px rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(12px)',
-            animation: 'slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          {/* 关闭按钮 */}
-          <button
-            onClick={() => {
-              setAiInsight(null)
-              if (insightTimeoutRef.current) {
-                clearTimeout(insightTimeoutRef.current)
-              }
-            }}
-            style={{
-              position: 'absolute',
-              top: '4px',
-              right: '6px',
-              background: 'transparent',
-              border: 'none',
-              color: '#9ca3af',
-              cursor: 'pointer',
-              fontSize: '14px',
-              padding: '2px 6px'
-            }}
-          >
-            ✕
-          </button>
-          
-          {/* 标题 */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '8px',
-            paddingRight: '20px'
-          }}>
-            <span style={{ fontSize: '16px' }}>
-              {aiInsight.type === 'error' ? '❌' : 
-               aiInsight.type === 'warning' ? '⚠️' : 
-               aiInsight.type === 'success' ? '✅' :
-               aiInsight.type === 'running' ? '🔄' : '💡'}
-            </span>
-            <span style={{
-              fontSize: '12px',
-              fontWeight: 'bold',
-              color: aiInsight.type === 'error' ? '#fca5a5' : 
-                     aiInsight.type === 'warning' ? '#fcd34d' : 
-                     aiInsight.type === 'success' ? '#86efac' :
-                     aiInsight.type === 'running' ? '#93c5fd' : '#93c5fd',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              {aiInsight.type === 'error' ? 'AI 偵測到錯誤' : 
-               aiInsight.type === 'warning' ? 'AI 偵測到警告' : 
-               aiInsight.type === 'success' ? '執行完成' :
-               aiInsight.type === 'running' ? '正在執行' : 'AI 提示'}
-              {aiInsight.type === 'running' && (
-                <span style={{
-                  display: 'inline-block',
-                  width: '12px',
-                  height: '12px',
-                  border: '2px solid #93c5fd',
-                  borderTopColor: 'transparent',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }} />
-              )}
-            </span>
-          </div>
-          
-          {/* 错误信息 */}
-          <div style={{
-            fontSize: '11px',
-            color: '#e2e8f0',
-            fontFamily: 'monospace',
-            backgroundColor: 'rgba(0, 0, 0, 0.3)',
-            padding: '8px',
-            borderRadius: '4px',
-            marginBottom: '8px',
-            lineHeight: '1.4',
-            wordBreak: 'break-word'
-          }}>
-            {aiInsight.message}
-          </div>
-          
-          {/* AI建议 */}
-          {aiInsight.suggestion && (
-            <div style={{
-              fontSize: '11px',
-              color: '#d1d5db',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '6px',
-              lineHeight: '1.4'
-            }}>
-              <span style={{ color: aiInsight.type === 'success' ? '#22c55e' : 
-                                    aiInsight.type === 'running' ? '#60a5fa' : '#fbbf24' }}>
-                {aiInsight.type === 'success' ? '📋' : 
-                 aiInsight.type === 'running' ? '⏱️' : '💡'}
-              </span>
-              <span>{aiInsight.suggestion}</span>
-            </div>
-          )}
-        </div>
-      )}
-      
-      {/* AI 分析中的 loading */}
-      {aiAnalyzing && (
+    <div style={{ position: 'relative', height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        {/* AI 分析中的 loading */}
+        {aiAnalyzing && (
         <div style={{
           position: 'absolute',
           top: '12px',
@@ -1194,10 +1443,10 @@ ${fileContent.substring(0, 1500)}
           }} />
           <span style={{ color: '#93c5fd', fontSize: '12px' }}>AI 分析中...</span>
         </div>
-      )}
-      
-      {/* 快速 AI 分析提示 (Ctrl+K) */}
-      {showQuickAIPrompt && (
+        )}
+        
+        {/* 快速 AI 分析提示 (Ctrl+K) */}
+        {showQuickAIPrompt && (
         <div style={{
           position: 'absolute',
           top: '50%',
@@ -1239,10 +1488,10 @@ ${fileContent.substring(0, 1500)}
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>再次按 Ctrl+K 可重新分析</span>
           </div>
         </div>
-      )}
-      
-      {/* AI 分析结果 */}
-      {aiAnalysisResult && !aiAnalyzing && (
+        )}
+        
+        {/* AI 分析结果 */}
+        {aiAnalysisResult && !aiAnalyzing && (
         <div 
           onMouseEnter={() => {
             setAiAnalysisMinimized(false)
@@ -1337,6 +1586,94 @@ ${fileContent.substring(0, 1500)}
               }}>
                 {aiAnalysisResult.text}
               </div>
+
+              {/* 模式/來源 */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                marginBottom: '8px'
+              }}>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#cbd5e1'
+                }}>
+                  模式：<span style={{ color: '#93c5fd', fontWeight: 700 }}>{aiAnalysisResult.mode || '（未知）'}</span>
+                </div>
+                {aiAnalysisSteps.length > 0 && (
+                  <button
+                    onClick={() => setShowAiAnalysisSteps(v => !v)}
+                    style={{
+                      fontSize: '11px',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #334155',
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      color: '#cbd5e1',
+                      cursor: 'pointer'
+                    }}
+                    title={showAiAnalysisSteps ? '隱藏處理步驟' : '顯示處理步驟'}
+                  >
+                    {showAiAnalysisSteps ? '隱藏步驟' : '顯示步驟'}
+                  </button>
+                )}
+              </div>
+
+              {aiAnalysisResult.sources && aiAnalysisResult.sources.length > 0 && (
+                <div style={{
+                  fontSize: '11px',
+                  color: '#d1d5db',
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  marginBottom: '8px',
+                  lineHeight: '1.4'
+                }}>
+                  <div style={{ color: '#93c5fd', fontWeight: 700, marginBottom: '6px' }}>📚 使用的知識來源</div>
+                  {aiAnalysisResult.sources.map((name, i) => (
+                    <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      • {name}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showAiAnalysisSteps && aiAnalysisSteps.length > 0 && (
+                <div style={{
+                  fontSize: '11px',
+                  color: '#e2e8f0',
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{ color: '#93c5fd', fontWeight: 700, marginBottom: '6px' }}>🧭 處理步驟</div>
+                  {aiAnalysisSteps.map((s) => {
+                    const durationMs = s.startTime && s.endTime ? (s.endTime - s.startTime) : 0
+                    const duration = durationMs > 0 ? `${(durationMs / 1000).toFixed(1)}s` : ''
+                    const icon = s.status === 'completed' ? '✅' : s.status === 'running' ? '⏳' : s.status === 'error' ? '❌' : '▫️'
+                    return (
+                      <div key={s.id} style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                        padding: '6px 0',
+                        borderTop: '1px solid rgba(148, 163, 184, 0.12)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            <span>{icon}</span>
+                            <span style={{ color: '#e2e8f0', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.label}</span>
+                          </div>
+                          {duration && <span style={{ color: '#94a3b8' }}>{duration}</span>}
+                        </div>
+                        {s.detail && <div style={{ color: '#94a3b8' }}>{s.detail}</div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               
               {/* 分析结果 */}
               <div style={{
@@ -1350,9 +1687,121 @@ ${fileContent.substring(0, 1500)}
             </>
           )}
         </div>
-      )}
+        )}
 
-      <div ref={containerRef} className="terminal-panel" style={{ height: '100%', width: '100%' }} />
+        <div ref={containerRef} className="terminal-panel" style={{ flex: 1, minHeight: 0, width: '100%' }} />
+      </div>
+
+      {/* 指令狀態/警示（固定高度，避免出現/消失造成輸入列跳動） */}
+      <div
+        style={{
+          flex: '0 0 auto',
+          height: '52px',
+          padding: '6px 10px',
+          borderTop: '1px solid rgba(148, 163, 184, 0.18)',
+          background: 'rgba(2, 6, 23, 0.88)',
+          backdropFilter: 'blur(10px)',
+          opacity: aiInsight ? 1 : 0,
+          pointerEvents: aiInsight ? 'auto' : 'none',
+          transition: 'opacity 0.15s ease'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          minWidth: 0,
+          height: '100%'
+        }}>
+          <div style={{
+            width: '4px',
+            alignSelf: 'stretch',
+            borderRadius: '999px',
+            backgroundColor: aiInsight?.type === 'error' ? '#ef4444' :
+                            aiInsight?.type === 'warning' ? '#f59e0b' :
+                            aiInsight?.type === 'success' ? '#22c55e' :
+                            aiInsight?.type === 'running' ? '#3b82f6' : '#3b82f6'
+          }} />
+
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              minWidth: 0
+            }}>
+              <span style={{ fontSize: '12px' }}>
+                {aiInsight?.type === 'error' ? '❌' :
+                 aiInsight?.type === 'warning' ? '⚠️' :
+                 aiInsight?.type === 'success' ? '✅' :
+                 aiInsight?.type === 'running' ? '🔄' : '💡'}
+              </span>
+
+              <div style={{
+                fontSize: '11px',
+                color: '#e2e8f0',
+                fontFamily: 'monospace',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                lineHeight: '1.35'
+              }}>
+                {aiInsight?.message || ''}
+              </div>
+
+              {aiInsight?.type === 'running' && (
+                <span
+                  aria-label="running"
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    border: '2px solid #93c5fd',
+                    borderTopColor: 'transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    flex: '0 0 auto'
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{
+              marginTop: '2px',
+              fontSize: '11px',
+              color: '#94a3b8',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              lineHeight: '1.35'
+            }}>
+              {aiInsight?.suggestion || (aiInsight?.type === 'running' ? '請稍候…' : ' ')}
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setAiInsight(null)
+              if (insightTimeoutRef.current) {
+                clearTimeout(insightTimeoutRef.current)
+              }
+              setTimeout(() => terminalRef.current?.focus(), 0)
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '2px 6px',
+              flex: '0 0 auto'
+            }}
+            title="關閉"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
       
       {contextMenu && (
         <div

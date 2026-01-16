@@ -630,40 +630,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </small>
                 </div>
 
-                {/* Knowledge Selection Mode */}
-                <div style={{ marginBottom: '10px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#dfdbc3' }}>
-                    知識庫選擇模式
-                  </label>
-                  <select
-                    value={copilotConfig.knowledgeSelectionMode || 'ai'}
-                    onChange={async e => {
-                      const newConfig = { 
-                        ...copilotConfig, 
-                        knowledgeSelectionMode: e.target.value as 'keyword' | 'ai' | 'ai-deep'
-                      }
-                      setCopilotConfig(newConfig)
-                      await settingsStore.setCopilotConfig(newConfig)
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      backgroundColor: '#2a2826',
-                      color: '#dfdbc3',
-                      border: '1px solid #3a3836',
-                      borderRadius: '4px',
-                      fontSize: '14px'
-                    }}
-                  >
-                    <option value="ai">🤖 AI 智能選擇（推薦：一次選檔 + 一次回答）</option>
-                    <option value="ai-deep">🧠 AI 深度檢索（最準：多輪擴寫/重排 + 一次回答，較慢/更多 Token）</option>
-                    <option value="keyword">🔍 關鍵詞匹配（快速但可能不準確）</option>
-                  </select>
-                  <small style={{ color: '#888', display: 'block', marginTop: '4px' }}>
-                    💡 AI 模式：提問前先選知識庫再回答（通常 2 次 API）。深度檢索會再多一輪檢索/重排（通常 3 次 API）。
-                  </small>
-                </div>
-
                 <button 
                   onClick={handleLogout}
                   style={{

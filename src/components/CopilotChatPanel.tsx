@@ -927,9 +927,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     // 獲取 config 放在 try 外面，這樣 catch 也能訪問
     const copilotConfig = settingsStore.getCopilotConfig()
     const selectionMode = copilotConfig?.knowledgeSelectionMode || 'ai'
+    const isDeepMode = selectionMode === 'ai-deep' || selectionMode === 'ai-ultra'
 
     // 初始化處理步驟（依模式動態顯示）
-    const steps: ProcessingStep[] = selectionMode === 'ai-deep'
+    const steps: ProcessingStep[] = isDeepMode
       ? [
           { id: 'skills', label: '🎯 分析技能需求 [本地算法]', status: 'pending' },
           { id: 'expand', label: '🧠 問題拆解與查詢擴寫 [AI 第 1 次]', status: 'pending' },
@@ -952,16 +953,19 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     // 更新步驟狀態的輔助函數（帶錯誤保護）
     const updateStep = (stepId: string, updates: Partial<ProcessingStep>) => {
       try {
-        setProcessingSteps(prev => prev.map(step => 
-          step.id === stepId 
-            ? { 
-                ...step, 
-                ...updates, 
-                ...(updates.status === 'running' && !step.startTime ? { startTime: Date.now() } : {}), 
-                ...(updates.status === 'completed' || updates.status === 'error' ? { endTime: Date.now() } : {}) 
-              }
-            : step
-        ))
+        // 這裡用 flushSync 讓步驟狀態先渲染，避免出現「回應已完成但仍顯示載入中」的錯覺
+        flushSync(() => {
+          setProcessingSteps(prev => prev.map(step => 
+            step.id === stepId 
+              ? { 
+                  ...step, 
+                  ...updates, 
+                  ...(updates.status === 'running' && !step.startTime ? { startTime: Date.now() } : {}), 
+                  ...(updates.status === 'completed' || updates.status === 'error' ? { endTime: Date.now() } : {}) 
+                }
+              : step
+          ))
+        })
       } catch (err) {
         console.error('[CopilotChat] Failed to update step:', stepId, err)
       }
@@ -1007,6 +1011,12 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       let selectedSkills: any[] = []
       let selectedKnowledge: any[] = []
       let analysis: any = null
+
+      // UI 需要更明確的提示：超深度是否啟用「保底候選」、是否加入「索引補充」
+      let usedFallbackCandidates = false
+      let fallbackCandidatesCount = 0
+      let addedIndexSupplement = false
+      let indexSupplementCount = 0
 
       const safeJsonParse = <T,>(text: string): T | null => {
         try {
@@ -1099,10 +1109,10 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
         throw new Error('用戶已取消操作')
       }
       
-      if ((selectionMode === 'ai' || selectionMode === 'ai-deep') && allKnowledge.length > 0) {
+      if ((selectionMode === 'ai' || isDeepMode) && allKnowledge.length > 0) {
         console.log('[CopilotChat] Using AI-driven knowledge selection, mode:', selectionMode, 'available knowledge:', allKnowledge.length)
 
-        if (selectionMode === 'ai-deep') {
+        if (isDeepMode) {
           updateStep('expand', { status: 'running', detail: '拆解問題並擴寫檢索查詢...' })
 
           type DeepQueryPlan = {
@@ -1192,22 +1202,55 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
             .map((k: any, idx: number) => ({ k, idx, score: scoreKnowledgeEntry(k, combinedTerms) }))
             .sort((a, b) => b.score - a.score)
 
-          const MAX_CANDIDATES = Math.min(30, Math.max(12, Math.floor(allKnowledge.length * 0.15)))
+          const MAX_CANDIDATES = selectionMode === 'ai-ultra'
+            ? Math.min(60, Math.max(20, Math.floor(allKnowledge.length * 0.35)))
+            : Math.min(30, Math.max(12, Math.floor(allKnowledge.length * 0.15)))
           const candidates = scored
-            .filter(x => x.score > 0)
+            .filter(x => x.score > 0 || x.k.index) // 允許已索引的文件即使 0 分也進入候選
             .slice(0, MAX_CANDIDATES)
 
-          const candidateDescriptors = candidates.map(x => buildKnowledgeDescriptor(x.k, x.idx))
-          const indexedCount = allKnowledge.filter((k: any) => k.index).length
+          console.log('[CopilotChat] Deep rerank - local scoring:', {
+            totalKnowledge: allKnowledge.length,
+            combinedTermsCount: combinedTerms.length,
+            scoredCount: scored.length,
+            candidatesAfterFilter: candidates.length,
+            topScores: scored.slice(0, 5).map(s => ({ name: s.k.name, score: s.score }))
+          })
 
-          const candidateListPrompt = candidateDescriptors
-            .map(d => {
+          // 若候選為空，直接回退到關鍵詞匹配
+          if (candidates.length === 0) {
+            console.log('[CopilotChat] No candidates found in deep rerank, falling back to keyword matching')
+            const fallback = smartSelect(userQuestion, allSkills, allKnowledge)
+            analysis = fallback.analysis
+            selectedSkills = fallback.selectedSkills
+            selectedKnowledge = fallback.selectedKnowledge
+            updateStep('index', { status: 'completed', detail: `無候選文件，改用關鍵詞：${selectedKnowledge.length} 個` })
+          } else {
+            const candidateDescriptors = candidates.map(x => buildKnowledgeDescriptor(x.k, x.idx))
+            const indexedCount = allKnowledge.filter((k: any) => k.index).length
+
+            console.log('[CopilotChat] Candidate descriptors:', {
+              count: candidateDescriptors.length,
+              names: candidateDescriptors.slice(0, 5).map(d => d.name),
+              fullDescriptors: candidateDescriptors.map(d => ({
+                name: d.name,
+                category: d.category,
+                isIndexed: d.isIndexed,
+                summary: d.summary,
+                keywords: d.keywords,
+                topics: d.topics
+              }))
+            })
+
+            // 候選清單編號必須是「候選列表中的序號」(1..N)，不能用 allKnowledge 的 index
+            const candidateListPrompt = candidateDescriptors
+            .map((d, i) => {
               const idxFlag = d.isIndexed ? '[已索引]' : '[未索引]'
               const tags = d.tags ? `\n   標籤: ${d.tags}` : ''
               const indexBlock = d.isIndexed
                 ? `\n   摘要: ${escapeForPrompt(d.summary)}\n   keywords: ${d.keywords.join(', ')}\n   topics: ${d.topics.join(', ')}\n   business: ${d.businessProcesses.join(', ')}\n   tech: ${d.technicalAreas.join(', ')}`
                 : ''
-              return `${d.displayNo}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
+              return `${i + 1}. **${d.name}** [${d.category}] ${idxFlag}${tags}${indexBlock}`
             })
             .join('\n\n---\n\n')
 
@@ -1218,7 +1261,7 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
 - 一組擴寫查詢（用於判斷語義）
 - 一份「本地初選」的候選文件清單（包含索引摘要/keywords/topics 等）
 
-你的目標：從候選清單中選出最相關的文件（1-5 個），寧缺毋濫。
+你的目標：從候選清單中選出最相關的文件（1-${selectionMode === 'ai-ultra' ? 8 : 5} 個），寧缺毋濫。
 
 輸出要求：只輸出 JSON（不要 markdown，不要解釋）：
 {
@@ -1250,27 +1293,59 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
             })
 
             const raw = String(rerankResult?.content || '').trim()
-            type RerankOut = { selected?: Array<{ no: number }>; overallConfidence?: number }
+            console.log('[CopilotChat] AI rerank raw response:', raw.substring(0, 500))
+            
+            type RerankOut = { selected?: Array<{ no: number; confidence?: number }>; overallConfidence?: number; needMore?: boolean }
             const parsed = safeJsonParse<RerankOut>(raw)
+            console.log('[CopilotChat] AI rerank parsed:', parsed)
 
+            // 只在 parsed 存在且 selected 有內容時處理；並依 confidence 由高到低排序
             const selectedNos: number[] = []
-            if (parsed?.selected?.length) {
-              for (const s of parsed.selected) {
-                const n = Number((s as any).no)
-                if (Number.isFinite(n)) selectedNos.push(n)
-              }
-            } else {
-              const matches = raw.match(/\d+/g)
-              if (matches) selectedNos.push(...matches.map(m => parseInt(m, 10)))
+            if (parsed?.selected && Array.isArray(parsed.selected) && parsed.selected.length > 0) {
+              const ranked = parsed.selected
+                .map(s => ({
+                  no: Number((s as any).no),
+                  confidence: Number((s as any).confidence)
+                }))
+                .filter(x => Number.isFinite(x.no))
+                .sort((a, b) => {
+                  const ac = Number.isFinite(a.confidence) ? a.confidence : -1
+                  const bc = Number.isFinite(b.confidence) ? b.confidence : -1
+                  return bc - ac
+                })
+              for (const r of ranked) selectedNos.push(r.no)
             }
 
-            const selectedIndices = Array.from(new Set(selectedNos))
+            // 注意：no 是「候選清單」的編號，不是 allKnowledge 的索引
+            const selectedCandidateIndices = Array.from(new Set(selectedNos))
               .map(n => n - 1)
-              .filter(idx => idx >= 0 && idx < allKnowledge.length)
+              .filter(idx => idx >= 0 && idx < candidates.length)
 
-            selectedKnowledge = selectedIndices.map(idx => allKnowledge[idx])
+            console.log('[CopilotChat] AI rerank selection:', {
+              selectedNos,
+              selectedCandidateIndices,
+              candidatesLength: candidates.length
+            })
 
-            updateStep('index', { status: 'completed', detail: `選出 ${selectedKnowledge.length} 個相關文檔` })
+            selectedKnowledge = selectedCandidateIndices.map(idx => candidates[idx].k)
+            console.log('[CopilotChat] Selected knowledge:', selectedKnowledge.map(k => k.name))
+
+            // 若深度重排沒有選到任何知識：採用本地最佳候選（ai-ultra 取 2 份以提高命中率）
+            if (selectedKnowledge.length === 0 && candidates.length > 0) {
+              const fallbackCount = Math.min(selectionMode === 'ai-ultra' ? 2 : 1, candidates.length)
+              selectedKnowledge = candidates.slice(0, fallbackCount).map(x => x.k)
+              usedFallbackCandidates = true
+              fallbackCandidatesCount = fallbackCount
+              console.log('[CopilotChat] Deep rerank empty selection; using top candidates instead:', selectedKnowledge.map(k => k.name))
+              updateStep('index', {
+                status: 'completed',
+                detail: selectionMode === 'ai-ultra'
+                  ? `重排無結果，啟用保底候選：${selectedKnowledge.length} 個`
+                  : `重排無結果，採用最佳候選：${selectedKnowledge.length} 個`
+              })
+            } else {
+              updateStep('index', { status: 'completed', detail: `選出 ${selectedKnowledge.length} 個相關文檔` })
+            }
 
             if (selectedKnowledge.length > 0) {
               const knowledgeListMsg: CopilotMessage = {
@@ -1287,6 +1362,12 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
             selectedSkills = result.selectedSkills
             selectedKnowledge = result.selectedKnowledge
             updateStep('index', { status: 'completed', detail: `關鍵詞匹配：${selectedKnowledge.length} 個` })
+          }
+
+          // Skills 仍使用關鍵詞匹配選擇（避免額外成本）
+          const skillResult = smartSelect(userQuestion, allSkills, [])
+          selectedSkills = skillResult.selectedSkills
+          analysis = skillResult.analysis
           }
 
           // Skills 仍使用關鍵詞匹配選擇（避免額外成本）
@@ -1445,13 +1526,15 @@ ${knowledgeListPrompt}
         setMessages(prev => [...prev, selectionInfo])
       }
       
-      // 構建 skills prompt
-      updateStep('knowledge', { status: 'running', detail: '載入知識庫內容...' })
+      // 構建 skills prompt（不顯示載入知識庫步驟，因為還沒開始）
       const skillsPrompt = buildSystemPromptFromSkills(selectedSkills)
       
       // 根據當前模型獲取知識庫限制
       const { getModelKnowledgeLimit } = await import('../types/knowledge-base')
       const modelLimits = getModelKnowledgeLimit(copilotConfig.model)
+      
+      // 開始載入知識庫內容
+      updateStep('knowledge', { status: 'running', detail: '載入知識庫內容...' })
       
       // 使用智能選擇的知識（已經過濾過相關的）
       let knowledgePrompt = ''
@@ -1480,8 +1563,8 @@ ${knowledgeListPrompt}
       if (selectedKnowledge.length > 0) {
         const MAX_KNOWLEDGE_LENGTH = modelLimits.maxTotal
         const MAX_SINGLE_ENTRY = modelLimits.maxSingle
-        const MIN_ENTRIES = 2  // 至少保證 2 個知識庫
-        const TARGET_ENTRIES = 3  // 目標 3 個知識庫
+        const MIN_ENTRIES = selectionMode === 'ai-ultra' ? 3 : 2  // 至少保證 N 個知識庫
+        const TARGET_ENTRIES = selectionMode === 'ai-ultra' ? 5 : 4  // ai-deep 預設 4，避免 4 選 3 擠掉最相關
         let totalLength = 0
         
         // 階段 1：優先保證前 MIN_ENTRIES 個完整載入
@@ -1561,7 +1644,11 @@ ${knowledgeListPrompt}
           totalLength: totalLength
         })
         
-        updateStep('knowledge', { status: 'completed', detail: `載入 ${includedKnowledge.length} 個文檔` })
+        if (includedKnowledge.length > 0) {
+          updateStep('knowledge', { status: 'completed', detail: `載入 ${includedKnowledge.length} 個文檔` })
+        } else {
+          updateStep('knowledge', { status: 'completed', detail: '無相關知識庫' })
+        }
         
         if (includedKnowledge.length > 0) {
           const knowledgeList = includedKnowledge
@@ -1591,7 +1678,40 @@ ${knowledgeList}
           })
           
           if (includedKnowledge.length < selectedKnowledge.length) {
-            knowledgePrompt += `\n(註：因內容過長，僅載入 ${includedKnowledge.length}/${selectedKnowledge.length} 個知識條目)\n`
+            const dropped = selectedKnowledge
+              .filter(k => !includedKnowledge.some(x => x.name === k.name))
+              .map(k => k.name)
+
+            // 記錄「索引補充」狀態，並回寫到步驟 UI（讓超深度更透明）
+            addedIndexSupplement = true
+            indexSupplementCount = dropped.length
+            knowledgePrompt += `\n(註：因內容/長度限制，完整載入 ${includedKnowledge.length}/${selectedKnowledge.length} 個；未完整載入：${dropped.join('、')})\n`
+
+            // 額外補一段「索引摘要」給被擠掉的文件，讓回答至少能看到關鍵線索（成本低於全文）
+            const droppedIndexSummaries = selectedKnowledge
+              .filter(k => !includedKnowledge.some(x => x.name === k.name))
+              .map((k: any) => {
+                const idx = k.index
+                if (!idx) return `- ${k.name}（未索引）`
+                const kw = Array.isArray(idx.keywords) ? idx.keywords.slice(0, 10).join(', ') : ''
+                const tp = Array.isArray(idx.topics) ? idx.topics.slice(0, 8).join(', ') : ''
+                const sm = String(idx.summary || '').slice(0, 260)
+                return `- ${k.name}\n  摘要: ${sm}${sm.length >= 260 ? '…' : ''}${kw ? `\n  keywords: ${kw}` : ''}${tp ? `\n  topics: ${tp}` : ''}`
+              })
+              .join('\n')
+            knowledgePrompt += `\n\n===== 索引補充（未完整載入的文件）=====\n${droppedIndexSummaries}\n===== 索引補充結束 =====\n`
+
+            // 讓步驟 UI 明確顯示「索引補充已加入」
+            updateStep('knowledge', {
+              status: 'completed',
+              detail: `載入 ${includedKnowledge.length} 個文檔（索引補充已加入：${indexSupplementCount} 份）`
+            })
+          } else if (selectionMode === 'ai-ultra' && usedFallbackCandidates) {
+            // 超深度：若啟用保底候選但沒有發生索引補充，也提示在載入結果上
+            updateStep('knowledge', {
+              status: 'completed',
+              detail: `載入 ${includedKnowledge.length} 個文檔（已使用保底候選：${fallbackCandidatesCount} 個）`
+            })
           }
           
           // 顯示智能選擇的統計信息
@@ -1599,6 +1719,9 @@ ${knowledgeList}
             knowledgePrompt += `\n(智能選擇：根據問題"${analysis.intent}"自動篩選了相關知識)\n`
           }
         }
+      } else {
+        // 沒有任何知識庫可載入時，立刻結束此步驟避免 UI 一直顯示「載入中」
+        updateStep('knowledge', { status: 'completed', detail: '無相關知識庫' })
       }
       
       const systemPrompt = `${basePrompt}
@@ -1651,6 +1774,9 @@ ${skillsPrompt}${knowledgePrompt}
         knowledgePromptLength: knowledgePrompt.length,
         knowledgeEntries: selectedKnowledge.map(k => ({ name: k.name, size: k.content.length }))
       })
+      
+      // 確保「載入知識庫」步驟已完成，避免與「生成回應」步驟時序混亂
+      await new Promise(resolve => setTimeout(resolve, 50))
       
       updateStep('generate', { status: 'running', detail: `使用 ${copilotConfig.model} 生成中...` })
       
@@ -1713,22 +1839,27 @@ ${skillsPrompt}${knowledgePrompt}
       }
 
       updateStep('generate', { status: 'completed', detail: '回應生成完成' })
-      
-      const updatedMessages = [...newMessages, assistantMessage]
-      
-      // 如果使用了知識庫，添加知識來源信息
-      if (includedKnowledge.length > 0) {
-        const knowledgeNames = includedKnowledge.map(k => `📄 **${k.name}**`).join('\n')
-        const skillNames = selectedSkills.map(s => `${s.icon} ${s.name}`).join(', ')
-        
-        const sourceInfo: CopilotMessage = {
-          role: 'info',
-          content: `📚 **使用的知識來源** (${includedKnowledge.length} 個文檔)\n\n${knowledgeNames}\n\n🎯 **啟用能力**：${skillNames}`
+
+      // 如果使用了知識庫，添加知識來源信息（AI 深度/關鍵詞模式也需顯示）
+      const sourceKnowledge = includedKnowledge.length > 0 ? includedKnowledge : selectedKnowledge
+
+      setMessages(prev => {
+        const nextMessages = [...prev, assistantMessage]
+
+        if (sourceKnowledge.length > 0) {
+          const knowledgeNames = sourceKnowledge.map(k => `📄 **${k.name}**`).join('\n')
+          const skillNames = selectedSkills.map(s => `${s.icon} ${s.name}`).join(', ')
+          const skillLine = skillNames ? `\n\n🎯 **啟用能力**：${skillNames}` : ''
+
+          const sourceInfo: CopilotMessage = {
+            role: 'info',
+            content: `📚 **使用的知識來源** (${sourceKnowledge.length} 個文檔)\n\n${knowledgeNames}${skillLine}`
+          }
+          nextMessages.push(sourceInfo)
         }
-        updatedMessages.push(sourceInfo)
-      }
-      
-      setMessages(updatedMessages)
+
+        return nextMessages
+      })
       
       // 清除已读取的数据标记
       setLoadedOracleData(false)
@@ -2478,6 +2609,17 @@ ${skillsPrompt}${knowledgePrompt}
                             ({statusText})
                           </span>
                         </div>
+                        {!!step.detail && !isPending && (
+                          <div style={{
+                            marginTop: '2px',
+                            fontSize: '10px',
+                            color: isError ? '#f85149' : '#888',
+                            lineHeight: '1.35',
+                            wordBreak: 'break-word'
+                          }}>
+                            {step.detail}
+                          </div>
+                        )}
                       </div>
                       {duration && (
                         <div style={{
