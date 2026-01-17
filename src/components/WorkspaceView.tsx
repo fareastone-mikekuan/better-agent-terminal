@@ -47,6 +47,7 @@ interface WorkspaceViewProps {
   focusedTerminalId: string | null
   isActive: boolean
   onAnalyzeFile?: (fileContent: string, fileName: string) => void
+  onOpenSelectionAI?: (req: { requestId: string; mode: 'analyze' | 'draft'; text: string; url?: string; sourceTitle?: string; sourceType?: string }) => void
 }
 
 // Helper to get shell path from settings
@@ -79,7 +80,7 @@ function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = [])
 // Track which workspaces have been initialized (outside component to persist across renders)
 const initializedWorkspaces = new Set<string>()
 
-export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, onAnalyzeFile }: Readonly<WorkspaceViewProps>) {
+export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActive, onAnalyzeFile, onOpenSelectionAI }: Readonly<WorkspaceViewProps>) {
   const [showCloseConfirm, setShowCloseConfirm] = useState<string | null>(null)
   const [thumbnailSettings, setThumbnailSettings] = useState<ThumbnailSettings>(loadThumbnailSettings)
   const [activeTab, setActiveTab] = useState<TabType>('terminal')
@@ -419,6 +420,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
                   onClose={handleCloseTerminal}
                   onRestart={handleRestart}
                   onAnalyzeFile={onAnalyzeFile}
+                  onOpenSelectionAI={onOpenSelectionAI}
                 />
               </div>
             )

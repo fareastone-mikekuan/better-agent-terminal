@@ -7,6 +7,7 @@ interface WebViewPanelProps {
   defaultZoom?: number
   partition?: string
   allowPopups?: boolean
+  webPreferences?: string
   userAgent?: string
   isFloating?: boolean
   onToggleFloat?: () => void
@@ -17,10 +18,11 @@ interface WebViewPanelProps {
 
 export interface WebViewPanelRef {
   fetchContent: () => Promise<string | null>
+  fetchSelection: () => Promise<{ text: string; url?: string } | null>
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, partition, allowPopups = false, userAgent, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
+  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, partition, allowPopups = false, webPreferences, userAgent, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
   const [zoom, setZoom] = useState(defaultZoom)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
@@ -311,19 +313,14 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
       }
 
       const normalized = normalizeWebUrl(targetUrl)
-      try {
-        if (typeof webview.loadURL === 'function') {
-          webview.loadURL(normalized)
-          return
-        }
-      } catch {
-        // fall back to src/state update
-      }
 
-      setCurrentUrl(normalized)
-      if (showToolbar) {
-        setUrlInput(normalized)
-      }
+      // Avoid calling webview.loadURL() here; it can generate noisy
+      // 'GUEST_VIEW_MANAGER_CALL' ERR_ABORTED logs during auth redirects.
+      setCurrentUrl(prev => {
+        if (prev === normalized) return prev
+        return normalized
+      })
+      if (showToolbar) setUrlInput(normalized)
     }
 
     // Reset dom-ready for each navigation lifecycle.
@@ -353,7 +350,57 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
 
   // Expose fetchContent method to parent
   useImperativeHandle(ref, () => ({
-    fetchContent: fetchAndSaveContent
+    fetchContent: fetchAndSaveContent,
+    fetchSelection: async () => {
+      const webview = webviewRef.current || containerRef.current?.querySelector('webview') as any
+      if (!webview) return null
+
+      try {
+        const result = await webview.executeJavaScript(`
+          (function() {
+            try {
+              var text = '';
+
+              // Window selection (most page text)
+              var sel = window.getSelection && window.getSelection();
+              if (sel && sel.toString) {
+                text = sel.toString();
+              }
+
+              // Input/textarea selection (chat boxes)
+              if (!text) {
+                var el = document.activeElement;
+                if (el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'search' || el.type === 'email' || el.type === 'tel' || el.type === 'url' || el.type === 'password')))) {
+                  var start = el.selectionStart;
+                  var end = el.selectionEnd;
+                  if (typeof start === 'number' && typeof end === 'number' && end > start) {
+                    text = (el.value || '').substring(start, end);
+                  }
+                }
+              }
+
+              // Clean
+              if (text) {
+                text = String(text).replace(/\s+$/g, '').replace(/^\s+/g, '');
+              }
+
+              return { text: text || '', url: location && location.href ? String(location.href) : '' };
+            } catch (e) {
+              return { text: '', url: '' };
+            }
+          })();
+        `)
+
+        const text = (result?.text || '').toString().trim()
+        const url = (result?.url || '').toString().trim()
+
+        if (!text) return null
+        return { text: text.substring(0, 20000), url }
+      } catch (e) {
+        console.warn('[WebView] Failed to fetch selection:', e)
+        return null
+      }
+    }
   }), [onContentChange])
 
   // Save position and size to localStorage
@@ -667,6 +714,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
           data-terminal-id={terminalId}
           partition={partition}
           allowpopups={allowPopups ? 'true' : undefined}
+          webpreferences={webPreferences}
           useragent={getEffectiveUserAgent(currentUrl)}
           style={{
             width: '100%',

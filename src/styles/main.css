@@ -1955,6 +1955,103 @@ body {
   line-height: 1.5;
 }
 
+/* Selection AI Dialog (center modal) */
+.selection-ai-dialog {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  width: min(920px, calc(100vw - 40px));
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.selection-ai-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.selection-ai-toolbar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.selection-ai-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.selection-ai-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.selection-ai-source {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.selection-ai-source-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.selection-ai-source-row + .selection-ai-source-row {
+  margin-top: 8px;
+}
+
+.selection-ai-label {
+  min-width: 64px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.selection-ai-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  word-break: break-word;
+}
+
+.selection-ai-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.selection-ai-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.selection-ai-result {
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text-primary);
+  overflow: auto;
+  max-height: 44vh;
+}
+
 /* ============================================
    Resizable Panel Components
    ============================================ */

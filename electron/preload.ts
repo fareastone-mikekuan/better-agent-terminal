@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CreatePtyOptions } from '../src/types'
 
+type SelectionAIRequest = {
+  requestId: string
+  mode: 'analyze' | 'draft'
+  text: string
+  url?: string
+  sourceTitle?: string
+  sourceType?: string
+}
+
 const electronAPI = {
   pty: {
     create: (options: CreatePtyOptions) => ipcRenderer.invoke('pty:create', options),
@@ -98,6 +107,13 @@ const electronAPI = {
   },
   webpage: {
     fetch: (url: string) => ipcRenderer.invoke('webpage:fetch', url) as Promise<string>
+  },
+  selectionAI: {
+    onRequest: (callback: (req: SelectionAIRequest) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, req: SelectionAIRequest) => callback(req)
+      ipcRenderer.on('selection-ai:request', handler)
+      return () => ipcRenderer.removeListener('selection-ai:request', handler)
+    }
   },
   ftp: {
     connect: (config: any) => ipcRenderer.invoke('ftp:connect', config),

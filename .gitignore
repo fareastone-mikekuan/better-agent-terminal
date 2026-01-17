@@ -11,6 +11,10 @@ packages/PowerShell/
 # Git portable binaries (download separately)
 packages/Git/
 
+# Electron builder caches / downloaded runtimes (large)
+packages/electron-cache/
+packages/electron-v*-win32-x64.zip
+
 # Local environment (not committed)
 .envrc
 .env.local

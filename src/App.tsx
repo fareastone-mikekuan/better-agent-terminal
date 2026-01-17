@@ -15,6 +15,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { CopilotChatPanel } from './components/CopilotChatPanel'
 import { NewSkillPanel } from './components/NewSkillPanel'
 import { KnowledgeBasePanel } from './components/KnowledgeBasePanel'
+import { SelectionAIPopup, type SelectionAIRequest } from './components/SelectionAIPopup'
 import { registerPanelCallback } from './services/workflow-panel-service'
 import type { AppState, EnvVariable, Workspace } from './types'
 
@@ -99,6 +100,21 @@ export default function App() {
   })
   // Panel settings for resizable panels
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(loadPanelSettings)
+
+  const [selectionPopupRequest, setSelectionPopupRequest] = useState<SelectionAIRequest | null>(null)
+
+  useEffect(() => {
+    // Allow main-process context menu (Shift+RightClick in Teams webview) to open the modal.
+    const api: any = (window as any).electronAPI
+    if (!api?.selectionAI?.onRequest) return
+    const dispose = api.selectionAI.onRequest((req: SelectionAIRequest) => {
+      if (!req?.text || !String(req.text).trim()) return
+      setSelectionPopupRequest(req)
+    })
+    return () => {
+      if (typeof dispose === 'function') dispose()
+    }
+  }, [])
 
   // Apply theme to body element
   useEffect(() => {
@@ -519,6 +535,7 @@ export default function App() {
                 focusedTerminalId={workspace.id === state.activeWorkspaceId ? state.focusedTerminalId : null}
                 isActive={workspace.id === state.activeWorkspaceId}
                 onAnalyzeFile={handleFileAnalysis}
+                onOpenSelectionAI={(req) => setSelectionPopupRequest(req)}
               />
             </div>
           ))
@@ -694,6 +711,11 @@ export default function App() {
           />
         </div>
       )}
+
+      <SelectionAIPopup
+        request={selectionPopupRequest}
+        onClose={() => setSelectionPopupRequest(null)}
+      />
       
 
       

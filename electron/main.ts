@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, session } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { PtyManager } from './pty-manager'
@@ -28,6 +28,141 @@ let ptyManager: PtyManager | null = null
 let copilotManager: CopilotManager | null = null
 let ftpManager: FtpManager | null = null
 let updateCheckResult: UpdateCheckResult | null = null
+
+type SelectionAIRequest = {
+  requestId: string
+  mode: 'analyze' | 'draft'
+  text: string
+  url?: string
+  sourceTitle?: string
+  sourceType?: string
+}
+
+const isM365WebUrl = (url: string) => {
+  const u = String(url || '')
+  return /https?:\/\/(?:[^\/]+\.)?(teams\.microsoft\.com|outlook\.office\.com|m365\.cloud\.microsoft)\//i.test(u)
+}
+
+const guessSourceType = (url: string) => {
+  const u = String(url || '').toLowerCase()
+  if (u.includes('teams.microsoft.com')) return 'teams'
+  if (u.includes('outlook.office.com')) return 'outlook'
+  if (u.includes('m365.cloud.microsoft')) return 'copilotweb'
+  return 'webview'
+}
+
+const getLowerModifiers = (params: any): string[] => {
+  const raw: unknown = params?.inputEvent?.modifiers
+  if (!Array.isArray(raw)) return []
+  return raw.map(x => String(x || '').toLowerCase()).filter(Boolean)
+}
+
+const attachM365ContextMenu = (webContents: Electron.WebContents) => {
+  webContents.on('context-menu', async (event, params) => {
+    try {
+      const pageURL = String((params as any)?.pageURL || webContents.getURL() || '')
+      if (!isM365WebUrl(pageURL)) return
+
+      // Escape hatch: allow page native menu on Alt+RightClick.
+      const modifiers = getLowerModifiers(params as any)
+      if (modifiers.includes('alt')) return
+
+      event.preventDefault()
+
+      let selectedText = String((params as any)?.selectionText || '').trim()
+      if (!selectedText) {
+        // Some guests don't populate selectionText reliably; fall back to JS selection.
+        try {
+          const js = `(() => {
+            const sel = (window.getSelection && window.getSelection()) ? String(window.getSelection().toString()) : '';
+            if (sel && sel.trim()) return sel;
+            const el = document.activeElement;
+            if (el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'search' || el.type === 'email' || el.type === 'url' || el.type === 'tel' || el.type === 'password')))) {
+              const start = el.selectionStart ?? 0;
+              const end = el.selectionEnd ?? 0;
+              return String(el.value || '').slice(start, end);
+            }
+            return '';
+          })()`
+          selectedText = String(await webContents.executeJavaScript(js, true)).trim()
+        } catch {
+          selectedText = ''
+        }
+      }
+
+      let title = ''
+      try {
+        title = String(await webContents.executeJavaScript('document.title', true))
+      } catch {
+        title = ''
+      }
+
+      const canAct = selectedText.length > 0
+
+      const sendToRenderer = (mode: 'analyze' | 'draft') => {
+        if (!mainWindow) return
+        const payload: SelectionAIRequest = {
+          requestId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          mode,
+          text: selectedText,
+          url: pageURL,
+          sourceTitle: title || undefined,
+          sourceType: guessSourceType(pageURL)
+        }
+        mainWindow.webContents.send('selection-ai:request', payload)
+      }
+
+      const menu = Menu.buildFromTemplate([
+        {
+          label: canAct ? '🤖 AI 分析框選文字' : '🤖 AI 分析框選文字（請先反白）',
+          enabled: canAct,
+          click: () => sendToRenderer('analyze')
+        },
+        {
+          label: canAct ? '✍️ AI 草擬回覆' : '✍️ AI 草擬回覆（請先反白）',
+          enabled: canAct,
+          click: () => sendToRenderer('draft')
+        },
+        { type: 'separator' },
+        {
+          label: '提示：Alt + 右鍵 = Teams 原生選單',
+          enabled: false
+        },
+        { type: 'separator' },
+        {
+          label: '複製',
+          enabled: canAct,
+          click: () => webContents.copy()
+        },
+        {
+          label: '全選',
+          click: () => webContents.selectAll()
+        }
+      ])
+
+      menu.popup({
+        window: mainWindow || undefined,
+        x: (params as any)?.x,
+        y: (params as any)?.y
+      })
+    } catch (e) {
+      console.warn('[Main] webview context-menu handler failed:', e)
+    }
+  })
+}
+
+let m365ContextMenuHookInstalled = false
+const ensureM365ContextMenuHook = () => {
+  if (m365ContextMenuHookInstalled) return
+  m365ContextMenuHookInstalled = true
+  app.on('web-contents-created', (_event, contents) => {
+    try {
+      attachM365ContextMenu(contents)
+    } catch {
+      // ignore
+    }
+  })
+}
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const GITHUB_REPO_URL = 'https://github.com/fareastone-mikekuan/better-agent-terminal'
@@ -107,6 +242,38 @@ function buildMenu() {
       label: '檔案',
       submenu: [
         { role: 'quit', label: '結束' }
+      ]
+    },
+    {
+      label: 'M365',
+      submenu: [
+        {
+          label: '重置 Outlook Web Session',
+          click: async () => {
+            try {
+              const outlookSession = session.fromPartition('persist:m365-outlook')
+              await outlookSession.clearStorageData()
+              if (mainWindow) {
+                await dialog.showMessageBox(mainWindow, {
+                  type: 'info',
+                  title: 'Outlook Session 已重置',
+                  message: '已重置 Outlook 的登入/快取資料。',
+                  detail: '請關閉並重新開啟 Outlook 分頁後再登入。'
+                })
+              }
+            } catch (e) {
+              console.warn('[Main] Failed to reset Outlook session:', e)
+              if (mainWindow) {
+                await dialog.showMessageBox(mainWindow, {
+                  type: 'error',
+                  title: 'Outlook Session 重置失敗',
+                  message: '無法重置 Outlook 的登入/快取資料。',
+                  detail: String((e as any)?.message || e)
+                })
+              }
+            }
+          }
+        }
       ]
     },
     {
@@ -217,6 +384,9 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  // Attach to the host window too (in case M365 is ever opened directly).
+  attachM365ContextMenu(mainWindow.webContents)
+
   mainWindow.on('closed', () => {
     mainWindow = null
     ptyManager?.dispose()
@@ -241,6 +411,7 @@ app.on('before-quit', () => {
 
 app.whenReady().then(async () => {
   buildMenu()
+  ensureM365ContextMenuHook()
   createWindow()
 
   // Cleanup any leftover temp files from previous runs

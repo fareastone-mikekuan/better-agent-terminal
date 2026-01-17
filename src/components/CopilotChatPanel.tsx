@@ -212,6 +212,13 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
   
   const [loadedOracleData, setLoadedOracleData] = useState(false)
   const [loadedWebPageData, setLoadedWebPageData] = useState(false)
+  const [loadedSelection, setLoadedSelection] = useState<{
+    text: string
+    url?: string
+    sourceTitle?: string
+    sourceType?: string
+    mode: 'analyze' | 'draft'
+  } | null>(null)
   const [loadedFile, setLoadedFile] = useState<{ content: string; fileName: string } | null>(null)
   const [fileChunks, setFileChunks] = useState<{ chunks: string[]; fileName: string; currentIndex: number } | null>(null)
   const [userInfo, setUserInfo] = useState<{ username: string; hostname: string }>({ username: '', hostname: '' })
@@ -480,6 +487,53 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
     window.addEventListener('file-analysis-request', handleFileAnalysisRequest)
     return () => {
       window.removeEventListener('file-analysis-request', handleFileAnalysisRequest)
+    }
+  }, [])
+
+  // Listen for selection analysis/draft requests from WebView/Teams/Outlook panels
+  useEffect(() => {
+    const handleSelectionRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        text: string
+        url?: string
+        sourceTitle?: string
+        sourceType?: string
+        mode: 'analyze' | 'draft'
+      }>
+
+      const text = (customEvent.detail?.text || '').toString().trim()
+      if (!text) return
+
+      setLoadedSelection({
+        text: text.substring(0, 20000),
+        url: customEvent.detail?.url,
+        sourceTitle: customEvent.detail?.sourceTitle,
+        sourceType: customEvent.detail?.sourceType,
+        mode: customEvent.detail?.mode || 'analyze'
+      })
+
+      // Clear other loaded data to avoid ambiguity
+      setLoadedFile(null)
+      setFileChunks(null)
+      setLoadedOracleData(false)
+      setLoadedWebPageData(false)
+
+      // Prefill a sensible prompt
+      if ((customEvent.detail?.mode || 'analyze') === 'draft') {
+        setInput('請根據我框選的內容，草擬一段適合回覆的文字（可提供 2-3 個版本：正式/簡短/友善）。')
+      } else {
+        setInput('請分析我框選的內容，整理重點、意圖、待辦，並給出建議回覆方向。')
+      }
+
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        inputRef.current?.focus()
+      }, 100)
+    }
+
+    window.addEventListener('selection-analysis-request', handleSelectionRequest)
+    return () => {
+      window.removeEventListener('selection-analysis-request', handleSelectionRequest)
     }
   }, [])
 
@@ -863,8 +917,20 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       }
     }
 
+    // 如果有框選文字，優先附加到消息中
+    if (loadedSelection) {
+      const src = loadedSelection.sourceTitle || loadedSelection.sourceType || '網頁'
+      const urlHint = loadedSelection.url ? `\n來源：${loadedSelection.url}` : ''
+      if (loadedSelection.mode === 'draft') {
+        messageContent = `請根據以下我在「${src}」框選的內容草擬回覆：\n\n---\n${loadedSelection.text}\n---${urlHint}\n\n需求/語氣/限制：${messageContent}${skillContext}`
+      } else {
+        messageContent = `請分析以下我在「${src}」框選的內容：\n\n---\n${loadedSelection.text}\n---${urlHint}\n\n我的問題：${messageContent}${skillContext}`
+      }
+      setLoadedSelection(null)
+      hasMoreChunks.current = false
+    }
     // 如果有已讀取的文件，附加到消息中
-    if (loadedFile) {
+    else if (loadedFile) {
       messageContent = `請分析以下文件內容（${loadedFile.fileName}）：\n\n${loadedFile.content}\n\n我的問題：${messageContent}${skillContext}`
       setLoadedFile(null)  // 清除已加載的文件
       hasMoreChunks.current = false
@@ -2634,19 +2700,22 @@ ${skillsPrompt}${knowledgePrompt}
               </div>
             )}
             
-            {(loadedFile || fileChunks || loadedOracleData || loadedWebPageData) && (
+            {(loadedSelection || loadedFile || fileChunks || loadedOracleData || loadedWebPageData) && (
               <div className="copilot-data-loaded-hint">
                 ✅ 已讀取
-                {loadedFile
-                  ? `文件（${loadedFile.fileName}）`
-                  : fileChunks
-                    ? `文件（${fileChunks.fileName}）- 第 ${fileChunks.currentIndex + 1}/${fileChunks.chunks.length} 部分`
-                    : loadedOracleData 
-                      ? `Oracle 查詢結果（${oracleInstances.find(o => o.id === selectedOracleId)?.title}）`
-                      : `網頁內容（${webViewInstances.find(w => w.id === selectedWebViewId)?.title}）`
+                {loadedSelection
+                  ? `框選文字（${loadedSelection.sourceTitle || loadedSelection.sourceType || '網頁'}）`
+                  : loadedFile
+                    ? `文件（${loadedFile.fileName}）`
+                    : fileChunks
+                      ? `文件（${fileChunks.fileName}）- 第 ${fileChunks.currentIndex + 1}/${fileChunks.chunks.length} 部分`
+                      : loadedOracleData 
+                        ? `Oracle 查詢結果（${oracleInstances.find(o => o.id === selectedOracleId)?.title}）`
+                        : `網頁內容（${webViewInstances.find(w => w.id === selectedWebViewId)?.title}）`
                 }，請輸入您的問題
                 <button
                   onClick={() => {
+                    setLoadedSelection(null)
                     setLoadedFile(null)
                     setFileChunks(null)
                     setLoadedOracleData(false)

@@ -68,6 +68,9 @@ interface ElectronAPI {
   webpage: {
     fetch: (url: string) => Promise<string>
   }
+  selectionAI: {
+    onRequest: (callback: (req: { requestId: string; mode: 'analyze' | 'draft'; text: string; url?: string; sourceTitle?: string; sourceType?: string }) => void) => () => void
+  }
   system: {
     getInfo: () => Promise<{ username: string; hostname: string }>
   }
