@@ -6,6 +6,9 @@ import { CopilotManager } from './copilot-manager'
 import { FtpManager } from './ftp-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
 import { snippetDb, CreateSnippetInput } from './snippet-db'
+import { startDeviceFlow, completeDeviceFlowAndStore } from './m365-auth'
+import { clearM365Token, loadM365Token, saveM365Token } from './m365-token-store'
+import { getMe, listChildren, resolveShareLink, downloadDriveItem } from './m365-graph'
 
 // Suppress Chromium cache warnings
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -1076,6 +1079,90 @@ ipcMain.handle('copilot:complete-device-flow', async (_event, deviceCode: string
     const errorMessage = error instanceof Error ? error.message : String(error)
     throw new Error(errorMessage)
   }
+})
+
+// Microsoft 365 (Graph) handlers
+ipcMain.handle('m365:get-status', async () => {
+  const token = await loadM365Token()
+  if (!token) return { signedIn: false }
+  return {
+    signedIn: true,
+    expiresAt: token.expiresAt,
+    scope: token.scope,
+    account: token.account
+  }
+})
+
+ipcMain.handle('m365:sign-out', async () => {
+  await clearM365Token()
+  return { success: true }
+})
+
+ipcMain.handle('m365:start-device-flow', async (_event, params: { tenant?: string; clientId: string; scopes?: string[] }) => {
+  const scopes = Array.isArray(params?.scopes) && params.scopes.length
+    ? params.scopes
+    : ['offline_access', 'User.Read', 'Files.Read.All', 'Sites.Read.All']
+  const resp = await startDeviceFlow({
+    tenant: params?.tenant,
+    clientId: params.clientId,
+    scopes
+  })
+  return resp
+})
+
+ipcMain.handle('m365:complete-device-flow', async (_event, params: { tenant?: string; clientId: string; deviceCode: string }) => {
+  const result = await completeDeviceFlowAndStore({
+    tenant: params?.tenant,
+    clientId: params.clientId,
+    deviceCode: params.deviceCode
+  })
+
+  if (!result.success) return result
+
+  // Enrich token with account info for UI display
+  try {
+    const config = {
+      tenant: params?.tenant,
+      clientId: params.clientId,
+      scopes: ['User.Read']
+    }
+    const me = await getMe(config)
+    if (me) {
+      result.token.account = {
+        displayName: me.displayName,
+        userPrincipalName: (me as any).userPrincipalName
+      }
+      await saveM365Token(result.token)
+    }
+  } catch (e) {
+    console.warn('[M365] Failed to fetch /me:', e)
+  }
+
+  return { success: true, expiresAt: result.token.expiresAt, scope: result.token.scope, account: result.token.account }
+})
+
+ipcMain.handle('m365:drive:resolve-share-link', async (_event, params: { tenant?: string; clientId: string; shareUrl: string; scopes?: string[] }) => {
+  const scopes = Array.isArray(params?.scopes) && params.scopes.length
+    ? params.scopes
+    : ['offline_access', 'Files.Read.All', 'Sites.Read.All']
+  const config = { tenant: params?.tenant, clientId: params.clientId, scopes }
+  return await resolveShareLink(config, params.shareUrl)
+})
+
+ipcMain.handle('m365:drive:list-children', async (_event, params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) => {
+  const scopes = Array.isArray(params?.scopes) && params.scopes.length
+    ? params.scopes
+    : ['offline_access', 'Files.Read.All', 'Sites.Read.All']
+  const config = { tenant: params?.tenant, clientId: params.clientId, scopes }
+  return await listChildren(config, params.driveId, params.itemId)
+})
+
+ipcMain.handle('m365:drive:download-item', async (_event, params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) => {
+  const scopes = Array.isArray(params?.scopes) && params.scopes.length
+    ? params.scopes
+    : ['offline_access', 'Files.Read.All', 'Sites.Read.All']
+  const config = { tenant: params?.tenant, clientId: params.clientId, scopes }
+  return await downloadDriveItem(config, params.driveId, params.itemId)
 })
 
 // FTP/SFTP handlers

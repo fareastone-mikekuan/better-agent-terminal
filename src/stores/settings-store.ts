@@ -32,6 +32,12 @@ const defaultSettings: AppSettings = {
     oracle: true,
     webView: true,
     snippets: true
+  },
+  m365DriveSync: {
+    tenant: 'organizations',
+    clientId: '',
+    shareUrl: '',
+    autoLearn: true
   }
 }
 
@@ -195,6 +201,20 @@ class SettingsStore {
     this.save()
   }
 
+  // Microsoft 365 Drive Sync settings
+  setM365DriveSyncConfig(updates: Partial<NonNullable<AppSettings['m365DriveSync']>>): void {
+    const current = this.settings.m365DriveSync || defaultSettings.m365DriveSync || {}
+    this.settings = {
+      ...this.settings,
+      m365DriveSync: {
+        ...current,
+        ...updates
+      }
+    }
+    this.notify()
+    this.save()
+  }
+
   // Get the agent command to execute
   getAgentCommand(): string | null {
     if (!this.settings.agentAutoCommand) return null
@@ -238,6 +258,30 @@ class SettingsStore {
       try {
         const parsed = JSON.parse(data)
         this.settings = { ...defaultSettings, ...parsed }
+
+        // Migrate legacy localStorage M365 Drive Sync config (from KB Index tab)
+        try {
+          const legacyTenant = localStorage.getItem('m365-tenant') || ''
+          const legacyClientId = localStorage.getItem('m365-client-id') || ''
+          const legacyShareUrl = localStorage.getItem('m365-share-url') || ''
+          const legacyAutoLearn = localStorage.getItem('m365-auto-learn')
+
+          const hasLegacy = !!(legacyTenant || legacyClientId || legacyShareUrl || legacyAutoLearn)
+          const currentSync = this.settings.m365DriveSync
+          const isEmptyCurrent = !currentSync || (!currentSync.clientId && !currentSync.shareUrl)
+
+          if (hasLegacy && isEmptyCurrent) {
+            this.settings.m365DriveSync = {
+              tenant: legacyTenant || this.settings.m365DriveSync?.tenant || 'organizations',
+              clientId: legacyClientId || '',
+              shareUrl: legacyShareUrl || '',
+              autoLearn: legacyAutoLearn ? legacyAutoLearn === 'true' : (this.settings.m365DriveSync?.autoLearn ?? true)
+            }
+            this.save()
+          }
+        } catch {
+          // ignore migration issues
+        }
         
         // Migrate old bundled PowerShell path to 'auto' (use system PowerShell)
         if (this.settings.shell === 'custom' && 

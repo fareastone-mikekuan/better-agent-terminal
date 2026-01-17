@@ -71,6 +71,51 @@ interface ElectronAPI {
   system: {
     getInfo: () => Promise<{ username: string; hostname: string }>
   }
+
+  m365: {
+    getStatus: () => Promise<{
+      signedIn: boolean
+      expiresAt?: number
+      scope?: string
+      account?: { displayName?: string; userPrincipalName?: string }
+    }>
+    signOut: () => Promise<{ success: boolean }>
+    startDeviceFlow: (params: { tenant?: string; clientId: string; scopes?: string[] }) => Promise<{
+      deviceCode: string
+      userCode: string
+      verificationUri: string
+      expiresIn: number
+      interval: number
+      message?: string
+    }>
+    completeDeviceFlow: (params: { tenant?: string; clientId: string; deviceCode: string }) => Promise<any>
+    drive: {
+      resolveShareLink: (params: { tenant?: string; clientId: string; shareUrl: string; scopes?: string[] }) => Promise<{
+        driveId: string
+        itemId: string
+        name: string
+        webUrl?: string
+        isFolder: boolean
+      }>
+      listChildren: (params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) => Promise<
+        Array<{
+          id: string
+          name: string
+          webUrl?: string
+          size?: number
+          lastModifiedDateTime?: string
+          isFolder: boolean
+          mimeType?: string
+        }>
+      >
+      downloadItem: (params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) => Promise<{
+        name: string
+        mimeType?: string
+        base64: string
+        size?: number
+      }>
+    }
+  }
 }
 
 declare global {

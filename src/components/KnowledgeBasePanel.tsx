@@ -31,6 +31,27 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
   const [copilotConfig, setCopilotConfig] = useState(() => settingsStore.getCopilotConfig())
   const [copilotSkills, setCopilotSkills] = useState(() => settingsStore.getCopilotSkills())
 
+  const [appSettings, setAppSettings] = useState(() => settingsStore.getSettings())
+  useEffect(() => {
+    return settingsStore.subscribe(() => setAppSettings(settingsStore.getSettings()))
+  }, [])
+  const m365DriveSync = appSettings.m365DriveSync
+  const [m365Account, setM365Account] = useState<null | { displayName?: string; userPrincipalName?: string }>(null)
+  const [m365Resolved, setM365Resolved] = useState<null | { driveId: string; itemId: string; name: string; webUrl?: string; isFolder: boolean }>(null)
+  const [m365Syncing, setM365Syncing] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const status = await window.electronAPI.m365.getStatus()
+        setM365Account(status.account || null)
+      } catch {
+        // ignore
+      }
+    }
+    load()
+  }, [])
+
   // Close selection mode help on Escape
   useEffect(() => {
     if (!showKnowledgeSelectionModeHelp) return
@@ -256,6 +277,84 @@ export function KnowledgeBasePanel({ onClose }: KnowledgeBasePanelProps) {
     finalSlice = finalSlice.replace(/[\uD800-\uDBFF]$/, '')
     return finalSlice
   }
+
+  const decodeBase64ToU8 = (base64: string): Uint8Array => {
+    // Browser-safe decode; may be memory heavy for very large files.
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes
+  }
+
+  const bytesToText = (bytes: Uint8Array): string => {
+    try {
+      return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+    } catch {
+      return new TextDecoder().decode(bytes)
+    }
+  }
+
+  const extractDownloadedFileToText = async (fileName: string, bytes: Uint8Array): Promise<string | null> => {
+    const fileExt = fileName.toLowerCase().split('.').pop() || ''
+
+    if (fileExt === 'vsd') {
+      return `# ${fileName}\n\n⚠️ Visio .vsd 為舊版二進位格式，無法直接提取流程圖文字。\n建議：另存為 .vsdx 後再同步。`
+    }
+    if (fileExt === 'doc') {
+      return `# ${fileName}\n\n⚠️ Word .doc 為舊版二進位格式，無法直接提取可讀文字。\n建議：另存為 .docx 後再同步。`
+    }
+
+    // Excel
+    if (fileExt === 'xlsx' || fileExt === 'xls') {
+      const arrayBuffer = bytes.slice().buffer
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+
+      const sheets: string[] = []
+      const MAX_ROWS_PER_SHEET = 5000
+      workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName]
+
+        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
+        const totalRows = range.e.r + 1
+
+        if (totalRows > MAX_ROWS_PER_SHEET) {
+          const limitedRange = XLSX.utils.encode_range({
+            s: { r: 0, c: range.s.c },
+            e: { r: MAX_ROWS_PER_SHEET - 1, c: range.e.c }
+          })
+          worksheet['!ref'] = limitedRange
+          sheets.push(`【工作表: ${sheetName}】 (僅讀取前 ${MAX_ROWS_PER_SHEET}/${totalRows} 行)\n${XLSX.utils.sheet_to_csv(worksheet)}`)
+        } else {
+          sheets.push(`【工作表: ${sheetName}】 (共 ${totalRows} 行)\n${XLSX.utils.sheet_to_csv(worksheet)}`)
+        }
+      })
+
+      const content = sheets.join('\n\n')
+      return content.trim() ? content : null
+    }
+
+    // OOXML
+    if (fileExt === 'vsdx') {
+      const arrayBuffer = bytes.slice().buffer
+      return extractVsdxToText(arrayBuffer, fileName)
+    }
+    if (fileExt === 'docx') {
+      const arrayBuffer = bytes.slice().buffer
+      return extractDocxToText(arrayBuffer, fileName)
+    }
+
+    // Text-ish
+    if (['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml'].includes(fileExt)) {
+      const content = bytesToText(bytes)
+      return content.trim() ? content : null
+    }
+
+    // Fallback: try UTF-8 decode anyway
+    const fallback = bytesToText(bytes)
+    return fallback.trim() ? fallback : null
+  }
+
+  const m365TagForItem = (driveId: string, itemId: string) => `m365:${driveId}:${itemId}`
 
   const downloadJson = (fileName: string, data: unknown) => {
     const json = JSON.stringify(data, null, 2)
@@ -2140,6 +2239,209 @@ ${entry.content.substring(0, 10000)}${entry.content.length > 10000 ? '\n...(內�
                 >
                   {isLearning ? '⏳ 生成中...' : '🔄 批量生成索引'}
                 </button>
+              </div>
+
+              {/* Microsoft 365 Sync */}
+              <div style={{
+                marginBottom: '20px',
+                padding: '15px',
+                backgroundColor: '#1f2430',
+                borderRadius: '6px',
+                border: '1px solid #2c3446'
+              }}>
+                <h3 style={{ color: '#dfdbc3', marginBottom: '10px', fontSize: '14px' }}>
+                  ☁️ Microsoft 365：Drive 同步到 Knowledge Base
+                </h3>
+                <div style={{ color: '#888', fontSize: '12px', marginBottom: '10px' }}>
+                  登入與設定集中在「設定 → Copilot → Microsoft 365 Drive Sync」。
+                  <br />
+                  {m365DriveSync?.clientId?.trim() ? '✅ Client ID 已設定' : '⚠️ Client ID 未設定'}
+                  {'  ·  '}
+                  {m365DriveSync?.shareUrl?.trim() ? '✅ Share link 已設定' : '⚠️ Share link 未設定'}
+                </div>
+
+                {m365Account && (
+                  <div style={{ color: '#888', fontSize: '12px', marginBottom: '10px' }}>
+                    已登入：<span style={{ color: '#dfdbc3' }}>{m365Account.displayName || m365Account.userPrincipalName}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={async () => {
+                      const clientId = (m365DriveSync?.clientId || '').trim()
+                      const shareUrl = (m365DriveSync?.shareUrl || '').trim()
+                      if (!clientId || !shareUrl) {
+                        alert('請先到設定填入 Client ID 與 Share link')
+                        return
+                      }
+                      setLearningStatus('🔗 正在解析 Share link...')
+                      try {
+                        const resolved = await window.electronAPI.m365.drive.resolveShareLink({
+                          tenant: (m365DriveSync?.tenant || 'organizations').trim() || undefined,
+                          clientId,
+                          shareUrl,
+                          scopes: ['User.Read', 'Files.Read.All', 'Sites.Read.All', 'offline_access']
+                        })
+                        setM365Resolved(resolved)
+                        setLearningStatus(`✅ 已解析：${resolved.name}\nDrive: ${resolved.driveId}\nItem: ${resolved.itemId}`)
+                      } catch (err) {
+                        setLearningStatus(`❌ 解析失敗：${err instanceof Error ? err.message : String(err)}`)
+                      }
+                    }}
+                    style={{ padding: '8px 12px', backgroundColor: '#2a3a4a', color: '#a7c7ff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >
+                    🔗 解析資料夾連結
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        const status = await window.electronAPI.m365.getStatus()
+                        setM365Account(status.account || null)
+                        setLearningStatus(status.signedIn
+                          ? `✅ 已登入：${status.account?.displayName || status.account?.userPrincipalName || 'Unknown'}`
+                          : 'ℹ️ 尚未登入（請到設定登入）')
+                      } catch (err) {
+                        setLearningStatus(`❌ 讀取登入狀態失敗：${err instanceof Error ? err.message : String(err)}`)
+                      }
+                    }}
+                    style={{ padding: '8px 12px', backgroundColor: '#3a3836', color: '#dfdbc3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                  >
+                    👤 狀態
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      if (!m365Resolved) {
+                        alert('請先解析 Share link')
+                        return
+                      }
+                      if (!m365Resolved.isFolder) {
+                        alert('目前連結不是資料夾')
+                        return
+                      }
+
+                      setM365Syncing(true)
+                      try {
+                        setLearningStatus(`📁 正在列出資料夾：${m365Resolved.name}`)
+                        const children = await window.electronAPI.m365.drive.listChildren({
+                          tenant: (m365DriveSync?.tenant || 'organizations').trim() || undefined,
+                          clientId: (m365DriveSync?.clientId || '').trim(),
+                          driveId: m365Resolved.driveId,
+                          itemId: m365Resolved.itemId,
+                          scopes: ['User.Read', 'Files.Read.All', 'Sites.Read.All', 'offline_access']
+                        })
+
+                        const files = children.filter(c => !c.isFolder)
+                        if (files.length === 0) {
+                          setLearningStatus('ℹ️ 這個資料夾沒有檔案（或沒有權限）。')
+                          return
+                        }
+
+                        const supportedExt = new Set(['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xlsx', 'xls', 'docx', 'vsdx'])
+                        const targetFiles = files.filter(f => {
+                          const ext = (f.name || '').toLowerCase().split('.').pop() || ''
+                          return supportedExt.has(ext)
+                        })
+
+                        if (targetFiles.length === 0) {
+                          setLearningStatus(`ℹ️ 此資料夾檔案不在支援列表（${Array.from(supportedExt).join(', ')}）`) 
+                          return
+                        }
+
+                        let importedCount = 0
+                        let skippedCount = 0
+
+                        for (let i = 0; i < targetFiles.length; i++) {
+                          const f = targetFiles[i]
+                          const progress = `${i + 1}/${targetFiles.length}`
+                          setLearningStatus(`☁️ 同步中（${progress}）\n📄 ${f.name}`)
+
+                          try {
+                            const downloaded = await window.electronAPI.m365.drive.downloadItem({
+                              tenant: (m365DriveSync?.tenant || 'organizations').trim() || undefined,
+                              clientId: (m365DriveSync?.clientId || '').trim(),
+                              driveId: m365Resolved.driveId,
+                              itemId: f.id,
+                              scopes: ['User.Read', 'Files.Read.All', 'Sites.Read.All', 'offline_access']
+                            })
+
+                            const bytes = decodeBase64ToU8(downloaded.base64)
+                            const extracted = await extractDownloadedFileToText(downloaded.name || f.name, bytes)
+                            if (!extracted) {
+                              skippedCount++
+                              continue
+                            }
+
+                            const originalBytes = typeof f.size === 'number' ? f.size : bytes.byteLength
+                            const contentBytes = new Blob([extracted]).size
+
+                            const LARGE_CONTENT_BYTES = 200 * 1024
+                            const placeholder = `# ${downloaded.name || f.name}\n原始大小：${(originalBytes / 1024).toFixed(1)} KB\n提取時間：${new Date().toLocaleString('zh-TW')}\n\n(內容提取中，完成學習後將以精簡內容取代...)\n\n_source=m365\n${m365TagForItem(m365Resolved.driveId, f.id)}`
+                            const initialContent = contentBytes > LARGE_CONTENT_BYTES ? placeholder : extracted
+
+                            const tag = m365TagForItem(m365Resolved.driveId, f.id)
+                            const existing = knowledgeStore.getEntries().find(e => typeof e.tags === 'string' && e.tags.includes(tag))
+                            const category: KnowledgeEntry['category'] = 'custom'
+
+                            let entry: KnowledgeEntry
+                            if (existing) {
+                              entry = existing
+                              knowledgeStore.updateEntry(entry.id, {
+                                name: downloaded.name || f.name,
+                                content: initialContent,
+                                category,
+                                enabled: true,
+                                isLearned: false,
+                                learnedAt: undefined,
+                                learnedSize: undefined,
+                                learnedModel: undefined
+                              })
+                            } else {
+                              entry = await knowledgeStore.addEntry(downloaded.name || f.name, initialContent, category)
+                            }
+
+                            const mergedTags = (() => {
+                              const base = (existing?.tags || '').trim()
+                              const parts = base ? base.split(',').map(x => x.trim()).filter(Boolean) : []
+                              if (!parts.includes('m365')) parts.push('m365')
+                              if (!parts.includes(tag)) parts.push(tag)
+                              return parts.join(',')
+                            })()
+
+                            knowledgeStore.updateEntry(entry.id, {
+                              tags: mergedTags,
+                              originalSize: originalBytes,
+                              size: originalBytes,
+                              originalContent: extracted,
+                              useOriginalContent: false
+                            })
+
+                            if ((m365DriveSync?.autoLearn ?? true) === true) {
+                              await learnKnowledge(entry, extracted, contentBytes)
+                            }
+
+                            importedCount++
+                            setEntries(knowledgeStore.getEntries())
+                          } catch (err) {
+                            skippedCount++
+                            console.error('[M365 Sync] Failed file:', f.name, err)
+                          }
+                        }
+
+                        setLearningStatus(`✅ 同步完成\n匯入：${importedCount}\n跳過/失敗：${skippedCount}\n總計：${targetFiles.length}`)
+                      } finally {
+                        setM365Syncing(false)
+                        setEntries(knowledgeStore.getEntries())
+                      }
+                    }}
+                    disabled={m365Syncing}
+                    style={{ padding: '8px 12px', backgroundColor: '#2a3826', color: '#7bbda4', border: 'none', borderRadius: '4px', cursor: m365Syncing ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 'bold', opacity: m365Syncing ? 0.6 : 1 }}
+                  >
+                    {m365Syncing ? '⏳ 同步中...' : '⬇️ 同步到 Knowledge Base'}
+                  </button>
+                </div>
               </div>
 
               {/* 操作按鈕區 */}

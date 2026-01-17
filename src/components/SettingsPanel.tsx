@@ -41,10 +41,34 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [userCode, setUserCode] = useState('') // Store user code separately for better display
   const [deviceCode, setDeviceCode] = useState('') // Store device code for manual completion
 
+  // Microsoft 365 Drive Sync auth (Graph)
+  const [m365DeviceFlow, setM365DeviceFlow] = useState<null | {
+    deviceCode: string
+    userCode: string
+    verificationUri: string
+    expiresIn: number
+    interval: number
+    message?: string
+  }>(null)
+  const [m365AuthMessage, setM365AuthMessage] = useState('')
+  const [m365Status, setM365Status] = useState<null | {
+    signedIn: boolean
+    expiresAt?: number
+    scope?: string
+    account?: { displayName?: string; userPrincipalName?: string }
+  }>(null)
+
   useEffect(() => {
     return settingsStore.subscribe(() => {
       setSettings(settingsStore.getSettings())
     })
+  }, [])
+
+  useEffect(() => {
+    // Best-effort refresh on mount
+    window.electronAPI.m365.getStatus()
+      .then(status => setM365Status(status))
+      .catch(() => setM365Status(null))
   }, [])
 
   // Load Copilot config
@@ -257,6 +281,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       }
       setAuthLoading(false)
     }
+  }
+
+  const refreshM365Status = async () => {
+    const status = await window.electronAPI.m365.getStatus()
+    setM365Status(status)
+    return status
   }
 
   const handleGitHubLogin = async () => {
@@ -999,6 +1029,224 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </div>
             )}
+
+            {/* Microsoft 365 Drive Sync (OneDrive/SharePoint -> Knowledge Base) */}
+            <div className="settings-group">
+              <div style={{
+                padding: '16px',
+                backgroundColor: '#1f2430',
+                borderRadius: '8px',
+                border: '1px solid #2c3446'
+              }}>
+                <h4 style={{ color: '#dfdbc3', marginBottom: '10px', fontSize: '15px' }}>
+                  ☁️ Microsoft 365 Drive Sync（同步到 Knowledge Base）
+                </h4>
+
+                <div style={{ color: '#888', fontSize: '12px', marginBottom: '12px' }}>
+                  登入與設定集中在這裡；Knowledge Base 的索引頁只負責執行同步。
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '220px', flex: 1 }}>
+                    <span style={{ color: '#888', fontSize: '12px' }}>Tenant</span>
+                    <input
+                      value={settings.m365DriveSync?.tenant || 'organizations'}
+                      onChange={(e) => settingsStore.setM365DriveSyncConfig({ tenant: e.target.value })}
+                      placeholder="organizations / common / your-tenant-id"
+                      style={{ padding: '8px 10px', background: '#141821', border: '1px solid #2c3446', borderRadius: '4px', color: '#dfdbc3' }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '260px', flex: 2 }}>
+                    <span style={{ color: '#888', fontSize: '12px' }}>Client ID (App Registration)</span>
+                    <input
+                      value={settings.m365DriveSync?.clientId || ''}
+                      onChange={(e) => settingsStore.setM365DriveSyncConfig({ clientId: e.target.value })}
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      style={{ padding: '8px 10px', background: '#141821', border: '1px solid #2c3446', borderRadius: '4px', color: '#dfdbc3', fontFamily: 'monospace' }}
+                    />
+                  </label>
+                </div>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                  <span style={{ color: '#888', fontSize: '12px' }}>Share link (folder)</span>
+                  <input
+                    value={settings.m365DriveSync?.shareUrl || ''}
+                    onChange={(e) => settingsStore.setM365DriveSyncConfig({ shareUrl: e.target.value })}
+                    placeholder="https://.../:f:/r/... 或 OneDrive/SharePoint 分享連結"
+                    style={{ padding: '8px 10px', background: '#141821', border: '1px solid #2c3446', borderRadius: '4px', color: '#dfdbc3' }}
+                  />
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#888', fontSize: '12px', marginBottom: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={(settings.m365DriveSync?.autoLearn ?? true) === true}
+                    onChange={(e) => settingsStore.setM365DriveSyncConfig({ autoLearn: e.target.checked })}
+                  />
+                  同步後自動學習
+                </label>
+
+                <div style={{
+                  padding: '10px',
+                  backgroundColor: m365Status?.signedIn ? '#2d4a2d' : '#2a2826',
+                  borderRadius: '6px',
+                  border: `1px solid ${m365Status?.signedIn ? '#2f6b4f' : '#3a3836'}`,
+                  marginBottom: '10px'
+                }}>
+                  <div style={{ color: m365Status?.signedIn ? '#7bbda4' : '#888', fontSize: '13px', fontWeight: 'bold' }}>
+                    {m365Status?.signedIn
+                      ? `✅ 已登入：${m365Status.account?.displayName || m365Status.account?.userPrincipalName || 'Unknown'}`
+                      : 'ℹ️ 尚未登入 Microsoft 365'}
+                  </div>
+                  {m365Status?.signedIn && m365Status.expiresAt && (
+                    <small style={{ color: '#888' }}>
+                      Token 到期：{new Date(m365Status.expiresAt).toLocaleString('zh-TW')}
+                    </small>
+                  )}
+                </div>
+
+                {m365DeviceFlow?.userCode && (
+                  <div style={{
+                    padding: '14px',
+                    backgroundColor: '#1e3a8a',
+                    borderRadius: '8px',
+                    border: '2px solid #3b82f6',
+                    textAlign: 'center',
+                    marginBottom: '10px'
+                  }}>
+                    <div style={{ color: '#93c5fd', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' }}>
+                      請在瀏覽器輸入此代碼：
+                    </div>
+                    <div style={{
+                      fontSize: '28px',
+                      fontWeight: 'bold',
+                      color: '#ffffff',
+                      letterSpacing: '6px',
+                      fontFamily: 'monospace',
+                      padding: '8px',
+                      backgroundColor: '#1e40af',
+                      borderRadius: '4px',
+                      userSelect: 'all'
+                    }}>
+                      {m365DeviceFlow.userCode}
+                    </div>
+                    <div style={{ color: '#93c5fd', fontSize: '11px', marginTop: '8px' }}>
+                      {m365DeviceFlow.verificationUri}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={async () => {
+                      const clientId = (settings.m365DriveSync?.clientId || '').trim()
+                      if (!clientId) {
+                        setM365AuthMessage('❌ 請先填入 Client ID')
+                        return
+                      }
+                      try {
+                        setM365AuthMessage('🔐 正在開始 Microsoft 365 裝置碼登入...')
+                        const flow = await window.electronAPI.m365.startDeviceFlow({
+                          tenant: (settings.m365DriveSync?.tenant || 'organizations').trim() || undefined,
+                          clientId,
+                          scopes: ['User.Read', 'Files.Read.All', 'Sites.Read.All', 'offline_access']
+                        })
+                        setM365DeviceFlow(flow)
+                        setM365AuthMessage(flow.message || '🔐 請在瀏覽器完成登入')
+                      } catch (err) {
+                        setM365AuthMessage(`❌ 無法開始登入：${err instanceof Error ? err.message : String(err)}`)
+                      }
+                    }}
+                    style={{ padding: '8px 12px', backgroundColor: '#2a3a4a', color: '#a7c7ff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >
+                    🔑 開始登入
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (!m365DeviceFlow?.verificationUri) return
+                      window.electronAPI.shell.openExternal(m365DeviceFlow.verificationUri)
+                    }}
+                    disabled={!m365DeviceFlow?.verificationUri}
+                    style={{ padding: '8px 12px', backgroundColor: '#2a2836', color: '#dfdbc3', border: 'none', borderRadius: '4px', cursor: m365DeviceFlow?.verificationUri ? 'pointer' : 'not-allowed', fontSize: '12px', opacity: m365DeviceFlow?.verificationUri ? 1 : 0.6 }}
+                  >
+                    🌐 開啟登入頁
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      const clientId = (settings.m365DriveSync?.clientId || '').trim()
+                      if (!m365DeviceFlow?.deviceCode) {
+                        setM365AuthMessage('❌ 請先點「開始登入」取得 device code')
+                        return
+                      }
+                      if (!clientId) {
+                        setM365AuthMessage('❌ 缺少 Client ID')
+                        return
+                      }
+                      try {
+                        setM365AuthMessage('⏳ 正在等待登入完成...')
+                        await window.electronAPI.m365.completeDeviceFlow({
+                          tenant: (settings.m365DriveSync?.tenant || 'organizations').trim() || undefined,
+                          clientId,
+                          deviceCode: m365DeviceFlow.deviceCode
+                        })
+                        await refreshM365Status()
+                        setM365AuthMessage('✅ 登入完成')
+                      } catch (err) {
+                        setM365AuthMessage(`❌ 登入失敗：${err instanceof Error ? err.message : String(err)}`)
+                      }
+                    }}
+                    disabled={!m365DeviceFlow?.deviceCode}
+                    style={{ padding: '8px 12px', backgroundColor: '#2a3826', color: '#7bbda4', border: 'none', borderRadius: '4px', cursor: m365DeviceFlow?.deviceCode ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 'bold', opacity: m365DeviceFlow?.deviceCode ? 1 : 0.6 }}
+                  >
+                    ✅ 完成登入
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        await refreshM365Status()
+                        setM365AuthMessage('✅ 已更新狀態')
+                      } catch (err) {
+                        setM365AuthMessage(`❌ 讀取狀態失敗：${err instanceof Error ? err.message : String(err)}`)
+                      }
+                    }}
+                    style={{ padding: '8px 12px', backgroundColor: '#3a3836', color: '#dfdbc3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                  >
+                    👤 狀態
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      if (!confirm('確定要登出 Microsoft 365 嗎？')) return
+                      await window.electronAPI.m365.signOut()
+                      setM365DeviceFlow(null)
+                      await refreshM365Status()
+                      setM365AuthMessage('✅ 已登出')
+                    }}
+                    style={{ padding: '8px 12px', backgroundColor: '#3a2826', color: '#f87171', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                  >
+                    🚪 登出
+                  </button>
+                </div>
+
+                {m365AuthMessage && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '10px',
+                    backgroundColor: m365AuthMessage.includes('✅') ? '#2d4a2d' : '#4a3d2d',
+                    borderRadius: '4px',
+                    color: '#dfdbc3',
+                    fontSize: '13px',
+                    whiteSpace: 'pre-line'
+                  }}>
+                    {m365AuthMessage}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           )}
 

@@ -113,6 +113,15 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
               workspaceStore.updateTerminal(terminal.id, { webviewContent: content })
             }}
           />
+        ) : terminal.type === 'teams' ? (
+          <WebViewPanel
+            height="100%"
+            url={terminal.url || 'https://teams.microsoft.com/v2/'}
+            showToolbar={false}
+            defaultZoom={100}
+            isFloating={false}
+            terminalId={terminal.id}
+          />
         ) : terminal.type === 'file' ? (
           <FileExplorerPanel
             isVisible={true}

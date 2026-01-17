@@ -3,6 +3,8 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 're
 interface WebViewPanelProps {
   height: string
   url: string
+  showToolbar?: boolean
+  defaultZoom?: number
   isFloating?: boolean
   onToggleFloat?: () => void
   onClose?: () => void
@@ -15,12 +17,40 @@ export interface WebViewPanelRef {
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url: initialUrl, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
-  const [zoom, setZoom] = useState(75)
+  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
+  const [zoom, setZoom] = useState(defaultZoom)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
   const [isFetching, setIsFetching] = useState(false)
   const webviewRef = useRef<any>(null)
+
+  const normalizeWebUrl = (raw: string): string => {
+    const trimmed = (raw || '').trim()
+    if (!trimmed) return trimmed
+
+    // Add https:// if no protocol specified
+    const withProto = trimmed.match(/^https?:\/\//) ? trimmed : `https://${trimmed}`
+
+    try {
+      const u = new URL(withProto)
+
+      // Teams: prefer the new web client to avoid the “classic Teams” landing page.
+      // (We only rewrite obvious landing-style URLs; deep links should be left intact.)
+      if (u.hostname === 'teams.microsoft.com') {
+        const p = u.pathname || '/'
+        const looksLikeLanding = p === '/' || p === '/_#/' || p.startsWith('/_#/') || p.startsWith('/_?') || p.startsWith('/_#')
+        const alreadyV2 = p === '/v2' || p.startsWith('/v2/')
+        if (looksLikeLanding && !alreadyV2) {
+          return 'https://teams.microsoft.com/v2/'
+        }
+      }
+
+      return u.toString()
+    } catch {
+      // If URL parsing fails, fall back to the raw-ish value.
+      return withProto
+    }
+  }
 
   // Dragging and resizing state
   const [position, setPosition] = useState(() => {
@@ -39,11 +69,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   // Handle URL navigation
   const handleNavigate = () => {
     if (urlInput.trim()) {
-      let finalUrl = urlInput.trim()
-      // Add https:// if no protocol specified
-      if (!finalUrl.match(/^https?:\/\//)) {
-        finalUrl = 'https://' + finalUrl
-      }
+      const finalUrl = normalizeWebUrl(urlInput)
       setCurrentUrl(finalUrl)
       setUrlInput(finalUrl)
     }
@@ -129,8 +155,9 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
 
   // Update URL input when initial URL changes
   useEffect(() => {
-    setCurrentUrl(initialUrl)
-    setUrlInput(initialUrl)
+    const normalized = normalizeWebUrl(initialUrl)
+    setCurrentUrl(normalized)
+    setUrlInput(normalized)
   }, [initialUrl])
 
   // Auto-fetch content when webview loads
@@ -261,9 +288,9 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   } : {
     width: '100%',
     height: height,
-    backgroundColor: '#1e1e1e',
-    borderTop: '1px solid #3a3836',
-    borderLeft: '1px solid #3a3836',
+    backgroundColor: showToolbar ? '#1e1e1e' : '#ffffff',
+    borderTop: showToolbar ? '1px solid #3a3836' : 'none',
+    borderLeft: showToolbar ? '1px solid #3a3836' : 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -273,123 +300,62 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   return (
     <div ref={containerRef} style={containerStyle}>
       {/* Header */}
-      <div
-        style={{
-          padding: '8px 12px',
-          backgroundColor: '#2a2826',
-          borderBottom: '1px solid #3a3836',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          userSelect: 'none',
-          cursor: isFloating ? 'move' : 'default'
-        }}
-        onMouseDown={isFloating ? handleDragStart : undefined}
-      >
-        <span style={{ color: '#dfdbc3', fontSize: '12px', fontWeight: 500 }}>🌐</span>
-        <input
-          type="text"
-          value={urlInput}
-          onChange={(e) => setUrlInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              handleNavigate()
-            }
-          }}
-          placeholder="輸入網址..."
+      {showToolbar && (
+        <div
           style={{
-            flex: 1,
-            padding: '4px 8px',
-            fontSize: '12px',
-            backgroundColor: '#1f1d1a',
-            color: '#dfdbc3',
-            border: '1px solid #3a3836',
-            borderRadius: '4px',
-            outline: 'none'
+            padding: '8px 12px',
+            backgroundColor: '#2a2826',
+            borderBottom: '1px solid #3a3836',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            userSelect: 'none',
+            cursor: isFloating ? 'move' : 'default'
           }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        />
-        <button
-          onClick={handleNavigate}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: '#7bbda4',
-            cursor: 'pointer',
-            padding: '4px 8px',
-            fontSize: '12px',
-            borderRadius: '4px',
-            fontWeight: 'bold'
-          }}
-          title="前往"
+          onMouseDown={isFloating ? handleDragStart : undefined}
         >
-          GO
-        </button>
-        <button
-          onClick={handleRefresh}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: '#dfdbc3',
-            cursor: 'pointer',
-            padding: '4px 8px',
-            fontSize: '12px',
-            borderRadius: '4px'
-          }}
-          title="重新整理"
-        >
-          🔄
-        </button>
-        <button
-          onClick={() => setZoom(Math.max(25, zoom - 10))}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: '#dfdbc3',
-            cursor: 'pointer',
-            padding: '2px 8px',
-            fontSize: '14px',
-            borderRadius: '4px'
-          }}
-          title="縮小"
-        >
-          −
-        </button>
-        <span style={{ color: '#dfdbc3', fontSize: '11px', minWidth: '45px', textAlign: 'center' }}>{zoom}%</span>
-        <button
-          onClick={() => setZoom(Math.min(200, zoom + 10))}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: '#dfdbc3',
-            cursor: 'pointer',
-            padding: '2px 8px',
-            fontSize: '14px',
-            borderRadius: '4px'
-          }}
-          title="放大"
-        >
-          +
-        </button>
-        <button
-          onClick={() => setZoom(100)}
-          style={{
-            background: 'none',
-            border: '1px solid #3a3836',
-            color: '#dfdbc3',
-            cursor: 'pointer',
-            padding: '2px 8px',
-            fontSize: '11px',
-            borderRadius: '4px'
-          }}
-          title="重置"
-        >
-          100%
-        </button>
-        {onToggleFloat && (
+          <span style={{ color: '#dfdbc3', fontSize: '12px', fontWeight: 500 }}>🌐</span>
+          <input
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleNavigate()
+              }
+            }}
+            placeholder="輸入網址..."
+            style={{
+              flex: 1,
+              padding: '4px 8px',
+              fontSize: '12px',
+              backgroundColor: '#1f1d1a',
+              color: '#dfdbc3',
+              border: '1px solid #3a3836',
+              borderRadius: '4px',
+              outline: 'none'
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          />
           <button
-            onClick={onToggleFloat}
+            onClick={handleNavigate}
+            style={{
+              background: 'none',
+              border: '1px solid #3a3836',
+              color: '#7bbda4',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontSize: '12px',
+              borderRadius: '4px',
+              fontWeight: 'bold'
+            }}
+            title="前往"
+          >
+            GO
+          </button>
+          <button
+            onClick={handleRefresh}
             style={{
               background: 'none',
               border: '1px solid #3a3836',
@@ -399,29 +365,92 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
               fontSize: '12px',
               borderRadius: '4px'
             }}
-            title={isFloating ? '固定' : '浮動'}
+            title="重新整理"
           >
-            {isFloating ? '📌' : '🔗'}
+            🔄
           </button>
-        )}
-        {onClose && (
           <button
-            onClick={onClose}
+            onClick={() => setZoom(Math.max(25, zoom - 10))}
             style={{
               background: 'none',
               border: '1px solid #3a3836',
               color: '#dfdbc3',
               cursor: 'pointer',
-              padding: '4px 8px',
-              fontSize: '12px',
+              padding: '2px 8px',
+              fontSize: '14px',
               borderRadius: '4px'
             }}
-            title="關閉"
+            title="縮小"
           >
-            ✕
+            −
           </button>
-        )}
-      </div>
+          <span style={{ color: '#dfdbc3', fontSize: '11px', minWidth: '45px', textAlign: 'center' }}>{zoom}%</span>
+          <button
+            onClick={() => setZoom(Math.min(200, zoom + 10))}
+            style={{
+              background: 'none',
+              border: '1px solid #3a3836',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              padding: '2px 8px',
+              fontSize: '14px',
+              borderRadius: '4px'
+            }}
+            title="放大"
+          >
+            +
+          </button>
+          <button
+            onClick={() => setZoom(100)}
+            style={{
+              background: 'none',
+              border: '1px solid #3a3836',
+              color: '#dfdbc3',
+              cursor: 'pointer',
+              padding: '2px 8px',
+              fontSize: '11px',
+              borderRadius: '4px'
+            }}
+            title="重置"
+          >
+            100%
+          </button>
+          {onToggleFloat && (
+            <button
+              onClick={onToggleFloat}
+              style={{
+                background: 'none',
+                border: '1px solid #3a3836',
+                color: '#dfdbc3',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                fontSize: '12px',
+                borderRadius: '4px'
+              }}
+              title={isFloating ? '固定' : '浮動'}
+            >
+              {isFloating ? '📌' : '🔗'}
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: '1px solid #3a3836',
+                color: '#dfdbc3',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                fontSize: '12px',
+                borderRadius: '4px'
+              }}
+              title="關閉"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
 
       {/* WebView */}
       <div style={{ flex: 1, position: 'relative', backgroundColor: '#ffffff', overflow: 'auto' }}>

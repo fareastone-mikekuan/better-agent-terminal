@@ -3,7 +3,7 @@ import type { TerminalInstance } from '../types'
 import { TerminalThumbnail } from './TerminalThumbnail'
 import { getAgentPreset } from '../types/agent-presets'
 
-type TabType = 'terminal' | 'oracle' | 'webview' | 'file' | 'api' | 'git'
+type TabType = 'terminal' | 'oracle' | 'webview' | 'teams' | 'file' | 'api' | 'git'
 
 interface ThumbnailBarProps {
   terminals: TerminalInstance[]
@@ -12,6 +12,7 @@ interface ThumbnailBarProps {
   onAddTerminal?: () => void
   onAddOracle?: () => void
   onAddWebView?: () => void
+  onAddTeams?: () => void
   onAddFile?: () => void
   onAddApiTester?: () => void
   onAddGit?: () => void
@@ -30,6 +31,7 @@ export function ThumbnailBar({
   onAddTerminal,
   onAddOracle,
   onAddWebView,
+  onAddTeams,
   onAddFile,
   onAddApiTester,
   onAddGit,
@@ -49,8 +51,10 @@ export function ThumbnailBar({
     terminal: null,
     oracle: null,
     webview: null,
+    teams: null,
     file: null,
-    api: null
+    api: null,
+    git: null
   })
 
   // Update last focused terminal when focus changes
@@ -120,6 +124,8 @@ export function ThumbnailBar({
         return '資料庫'
       case 'webview':
         return '網頁'
+      case 'teams':
+        return 'Teams'
       case 'file':
         return '檔案'
       case 'api':
@@ -157,6 +163,9 @@ export function ThumbnailBar({
       case 'webview':
         onAddWebView?.()
         break
+      case 'teams':
+        onAddTeams?.()
+        break
       case 'file':
         onAddFile?.()
         break
@@ -191,6 +200,12 @@ export function ThumbnailBar({
             onClick={() => setActiveTab('webview')}
           >
             🌐 網頁
+          </button>
+          <button
+            className={`thumbnail-tab ${activeTab === 'teams' ? 'active' : ''}`}
+            onClick={() => setActiveTab('teams')}
+          >
+            💬 Teams
           </button>
           <button
             className={`thumbnail-tab ${activeTab === 'file' ? 'active' : ''}`}

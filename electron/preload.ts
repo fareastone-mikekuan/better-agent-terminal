@@ -121,6 +121,22 @@ const electronAPI = {
     execute: (cwd: string, args: string[]) => ipcRenderer.invoke('git:execute', cwd, args) as Promise<{ success: boolean; output: string; error: string }>,
     fetchRemoteHistory: (remoteUrl: string, branch?: string) => ipcRenderer.invoke('git:fetchRemoteHistory', remoteUrl, branch) as Promise<{ success: boolean; output: string; error?: string }>,
     fetchRemoteCommitDetails: (remoteUrl: string, commitHash: string, branch?: string) => ipcRenderer.invoke('git:fetchRemoteCommitDetails', remoteUrl, commitHash, branch) as Promise<{ success: boolean; output: string; error?: string }>
+  },
+  m365: {
+    getStatus: () => ipcRenderer.invoke('m365:get-status') as Promise<{ signedIn: boolean; expiresAt?: number; scope?: string; account?: { displayName?: string; userPrincipalName?: string } }>,
+    signOut: () => ipcRenderer.invoke('m365:sign-out') as Promise<{ success: boolean }>,
+    startDeviceFlow: (params: { tenant?: string; clientId: string; scopes?: string[] }) =>
+      ipcRenderer.invoke('m365:start-device-flow', params) as Promise<{ deviceCode: string; userCode: string; verificationUri: string; expiresIn: number; interval: number; message?: string }>,
+    completeDeviceFlow: (params: { tenant?: string; clientId: string; deviceCode: string }) =>
+      ipcRenderer.invoke('m365:complete-device-flow', params) as Promise<any>,
+    drive: {
+      resolveShareLink: (params: { tenant?: string; clientId: string; shareUrl: string; scopes?: string[] }) =>
+        ipcRenderer.invoke('m365:drive:resolve-share-link', params) as Promise<{ driveId: string; itemId: string; name: string; webUrl?: string; isFolder: boolean }>,
+      listChildren: (params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) =>
+        ipcRenderer.invoke('m365:drive:list-children', params) as Promise<Array<{ id: string; name: string; webUrl?: string; size?: number; lastModifiedDateTime?: string; isFolder: boolean; mimeType?: string }>>,
+      downloadItem: (params: { tenant?: string; clientId: string; driveId: string; itemId: string; scopes?: string[] }) =>
+        ipcRenderer.invoke('m365:drive:download-item', params) as Promise<{ name: string; mimeType?: string; base64: string; size?: number }>
+    }
   }
 }
 

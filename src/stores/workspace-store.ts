@@ -298,6 +298,35 @@ class WorkspaceStore {
     return terminal
   }
 
+  addTeams(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const existingTeams = this.state.terminals.filter(t => t.workspaceId === workspaceId && t.type === 'teams')
+    const teamsNumber = existingTeams.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'teams',
+      title: `💬 Teams #${teamsNumber}`,
+      url: 'https://teams.microsoft.com/v2/',
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
   addFile(workspaceId: string): TerminalInstance {
     const workspace = this.state.workspaces.find(w => w.id === workspaceId)
     if (!workspace) throw new Error('Workspace not found')

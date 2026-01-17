@@ -113,13 +113,13 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'oracle' | 'webview' | 'file' | 'api' | 'git';  // terminal、oracle、webview、file explorer、api tester 或 git
+  type: 'terminal' | 'oracle' | 'webview' | 'teams' | 'file' | 'api' | 'git';  // terminal、oracle、webview、teams、file explorer、api tester 或 git
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;
   pid?: number;
   cwd: string;
-  url?: string;  // WebView URL（僅用於 type='webview'）
+  url?: string;  // WebView/Teams URL（僅用於 type='webview' | 'teams'）
   webviewContent?: string;  // WebView 頁面內容（用於 AI 分析）
   oracleQueryResult?: string;  // Oracle 查詢結果（用於 AI 分析）
   oracleConfig?: {  // Oracle 連接配置（僅用於 type='oracle'）
@@ -269,6 +269,14 @@ export interface AppSettings {
     webView?: boolean;      // 網頁視窗是否共用（預設 true）
     snippets?: boolean;     // 筆記面板是否共用（預設 true）
     skills?: boolean;       // 技能面板是否共用（預設 true）
+  };
+
+  // Microsoft 365 Drive Sync (OneDrive/SharePoint -> Knowledge Base)
+  m365DriveSync?: {
+    tenant?: string; // e.g. organizations/common/<tenantId>
+    clientId?: string; // Entra App Registration client id
+    shareUrl?: string; // folder share link
+    autoLearn?: boolean; // whether to auto-learn after import
   };
 }
 
