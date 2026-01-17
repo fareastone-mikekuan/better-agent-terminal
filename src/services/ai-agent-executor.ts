@@ -37,22 +37,17 @@ export interface AgentContext {
 
 // 執行結果
 export interface AgentExecutionResult {
-  success: boolean
   message: string
   actions: AgentAction[]
-  thoughts: AgentThought[]
 }
 
-/**
- * AI Agent 執行器
- */
 export class AIAgentExecutor {
   private skill: AIAgentSkill
   private context: AgentContext
   private state: AgentExecutionState
   private abortController: AbortController
   private onStateChange?: (state: AgentExecutionState) => void
-  
+
   constructor(skill: AIAgentSkill, context: AgentContext, onStateChange?: (state: AgentExecutionState) => void) {
     this.skill = skill
     this.context = context
@@ -591,22 +586,26 @@ RESULT:
     "phone": "電話"
   },
   "items": [
-    { "name": "項目名稱", "quantity": 1, "unitPrice": 金額, "amount": 金額 }
+    { "name": "項目名稱", "quantity": 1, "unitPrice": 0, "amount": 0 }
   ],
   "discounts": [
-    { "name": "折扣名稱", "amount": 折扣金額 }
+    { "name": "折扣名稱", "amount": 0 }
   ],
-  "subtotal": 小計,
-  "totalDiscount": 折扣合計,
-  "afterDiscount": 折後金額,
+  "subtotal": 0,
+  "totalDiscount": 0,
+  "afterDiscount": 0,
   "taxRate": 0.05,
-  "tax": 稅額,
-  "total": 應付總額,
+  "tax": 0,
+  "total": 0,
   "paymentMethod": "月結付款"
 }
 \`\`\`
 
-請根據 collectedData 中的實際資料填入上述 JSON 結構。`
+請根據 collectedData 中的實際資料填入上述 JSON 結構，並確保：
+1) RESULT 區塊必須是「可被 JSON.parse 直接解析」的合法 JSON
+2) 所有金額欄位必須是 number（不要輸出「金額」「小計」這種占位文字）
+3) items[].amount 必填；若 unitPrice 缺省，amount 仍必填
+`
         
         this.state.conversationHistory.push({
           role: 'user',

@@ -39,6 +39,84 @@ export interface InvoiceData {
   paymentMethod?: string
 }
 
+function coerceNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return fallback
+    const normalized = trimmed
+      .replace(/^NT\$\s*/i, '')
+      .replace(/,/g, '')
+      .replace(/\$/g, '')
+    const n = Number(normalized)
+    return Number.isFinite(n) ? n : fallback
+  }
+  return fallback
+}
+
+function normalizeInvoiceData(raw: any): InvoiceData {
+  const data: any = raw && typeof raw === 'object' ? raw : {}
+
+  const items = Array.isArray(data.items) ? data.items : []
+  const normalizedItems: InvoiceData['items'] = (items.length ? items : [{ name: '服務費用', amount: 0 }]).map((it: any) => {
+    const quantity = coerceNumber(it?.quantity, 1) || 1
+    const unitPrice = it?.unitPrice != null ? coerceNumber(it.unitPrice, 0) : undefined
+    const amount = it?.amount != null
+      ? coerceNumber(it.amount, 0)
+      : unitPrice != null
+        ? Math.round(unitPrice * quantity * 100) / 100
+        : 0
+
+    return {
+      name: String(it?.name ?? '項目').trim() || '項目',
+      description: typeof it?.description === 'string' ? it.description : undefined,
+      quantity,
+      unitPrice,
+      amount
+    }
+  })
+
+  const discounts = Array.isArray(data.discounts) ? data.discounts : []
+  const normalizedDiscounts: NonNullable<InvoiceData['discounts']> = discounts
+    .map((d: any) => ({
+      name: String(d?.name ?? '折扣').trim() || '折扣',
+      amount: coerceNumber(d?.amount, 0)
+    }))
+    .filter(d => d.amount > 0)
+
+  const subtotalFromItems = Math.round(normalizedItems.reduce((sum, it) => sum + coerceNumber(it.amount, 0), 0) * 100) / 100
+  const totalDiscountFromList = Math.round(normalizedDiscounts.reduce((sum, d) => sum + coerceNumber(d.amount, 0), 0) * 100) / 100
+  const subtotal = data?.subtotal != null ? coerceNumber(data.subtotal, subtotalFromItems) : subtotalFromItems
+  const totalDiscount = data?.totalDiscount != null ? coerceNumber(data.totalDiscount, totalDiscountFromList) : totalDiscountFromList
+  const afterDiscount = data?.afterDiscount != null ? coerceNumber(data.afterDiscount, subtotal - totalDiscount) : Math.round((subtotal - totalDiscount) * 100) / 100
+  const taxRate = data?.taxRate != null ? coerceNumber(data.taxRate, 0.05) : 0.05
+  const tax = data?.tax != null ? coerceNumber(data.tax, afterDiscount * taxRate) : Math.round((afterDiscount * taxRate) * 100) / 100
+  const total = data?.total != null ? coerceNumber(data.total, afterDiscount + tax) : Math.round((afterDiscount + tax) * 100) / 100
+
+  return {
+    invoiceNumber: String(data?.invoiceNumber ?? `INV-${Date.now()}`),
+    issueDate: String(data?.issueDate ?? new Date().toISOString().split('T')[0]),
+    dueDate: data?.dueDate ? String(data.dueDate) : undefined,
+    customer: {
+      name: String(data?.customer?.name ?? '未知客戶'),
+      taxId: String(data?.customer?.taxId ?? '00000000'),
+      contact: data?.customer?.contact ? String(data.customer.contact) : undefined,
+      phone: data?.customer?.phone ? String(data.customer.phone) : undefined,
+      address: data?.customer?.address ? String(data.customer.address) : undefined
+    },
+    items: normalizedItems,
+    discounts: normalizedDiscounts.length ? normalizedDiscounts : undefined,
+    subtotal,
+    totalDiscount,
+    afterDiscount,
+    taxRate,
+    tax,
+    total,
+    notes: typeof data?.notes === 'string' ? data.notes : undefined,
+    paymentMethod: typeof data?.paymentMethod === 'string' ? data.paymentMethod : undefined
+  }
+}
+
 /**
  * 渲染帳單 HTML 模板
  */
@@ -475,12 +553,12 @@ export function parseInvoiceFromText(text: string): InvoiceData | null {
     // 嘗試找到 JSON 格式的資料
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[1])
+      return normalizeInvoiceData(JSON.parse(jsonMatch[1]))
     }
     
     // 嘗試直接解析 JSON
     if (text.trim().startsWith('{')) {
-      return JSON.parse(text)
+      return normalizeInvoiceData(JSON.parse(text))
     }
     
     // 如果是純文字格式，嘗試解析
@@ -524,14 +602,14 @@ export function parseInvoiceFromText(text: string): InvoiceData | null {
     }
     
     // 提取金額
-    const totalMatch = text.match(/(?:應付總[額金]|總計)[：:（(]?含稅[)）]?\s*(?:NT\$?\s*)?([\d,\.]+)/)
-    const taxMatch = text.match(/營業稅[^：:]*[：:]\s*(?:NT\$?\s*)?([\d,\.]+)/)
+    const totalMatch = text.match(/(?:應付總[額金]|總計|總額|合計)[^\d\n]*\s*(?:\(?含稅\)?\s*)?(?:NT\$?\s*|\$\s*)?([\d,\.]+)/)
+    const taxMatch = text.match(/(?:營業稅|稅額)[^：:]*[：:]\s*(?:NT\$?\s*|\$\s*)?([\d,\.]+)/)
     
     const total = totalMatch ? parseFloat(totalMatch[1].replace(/,/g, '')) : 0
-    const tax = taxMatch ? parseFloat(taxMatch[1].replace(/,/g, '')) : total * 0.05 / 1.05
+    const tax = taxMatch ? parseFloat(taxMatch[1].replace(/,/g, '')) : total > 0 ? total * 0.05 / 1.05 : 0
     const subtotal = total - tax
     
-    return {
+    return normalizeInvoiceData({
       invoiceNumber,
       issueDate,
       customer: {
@@ -545,7 +623,7 @@ export function parseInvoiceFromText(text: string): InvoiceData | null {
       taxRate: 0.05,
       tax: Math.round(tax * 100) / 100,
       total
-    }
+    })
   } catch (error) {
     console.error('[PDF Generator] Failed to parse invoice:', error)
     return null

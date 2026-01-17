@@ -1015,7 +1015,6 @@ export function CopilotChatPanel({ isVisible, onClose, width = 400, workspaceId,
       // UI 需要更明確的提示：超深度是否啟用「保底候選」、是否加入「索引補充」
       let usedFallbackCandidates = false
       let fallbackCandidatesCount = 0
-      let addedIndexSupplement = false
       let indexSupplementCount = 0
 
       const safeJsonParse = <T,>(text: string): T | null => {
@@ -1683,7 +1682,6 @@ ${knowledgeList}
               .map(k => k.name)
 
             // 記錄「索引補充」狀態，並回寫到步驟 UI（讓超深度更透明）
-            addedIndexSupplement = true
             indexSupplementCount = dropped.length
             knowledgePrompt += `\n(註：因內容/長度限制，完整載入 ${includedKnowledge.length}/${selectedKnowledge.length} 個；未完整載入：${dropped.join('、')})\n`
 
