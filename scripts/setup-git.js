@@ -137,11 +137,11 @@ function extractGit() {
   
   try {
     // Git portable is a self-extracting 7z archive
-    // Use -y flag for yes to all, -o for output directory
-    // Add quotes around path to handle spaces
-    const command = `"${DOWNLOAD_FILE}" -y -o"${GIT_DIR}"`;
-    console.log(`   Running: ${command}`);
-    execSync(command, { 
+    // Use PowerShell Start-Process for reliable execution on Windows
+    // 7z SFX parameters: -o<path> (no space between -o and path), -y (auto yes)
+    const psCommand = `Start-Process -FilePath "${DOWNLOAD_FILE}" -ArgumentList "-y", "-o${GIT_DIR}" -Wait -NoNewWindow -PassThru`;
+    console.log(`   Running extraction via PowerShell...`);
+    const result = execSync(`powershell.exe -NoProfile -Command "${psCommand}"`, { 
       encoding: 'utf8',
       stdio: 'inherit',
       timeout: 120000 // 2 minutes timeout
