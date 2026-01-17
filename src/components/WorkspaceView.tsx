@@ -8,7 +8,7 @@ import { MainPanel } from './MainPanel'
 import { ResizeHandle } from './ResizeHandle'
 import { AgentPresetId, getAgentPreset } from '../types/agent-presets'
 
-type TabType = 'terminal' | 'oracle' | 'webview' | 'teams' | 'file' | 'api' | 'git'
+type TabType = 'terminal' | 'oracle' | 'webview' | 'teams' | 'outlook' | 'copilotweb' | 'file' | 'api' | 'git'
 
 // ThumbnailBar panel settings
 const THUMBNAIL_SETTINGS_KEY = 'better-terminal-thumbnail-settings'
@@ -331,6 +331,16 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     workspaceStore.setFocusedTerminal(terminal.id)
   }, [workspace.id])
 
+  const handleAddOutlook = useCallback(() => {
+    const terminal = workspaceStore.addOutlook(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
+  const handleAddCopilotWeb = useCallback(() => {
+    const terminal = workspaceStore.addCopilotWeb(workspace.id)
+    workspaceStore.setFocusedTerminal(terminal.id)
+  }, [workspace.id])
+
   const handleAddApiTester = useCallback(() => {
     const terminal = workspaceStore.addApiTester(workspace.id)
     workspaceStore.setFocusedTerminal(terminal.id)
@@ -454,6 +464,8 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         onAddApiTester={handleAddApiTester}
         onAddGit={handleAddGit}
         onAddTeams={handleAddTeams}
+        onAddOutlook={handleAddOutlook}
+        onAddCopilotWeb={handleAddCopilotWeb}
         showAddButton={true}
         height={thumbnailSettings.height}
         collapsed={thumbnailSettings.collapsed}

@@ -119,6 +119,30 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile }: Reado
             url={terminal.url || 'https://teams.microsoft.com/v2/'}
             showToolbar={false}
             defaultZoom={100}
+            partition="persist:m365"
+            allowPopups={true}
+            isFloating={false}
+            terminalId={terminal.id}
+          />
+        ) : terminal.type === 'outlook' ? (
+          <WebViewPanel
+            height="100%"
+            url={terminal.url || 'https://outlook.office.com/mail/'}
+            showToolbar={false}
+            defaultZoom={100}
+            partition="persist:m365"
+            allowPopups={true}
+            isFloating={false}
+            terminalId={terminal.id}
+          />
+        ) : terminal.type === 'copilotweb' ? (
+          <WebViewPanel
+            height="100%"
+            url={terminal.url || 'https://m365.cloud.microsoft/chat/'}
+            showToolbar={false}
+            defaultZoom={100}
+            partition="persist:m365"
+            allowPopups={false}
             isFloating={false}
             terminalId={terminal.id}
           />

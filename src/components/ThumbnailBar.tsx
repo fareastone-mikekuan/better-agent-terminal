@@ -3,7 +3,7 @@ import type { TerminalInstance } from '../types'
 import { TerminalThumbnail } from './TerminalThumbnail'
 import { getAgentPreset } from '../types/agent-presets'
 
-type TabType = 'terminal' | 'oracle' | 'webview' | 'teams' | 'file' | 'api' | 'git'
+type TabType = 'terminal' | 'oracle' | 'webview' | 'teams' | 'outlook' | 'copilotweb' | 'file' | 'api' | 'git'
 
 interface ThumbnailBarProps {
   terminals: TerminalInstance[]
@@ -13,6 +13,8 @@ interface ThumbnailBarProps {
   onAddOracle?: () => void
   onAddWebView?: () => void
   onAddTeams?: () => void
+  onAddOutlook?: () => void
+  onAddCopilotWeb?: () => void
   onAddFile?: () => void
   onAddApiTester?: () => void
   onAddGit?: () => void
@@ -32,6 +34,8 @@ export function ThumbnailBar({
   onAddOracle,
   onAddWebView,
   onAddTeams,
+  onAddOutlook,
+  onAddCopilotWeb,
   onAddFile,
   onAddApiTester,
   onAddGit,
@@ -52,6 +56,8 @@ export function ThumbnailBar({
     oracle: null,
     webview: null,
     teams: null,
+    outlook: null,
+    copilotweb: null,
     file: null,
     api: null,
     git: null
@@ -126,6 +132,10 @@ export function ThumbnailBar({
         return '網頁'
       case 'teams':
         return 'Teams'
+      case 'outlook':
+        return 'Outlook'
+      case 'copilotweb':
+        return 'Copilot'
       case 'file':
         return '檔案'
       case 'api':
@@ -165,6 +175,12 @@ export function ThumbnailBar({
         break
       case 'teams':
         onAddTeams?.()
+        break
+      case 'outlook':
+        onAddOutlook?.()
+        break
+      case 'copilotweb':
+        onAddCopilotWeb?.()
         break
       case 'file':
         onAddFile?.()
@@ -206,6 +222,18 @@ export function ThumbnailBar({
             onClick={() => setActiveTab('teams')}
           >
             💬 Teams
+          </button>
+          <button
+            className={`thumbnail-tab ${activeTab === 'outlook' ? 'active' : ''}`}
+            onClick={() => setActiveTab('outlook')}
+          >
+            📧 Outlook
+          </button>
+          <button
+            className={`thumbnail-tab ${activeTab === 'copilotweb' ? 'active' : ''}`}
+            onClick={() => setActiveTab('copilotweb')}
+          >
+            🤖 Copilot
           </button>
           <button
             className={`thumbnail-tab ${activeTab === 'file' ? 'active' : ''}`}

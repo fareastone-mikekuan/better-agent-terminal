@@ -113,13 +113,13 @@ export const PRESET_ROLES = [
 export interface TerminalInstance {
   id: string;
   workspaceId: string;
-  type: 'terminal' | 'oracle' | 'webview' | 'teams' | 'file' | 'api' | 'git';  // terminal、oracle、webview、teams、file explorer、api tester 或 git
+  type: 'terminal' | 'oracle' | 'webview' | 'teams' | 'outlook' | 'copilot' | 'copilotweb' | 'file' | 'api' | 'git';  // terminal、oracle、webview、teams、outlook、copilot(in-app)、copilot web、file explorer、api tester 或 git
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   title: string;
   alias?: string;
   pid?: number;
   cwd: string;
-  url?: string;  // WebView/Teams URL（僅用於 type='webview' | 'teams'）
+  url?: string;  // WebView/Teams/Outlook/Copilot URL（僅用於 type='webview' | 'teams' | 'outlook' | 'copilotweb'）
   webviewContent?: string;  // WebView 頁面內容（用於 AI 分析）
   oracleQueryResult?: string;  // Oracle 查詢結果（用於 AI 分析）
   oracleConfig?: {  // Oracle 連接配置（僅用於 type='oracle'）

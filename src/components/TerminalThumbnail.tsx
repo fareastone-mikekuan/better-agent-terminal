@@ -64,7 +64,7 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
   // Check if this is an agent terminal
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
-  const isWebView = terminal.type === 'webview' || terminal.type === 'teams'
+  const isWebView = terminal.type === 'webview' || terminal.type === 'teams' || terminal.type === 'outlook' || terminal.type === 'copilotweb'
 
   useEffect(() => {
     if (!isWebView) {

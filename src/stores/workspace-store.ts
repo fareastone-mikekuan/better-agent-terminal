@@ -327,6 +327,64 @@ class WorkspaceStore {
     return terminal
   }
 
+  addOutlook(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const existingOutlook = this.state.terminals.filter(t => t.workspaceId === workspaceId && t.type === 'outlook')
+    const outlookNumber = existingOutlook.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'outlook',
+      title: `📧 Outlook #${outlookNumber}`,
+      url: 'https://outlook.office.com/mail/',
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
+  addCopilotWeb(workspaceId: string): TerminalInstance {
+    const workspace = this.state.workspaces.find(w => w.id === workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const existing = this.state.terminals.filter(t => t.workspaceId === workspaceId && t.type === 'copilotweb')
+    const copilotNumber = existing.length + 1
+
+    const terminal: TerminalInstance = {
+      id: uuidv4(),
+      workspaceId,
+      type: 'copilotweb',
+      title: `🤖 Copilot Chat #${copilotNumber}`,
+      url: 'https://m365.cloud.microsoft/chat/',
+      cwd: workspace.folderPath,
+      scrollbackBuffer: [],
+      lastActivityTime: Date.now()
+    }
+
+    this.state = {
+      ...this.state,
+      terminals: [...this.state.terminals, terminal],
+      focusedTerminalId: terminal.id
+    }
+
+    this.notify()
+    this.save()
+    return terminal
+  }
+
   addFile(workspaceId: string): TerminalInstance {
     const workspace = this.state.workspaces.find(w => w.id === workspaceId)
     if (!workspace) throw new Error('Workspace not found')

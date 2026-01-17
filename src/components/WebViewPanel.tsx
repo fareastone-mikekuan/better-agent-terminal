@@ -5,6 +5,9 @@ interface WebViewPanelProps {
   url: string
   showToolbar?: boolean
   defaultZoom?: number
+  partition?: string
+  allowPopups?: boolean
+  userAgent?: string
   isFloating?: boolean
   onToggleFloat?: () => void
   onClose?: () => void
@@ -17,12 +20,36 @@ export interface WebViewPanelRef {
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
+  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, partition, allowPopups = false, userAgent, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
   const [zoom, setZoom] = useState(defaultZoom)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
   const [isFetching, setIsFetching] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const webviewRef = useRef<any>(null)
+  const webviewDomReadyRef = useRef(false)
+  const pendingZoomRef = useRef<number | null>(defaultZoom)
+
+  const applyZoomToWebview = (targetZoom: number) => {
+    const webview = webviewRef.current || containerRef.current?.querySelector('webview') as any
+    if (!webview) return
+    if (!webviewDomReadyRef.current) {
+      pendingZoomRef.current = targetZoom
+      return
+    }
+    const factor = Math.max(0.25, Math.min(2, targetZoom / 100))
+    try {
+      if (typeof webview.setZoomFactor === 'function') {
+        webview.setZoomFactor(factor)
+      } else if (typeof webview.setZoomLevel === 'function') {
+        // Rough mapping: zoomFactor 1.0 ~ zoomLevel 0
+        webview.setZoomLevel(Math.log(factor) / Math.log(1.2))
+      }
+    } catch (e) {
+      console.warn('[WebView] Failed to apply zoom:', e)
+    }
+  }
 
   const normalizeWebUrl = (raw: string): string => {
     const trimmed = (raw || '').trim()
@@ -49,6 +76,32 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
     } catch {
       // If URL parsing fails, fall back to the raw-ish value.
       return withProto
+    }
+  }
+
+  const getDefaultM365UserAgent = (): string => {
+    // A conservative Chrome UA to avoid some sites blocking Electron.
+    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  }
+
+  const getEffectiveUserAgent = (finalUrl: string): string | undefined => {
+    if (userAgent) return userAgent
+    try {
+      const u = new URL(finalUrl)
+      const h = u.hostname
+      const isM365 =
+        h === 'outlook.office.com' ||
+        h.endsWith('.office.com') ||
+        h === 'office.com' ||
+        h === 'www.microsoft365.com' ||
+        h === 'microsoft365.com' ||
+        h === 'm365.cloud.microsoft' ||
+        h === 'login.microsoftonline.com' ||
+        h === 'teams.microsoft.com' ||
+        h === 'copilot.microsoft.com'
+      return isM365 ? getDefaultM365UserAgent() : undefined
+    } catch {
+      return undefined
     }
   }
 
@@ -158,28 +211,145 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
     const normalized = normalizeWebUrl(initialUrl)
     setCurrentUrl(normalized)
     setUrlInput(normalized)
+    setLoadError(null)
+    setIsLoading(true)
   }, [initialUrl])
+
+  // Apply zoom using Electron's webview zoom APIs.
+  // NOTE: CSS transforms on a <webview> container can cause a blank view on Windows.
+  useEffect(() => {
+    pendingZoomRef.current = zoom
+    applyZoomToWebview(zoom)
+  }, [zoom])
 
   // Auto-fetch content when webview loads
   useEffect(() => {
     if (!webviewRef.current) return
 
     const webview = webviewRef.current
+
+    const handleDomReady = () => {
+      webviewDomReadyRef.current = true
+      const toApply = pendingZoomRef.current ?? zoom
+      applyZoomToWebview(toApply)
+    }
     
     const handleDidFinishLoad = () => {
       console.log('[WebView] Page loaded, auto-fetching content...')
+      setLoadError(null)
+      setIsLoading(false)
+
+      // Ensure zoom is applied after navigation.
+      applyZoomToWebview(zoom)
+
       // Auto-fetch content after page loads
       setTimeout(() => {
-        fetchAndSaveContent()
+        if (onContentChange) {
+          fetchAndSaveContent()
+        }
       }, 2000) // Wait 2 seconds for JS to execute
     }
 
+    const handleDidStartLoading = () => {
+      setIsLoading(true)
+    }
+
+    const handleDidStopLoading = () => {
+      setIsLoading(false)
+    }
+
+    const handleDidNavigate = (e: any) => {
+      const nextUrl = e?.url
+      if (typeof nextUrl === 'string' && nextUrl) {
+        const normalized = normalizeWebUrl(nextUrl)
+        setCurrentUrl(normalized)
+        if (showToolbar) {
+          setUrlInput(normalized)
+        }
+      }
+    }
+
+    const handleDidNavigateInPage = (e: any) => {
+      const nextUrl = e?.url
+      if (typeof nextUrl === 'string' && nextUrl) {
+        const normalized = normalizeWebUrl(nextUrl)
+        setCurrentUrl(normalized)
+        if (showToolbar) {
+          setUrlInput(normalized)
+        }
+      }
+    }
+
+    const handleDidFailLoad = (e: any) => {
+      // Ignore benign aborts (e.g., navigation cancel)
+      if (e?.errorCode === -3) return
+      const desc = e?.errorDescription || 'Failed to load'
+      const code = typeof e?.errorCode === 'number' ? ` (${e.errorCode})` : ''
+      const failedUrl = e?.validatedURL || e?.url || ''
+      const message = `${desc}${code}${failedUrl ? `: ${failedUrl}` : ''}`
+      console.warn('[WebView] did-fail-load:', message)
+      setLoadError(message)
+    }
+
+    const handleConsoleMessage = (e: any) => {
+      // Helpful when a page fails silently.
+      console.log('[WebView][console]', e?.level, e?.message)
+    }
+
+    const handleNewWindow = (e: any) => {
+      const targetUrl = e?.url
+      if (typeof targetUrl !== 'string' || !targetUrl) return
+
+      // If popups are allowed, let Electron handle the new window (common for M365 login).
+      if (allowPopups) return
+
+      // Otherwise, keep navigation inside the same webview.
+      try {
+        e?.preventDefault?.()
+      } catch {
+        // ignore
+      }
+
+      const normalized = normalizeWebUrl(targetUrl)
+      try {
+        if (typeof webview.loadURL === 'function') {
+          webview.loadURL(normalized)
+          return
+        }
+      } catch {
+        // fall back to src/state update
+      }
+
+      setCurrentUrl(normalized)
+      if (showToolbar) {
+        setUrlInput(normalized)
+      }
+    }
+
+    // Reset dom-ready for each navigation lifecycle.
+    webviewDomReadyRef.current = false
+    webview.addEventListener('dom-ready', handleDomReady)
     webview.addEventListener('did-finish-load', handleDidFinishLoad)
+    webview.addEventListener('did-start-loading', handleDidStartLoading)
+    webview.addEventListener('did-stop-loading', handleDidStopLoading)
+    webview.addEventListener('did-navigate', handleDidNavigate)
+    webview.addEventListener('did-navigate-in-page', handleDidNavigateInPage)
+    webview.addEventListener('did-fail-load', handleDidFailLoad)
+    webview.addEventListener('console-message', handleConsoleMessage)
+    webview.addEventListener('new-window', handleNewWindow)
     
     return () => {
+      webview.removeEventListener('dom-ready', handleDomReady)
       webview.removeEventListener('did-finish-load', handleDidFinishLoad)
+      webview.removeEventListener('did-start-loading', handleDidStartLoading)
+      webview.removeEventListener('did-stop-loading', handleDidStopLoading)
+      webview.removeEventListener('did-navigate', handleDidNavigate)
+      webview.removeEventListener('did-navigate-in-page', handleDidNavigateInPage)
+      webview.removeEventListener('did-fail-load', handleDidFailLoad)
+      webview.removeEventListener('console-message', handleConsoleMessage)
+      webview.removeEventListener('new-window', handleNewWindow)
     }
-  }, [currentUrl])
+  }, [currentUrl, zoom, onContentChange, showToolbar, allowPopups])
 
   // Expose fetchContent method to parent
   useImperativeHandle(ref, () => ({
@@ -454,23 +624,56 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
 
       {/* WebView */}
       <div style={{ flex: 1, position: 'relative', backgroundColor: '#ffffff', overflow: 'auto' }}>
-        <div style={{
-          transform: `scale(${zoom / 100})`,
-          transformOrigin: 'top left',
-          width: `${10000 / zoom}%`,
-          height: `${10000 / zoom}%`
-        }}>
-          <webview
-            ref={webviewRef}
-            src={currentUrl}
-            data-terminal-id={terminalId}
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none'
-            }}
-          />
-        </div>
+        {isLoading && !loadError && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 2,
+            background: 'rgba(255,255,255,0.6)',
+            color: '#333',
+            fontSize: '12px'
+          }}>
+            <div>載入中…</div>
+          </div>
+        )}
+        {loadError && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 2,
+            background: 'rgba(255,255,255,0.96)',
+            color: '#333',
+            fontSize: '12px',
+            textAlign: 'center'
+          }}>
+            <div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
+              <div style={{ fontWeight: 600, marginBottom: '6px' }}>頁面載入失敗</div>
+              <div style={{ opacity: 0.8, wordBreak: 'break-word' }}>{loadError}</div>
+            </div>
+          </div>
+        )}
+        <webview
+          ref={webviewRef}
+          src={currentUrl}
+          data-terminal-id={terminalId}
+          partition={partition}
+          allowpopups={allowPopups ? 'true' : undefined}
+          useragent={getEffectiveUserAgent(currentUrl)}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none'
+          }}
+        />
       </div>
       
       {/* Resize Handle (only show when floating) */}
