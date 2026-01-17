@@ -6,6 +6,8 @@ interface WebViewPanelProps {
   showToolbar?: boolean
   defaultZoom?: number
   partition?: string
+  homeUrl?: string
+  homeLabel?: string
   allowPopups?: boolean
   webPreferences?: string
   userAgent?: string
@@ -22,7 +24,7 @@ export interface WebViewPanelRef {
 }
 
 export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
-  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, partition, allowPopups = false, webPreferences, userAgent, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
+  function WebViewPanel({ height, url: initialUrl, showToolbar = true, defaultZoom = 75, partition, homeUrl, homeLabel, allowPopups = false, webPreferences, userAgent, isFloating = false, onToggleFloat, onClose, onContentChange, terminalId }, ref) {
   const [zoom, setZoom] = useState(defaultZoom)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
@@ -135,6 +137,24 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
     if (webviewRef.current) {
       webviewRef.current.reload()
     }
+  }
+
+  const handleGoBack = () => {
+    const webview = webviewRef.current
+    try {
+      if (webview && typeof webview.canGoBack === 'function' && webview.canGoBack()) {
+        webview.goBack()
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleGoHome = () => {
+    const target = normalizeWebUrl(homeUrl || initialUrl)
+    if (!target) return
+    setCurrentUrl(target)
+    setUrlInput(target)
   }
 
   // Fetch and save content function
@@ -671,6 +691,72 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
 
       {/* WebView */}
       <div style={{ flex: 1, position: 'relative', backgroundColor: '#ffffff', overflow: 'auto' }}>
+        {!showToolbar && (homeUrl || partition?.startsWith('persist:m365')) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              zIndex: 3,
+              display: 'flex',
+              gap: '6px',
+              padding: '6px',
+              borderRadius: '8px',
+              background: 'rgba(0,0,0,0.55)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              backdropFilter: 'blur(6px)'
+            }}
+          >
+            <button
+              onClick={handleGoBack}
+              style={{
+                background: 'rgba(255,255,255,0.12)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+              title="上一頁"
+            >
+              ←
+            </button>
+            {(homeUrl || initialUrl) && (
+              <button
+                onClick={handleGoHome}
+                style={{
+                  background: 'rgba(255,255,255,0.12)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="回到首頁"
+              >
+                🏠 {homeLabel || 'Home'}
+              </button>
+            )}
+            <button
+              onClick={handleRefresh}
+              style={{
+                background: 'rgba(255,255,255,0.12)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+              title="重新整理"
+            >
+              ↻
+            </button>
+          </div>
+        )}
         {isLoading && !loadError && (
           <div style={{
             position: 'absolute',

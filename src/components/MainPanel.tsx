@@ -163,6 +163,8 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile, onOpenS
             ref={webViewRef}
             height="100%"
             url={terminal.url || 'https://teams.microsoft.com/v2/'}
+            homeUrl={'https://teams.microsoft.com/v2/'}
+            homeLabel="Teams"
             showToolbar={false}
             defaultZoom={100}
             partition="persist:m365"
@@ -176,6 +178,8 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile, onOpenS
             ref={webViewRef}
             height="100%"
             url={terminal.url || 'https://outlook.office.com/mail/'}
+            homeUrl={'https://outlook.office.com/mail/'}
+            homeLabel="Outlook"
             showToolbar={false}
             defaultZoom={100}
             partition="persist:m365-outlook"
@@ -189,6 +193,8 @@ export function MainPanel({ terminal, onClose, onRestart, onAnalyzeFile, onOpenS
             ref={webViewRef}
             height="100%"
             url={terminal.url || 'https://m365.cloud.microsoft/chat/'}
+            homeUrl={'https://m365.cloud.microsoft/chat/'}
+            homeLabel="Copilot"
             showToolbar={false}
             defaultZoom={100}
             partition="persist:m365"

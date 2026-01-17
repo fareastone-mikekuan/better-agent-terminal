@@ -248,6 +248,33 @@ function buildMenu() {
       label: 'M365',
       submenu: [
         {
+          label: '重置 Teams / Copilot Web Session',
+          click: async () => {
+            try {
+              const sharedSession = session.fromPartition('persist:m365')
+              await sharedSession.clearStorageData()
+              if (mainWindow) {
+                await dialog.showMessageBox(mainWindow, {
+                  type: 'info',
+                  title: 'Teams / Copilot Web Session 已重置',
+                  message: '已重置 Teams / Copilot Web 的登入/快取資料。',
+                  detail: '請關閉並重新開啟 Teams 或 Copilot Chat 分頁後再登入。'
+                })
+              }
+            } catch (e) {
+              console.warn('[Main] Failed to reset Teams/Copilot Web session:', e)
+              if (mainWindow) {
+                await dialog.showMessageBox(mainWindow, {
+                  type: 'error',
+                  title: 'Teams / Copilot Web Session 重置失敗',
+                  message: '無法重置 Teams / Copilot Web 的登入/快取資料。',
+                  detail: String((e as any)?.message || e)
+                })
+              }
+            }
+          }
+        },
+        {
           label: '重置 Outlook Web Session',
           click: async () => {
             try {
