@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { EdgeDockToolbar, type EdgeDockToolbarAction } from './EdgeDockToolbar'
 
 interface WebViewPanelProps {
   height: string
@@ -28,12 +29,13 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   const [zoom, setZoom] = useState(defaultZoom)
   const [currentUrl, setCurrentUrl] = useState(initialUrl)
   const [urlInput, setUrlInput] = useState(initialUrl)
-  const [isFetching, setIsFetching] = useState(false)
+  const [, setIsFetching] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const webviewRef = useRef<any>(null)
   const webviewDomReadyRef = useRef(false)
   const pendingZoomRef = useRef<number | null>(defaultZoom)
+  const webviewAreaRef = useRef<HTMLDivElement>(null)
 
   const applyZoomToWebview = (targetZoom: number) => {
     const webview = webviewRef.current || containerRef.current?.querySelector('webview') as any
@@ -110,11 +112,11 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
   }
 
   // Dragging and resizing state
-  const [position, setPosition] = useState(() => {
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => {
     const saved = localStorage.getItem('webview-position')
     return saved ? JSON.parse(saved) : { x: 20, y: 80 }
   })
-  const [size, setSize] = useState(() => {
+  const [size, setSize] = useState<{ width: number; height: number }>(() => {
     const saved = localStorage.getItem('webview-size')
     return saved ? JSON.parse(saved) : { width: 800, height: 600 }
   })
@@ -156,6 +158,26 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
     setCurrentUrl(target)
     setUrlInput(target)
   }
+
+  const handleCopyUrl = async () => {
+    const text = (currentUrl || '').trim()
+    if (!text) return
+
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      window.prompt('請複製網址：', text)
+    }
+  }
+
+  const edgeToolbarActions: EdgeDockToolbarAction[] = [
+    { id: 'back', icon: '←', title: '上一頁', onClick: handleGoBack },
+    ...((homeUrl || initialUrl)
+      ? [{ id: 'home', icon: `🏠 ${homeLabel || 'Home'}`, title: '回到首頁', onClick: handleGoHome }]
+      : []),
+    { id: 'refresh', icon: '↻', title: '重新整理', onClick: handleRefresh },
+    { id: 'copy', icon: '📋', title: '複製網址', onClick: handleCopyUrl }
+  ]
 
   // Fetch and save content function
   const fetchAndSaveContent = async (): Promise<string | null> => {
@@ -444,7 +466,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
       const deltaX = e.clientX - dragStart.x
       const deltaY = e.clientY - dragStart.y
       
-      setPosition(prev => ({
+      setPosition((prev) => ({
         x: Math.max(0, Math.min(window.innerWidth - size.width, prev.x + deltaX)),
         y: Math.max(0, Math.min(window.innerHeight - 100, prev.y + deltaY))
       }))
@@ -690,72 +712,13 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
       )}
 
       {/* WebView */}
-      <div style={{ flex: 1, position: 'relative', backgroundColor: '#ffffff', overflow: 'auto' }}>
+      <div ref={webviewAreaRef} style={{ flex: 1, position: 'relative', backgroundColor: '#ffffff', overflow: 'auto' }}>
         {!showToolbar && (homeUrl || partition?.startsWith('persist:m365')) && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 10,
-              right: 10,
-              zIndex: 3,
-              display: 'flex',
-              gap: '6px',
-              padding: '6px',
-              borderRadius: '8px',
-              background: 'rgba(0,0,0,0.55)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              backdropFilter: 'blur(6px)'
-            }}
-          >
-            <button
-              onClick={handleGoBack}
-              style={{
-                background: 'rgba(255,255,255,0.12)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '6px',
-                padding: '4px 8px',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-              title="上一頁"
-            >
-              ←
-            </button>
-            {(homeUrl || initialUrl) && (
-              <button
-                onClick={handleGoHome}
-                style={{
-                  background: 'rgba(255,255,255,0.12)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '6px',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-                title="回到首頁"
-              >
-                🏠 {homeLabel || 'Home'}
-              </button>
-            )}
-            <button
-              onClick={handleRefresh}
-              style={{
-                background: 'rgba(255,255,255,0.12)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '6px',
-                padding: '4px 8px',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-              title="重新整理"
-            >
-              ↻
-            </button>
-          </div>
+          <EdgeDockToolbar
+            containerRef={webviewAreaRef}
+            storageKey={`webview-edge-toolbar-top:${terminalId || partition || homeUrl || initialUrl || 'default'}`}
+            actions={edgeToolbarActions}
+          />
         )}
         {isLoading && !loadError && (
           <div style={{
@@ -799,7 +762,7 @@ export const WebViewPanel = forwardRef<WebViewPanelRef, WebViewPanelProps>(
           src={currentUrl}
           data-terminal-id={terminalId}
           partition={partition}
-          allowpopups={allowPopups ? 'true' : undefined}
+          allowpopups={allowPopups}
           webpreferences={webPreferences}
           useragent={getEffectiveUserAgent(currentUrl)}
           style={{
